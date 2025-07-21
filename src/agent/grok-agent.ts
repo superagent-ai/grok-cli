@@ -34,6 +34,7 @@ export class GrokAgent extends EventEmitter {
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
+  private abortController: AbortController | null = null;
 
   constructor(apiKey: string) {
     super();
@@ -267,6 +268,9 @@ Current working directory: ${process.cwd()}`,
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
+    // Create new abort controller for this request
+    this.abortController = new AbortController();
+    
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -292,6 +296,16 @@ Current working directory: ${process.cwd()}`,
     try {
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
+        // Check if operation was cancelled
+        if (this.abortController?.signal.aborted) {
+          yield {
+            type: "content",
+            content: "\n\n[Operation cancelled by user]",
+          };
+          yield { type: "done" };
+          return;
+        }
+
         // Stream response and accumulate
         const stream = this.grokClient.chatStream(this.messages, GROK_TOOLS);
         let accumulatedMessage: any = {};
@@ -299,6 +313,16 @@ Current working directory: ${process.cwd()}`,
         let toolCallsYielded = false;
 
         for await (const chunk of stream) {
+          // Check for cancellation in the streaming loop
+          if (this.abortController?.signal.aborted) {
+            yield {
+              type: "content",
+              content: "\n\n[Operation cancelled by user]",
+            };
+            yield { type: "done" };
+            return;
+          }
+
           if (!chunk.choices?.[0]) continue;
 
           // Accumulate the message using reducer
@@ -371,6 +395,16 @@ Current working directory: ${process.cwd()}`,
 
           // Execute tools
           for (const toolCall of accumulatedMessage.tool_calls) {
+            // Check for cancellation before executing each tool
+            if (this.abortController?.signal.aborted) {
+              yield {
+                type: "content",
+                content: "\n\n[Operation cancelled by user]",
+              };
+              yield { type: "done" };
+              return;
+            }
+
             const result = await this.executeTool(toolCall);
 
             const toolResultEntry: ChatEntry = {
@@ -417,6 +451,16 @@ Current working directory: ${process.cwd()}`,
 
       yield { type: "done" };
     } catch (error: any) {
+      // Check if this was a cancellation
+      if (this.abortController?.signal.aborted) {
+        yield {
+          type: "content",
+          content: "\n\n[Operation cancelled by user]",
+        };
+        yield { type: "done" };
+        return;
+      }
+
       const errorEntry: ChatEntry = {
         type: "assistant",
         content: `Sorry, I encountered an error: ${error.message}`,
@@ -428,6 +472,9 @@ Current working directory: ${process.cwd()}`,
         content: errorEntry.content,
       };
       yield { type: "done" };
+    } finally {
+      // Clean up abort controller
+      this.abortController = null;
     }
   }
 
@@ -497,5 +544,11 @@ Current working directory: ${process.cwd()}`,
     // Update token counter for new model
     this.tokenCounter.dispose();
     this.tokenCounter = createTokenCounter(model);
+  }
+
+  abortCurrentOperation(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
   }
 }

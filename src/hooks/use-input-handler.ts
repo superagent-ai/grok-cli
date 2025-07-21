@@ -327,6 +327,7 @@ Available models: ${modelNames.join(", ")}`,
         return;
       }
       if (isProcessing || isStreaming) {
+        agent.abortCurrentOperation();
         setIsProcessing(false);
         setIsStreaming(false);
         setTokenCount(0);
