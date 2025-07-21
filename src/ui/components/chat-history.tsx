@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { ChatEntry } from "../../agent/grok-agent";
 import { DiffRenderer } from "./diff-renderer";
+import { MarkdownRenderer } from "../utils/markdown-renderer";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
@@ -59,9 +60,18 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
       case "assistant":
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
-            <Box>
-              <Text color="white">⏺ {entry.content.trim()}</Text>
-              {entry.isStreaming && <Text color="cyan">█</Text>}
+            <Box flexDirection="row" alignItems="flex-start">
+              <Text color="white">⏺ </Text>
+              <Box flexDirection="column" flexGrow={1}>
+                {entry.toolCalls ? (
+                  // If there are tool calls, just show plain text
+                  <Text color="white">{entry.content.trim()}</Text>
+                ) : (
+                  // If no tool calls, render as markdown
+                  <MarkdownRenderer content={entry.content.trim()} />
+                )}
+                {entry.isStreaming && <Text color="cyan">█</Text>}
+              </Box>
             </Box>
           </Box>
         );
