@@ -1,4 +1,5 @@
 import { ToolResult } from '../types';
+import { getPersistenceManager } from '../utils/persistence-manager';
 
 interface TodoItem {
   id: string;
@@ -9,6 +10,45 @@ interface TodoItem {
 
 export class TodoTool {
   private todos: TodoItem[] = [];
+  private persistenceManager = getPersistenceManager();
+  private readonly TODOS_FILE = 'todos.json';
+  private initialized = false;
+
+  constructor() {
+    this.initializePersistence();
+  }
+
+  private async initializePersistence(): Promise<void> {
+    if (this.initialized) return;
+    
+    try {
+      await this.persistenceManager.initialize();
+      await this.loadTodos();
+      this.initialized = true;
+    } catch (error) {
+      console.warn('Failed to initialize TodoTool persistence:', error);
+      this.initialized = true; // Continue without persistence
+    }
+  }
+
+  private async loadTodos(): Promise<void> {
+    try {
+      const savedTodos = await this.persistenceManager.load<TodoItem[]>(this.TODOS_FILE, []);
+      if (savedTodos && Array.isArray(savedTodos)) {
+        this.todos = savedTodos;
+      }
+    } catch (error) {
+      console.warn('Failed to load todos from persistence:', error);
+    }
+  }
+
+  private async saveTodos(): Promise<void> {
+    try {
+      await this.persistenceManager.save(this.TODOS_FILE, this.todos);
+    } catch (error) {
+      console.warn('Failed to save todos to persistence:', error);
+    }
+  }
 
   formatTodoList(): string {
     if (this.todos.length === 0) {
@@ -58,6 +98,9 @@ export class TodoTool {
 
   async createTodoList(todos: TodoItem[]): Promise<ToolResult> {
     try {
+      // Ensure persistence is initialized
+      await this.initializePersistence();
+
       // Validate todos
       for (const todo of todos) {
         if (!todo.id || !todo.content || !todo.status || !todo.priority) {
@@ -83,6 +126,7 @@ export class TodoTool {
       }
 
       this.todos = todos;
+      await this.saveTodos(); // Persist the changes
       
       return {
         success: true,
@@ -98,6 +142,9 @@ export class TodoTool {
 
   async updateTodoList(updates: { id: string; status?: string; content?: string; priority?: string }[]): Promise<ToolResult> {
     try {
+      // Ensure persistence is initialized
+      await this.initializePersistence();
+
       const updatedIds: string[] = [];
 
       for (const update of updates) {
@@ -133,6 +180,8 @@ export class TodoTool {
         updatedIds.push(update.id);
       }
 
+      await this.saveTodos(); // Persist the changes
+
       return {
         success: true,
         output: this.formatTodoList()
@@ -146,6 +195,9 @@ export class TodoTool {
   }
 
   async viewTodoList(): Promise<ToolResult> {
+    // Ensure persistence is initialized
+    await this.initializePersistence();
+    
     return {
       success: true,
       output: this.formatTodoList()

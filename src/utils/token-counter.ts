@@ -24,15 +24,27 @@ export class TokenCounter {
   /**
    * Count tokens in messages array (for chat completions)
    */
-  countMessageTokens(messages: Array<{ role: string; content: string | null; [key: string]: any }>): number {
+  countMessageTokens(messages: Array<{ role: string; content: string | null | any; [key: string]: any }>): number {
     let totalTokens = 0;
     
     for (const message of messages) {
       // Every message follows <|start|>{role/name}\n{content}<|end|\>\n
       totalTokens += 3; // Base tokens per message
       
-      if (message.content && typeof message.content === 'string') {
-        totalTokens += this.countTokens(message.content);
+      // Handle different content types
+      if (message.content) {
+        if (typeof message.content === 'string') {
+          totalTokens += this.countTokens(message.content);
+        } else if (Array.isArray(message.content)) {
+          // Handle array content (like ChatCompletionContentPartText[])
+          for (const part of message.content) {
+            if (typeof part === 'string') {
+              totalTokens += this.countTokens(part);
+            } else if (part && typeof part === 'object' && part.text) {
+              totalTokens += this.countTokens(part.text);
+            }
+          }
+        }
       }
       
       if (message.role) {

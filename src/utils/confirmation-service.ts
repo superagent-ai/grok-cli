@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { EventEmitter } from 'events';
+import { getUserSettingsManager } from './user-settings';
 
 const execAsync = promisify(exec);
 
@@ -22,6 +23,7 @@ export class ConfirmationService extends EventEmitter {
   private skipConfirmationThisSession = false;
   private pendingConfirmation: Promise<ConfirmationResult> | null = null;
   private resolveConfirmation: ((result: ConfirmationResult) => void) | null = null;
+  private userSettingsManager = getUserSettingsManager();
   
   // Session flags for different operation types
   private sessionFlags = {
@@ -39,14 +41,29 @@ export class ConfirmationService extends EventEmitter {
 
   constructor() {
     super();
+    this.userSettingsManager.initialize();
   }
 
   async requestConfirmation(options: ConfirmationOptions, operationType: 'file' | 'bash' = 'file'): Promise<ConfirmationResult> {
-    // Check session flags
-    if (this.sessionFlags.allOperations || 
-        (operationType === 'file' && this.sessionFlags.fileOperations) ||
-        (operationType === 'bash' && this.sessionFlags.bashCommands)) {
+    await this.userSettingsManager.initialize();
+    const preferences = this.userSettingsManager.getConfirmationPreferences();
+
+    // Check user preferences first
+    const relevantPref = operationType === 'file' ? preferences.fileOperations : preferences.bashCommands;
+    if (preferences.allOperations === 'never' || relevantPref === 'never') {
+      return { confirmed: false };
+    }
+    if (preferences.allOperations === 'always' || relevantPref === 'always') {
       return { confirmed: true };
+    }
+
+    // Check session flags (only if user has rememberSessionChoices enabled)
+    if (preferences.rememberSessionChoices) {
+      if (this.sessionFlags.allOperations || 
+          (operationType === 'file' && this.sessionFlags.fileOperations) ||
+          (operationType === 'bash' && this.sessionFlags.bashCommands)) {
+        return { confirmed: true };
+      }
     }
 
     // If VS Code should be opened, try to open it

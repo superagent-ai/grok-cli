@@ -1,10 +1,11 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
 import { GROK_TOOLS } from "../grok/tools";
 import { TextEditorTool, BashTool, TodoTool, ConfirmationTool } from "../tools";
-import { ToolResult } from "../types";
+import { ToolResult, ConversationTurn, AgentWorkItem, ContextWindowConfig } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
+import { getUserSettingsManager } from "../utils/user-settings";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result";
@@ -35,6 +36,18 @@ export class GrokAgent extends EventEmitter {
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  
+  // Turn-based context management
+  private conversationTurns: ConversationTurn[] = [];
+  private currentTurnId: string = '';
+  private isExecutingTools: boolean = false;
+  private contextConfig: ContextWindowConfig = {
+    maxTokens: 120000, // 120k tokens with 8k buffer for response
+    bufferTokens: 8000,
+    systemPromptTokens: 2000, // Estimated system prompt size
+    minRecentTurns: 2, // Always keep at least 2 recent turns
+  };
+  private activeFiles: Set<string> = new Set(); // Track files being actively worked on
 
   constructor(apiKey: string) {
     super();
@@ -44,6 +57,9 @@ export class GrokAgent extends EventEmitter {
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.tokenCounter = createTokenCounter("grok-4-latest");
+
+    // Initialize context config from user settings
+    this.initializeContextConfig();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -111,6 +127,9 @@ Current working directory: ${process.cwd()}`,
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // Manage context window before processing new message
+    this.manageContextWindow();
+    
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -119,6 +138,9 @@ Current working directory: ${process.cwd()}`,
     };
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
+
+    // Start a new turn
+    this.currentTurnId = this.generateTurnId();
 
     const newEntries: ChatEntry[] = [userEntry];
     const maxToolRounds = 10; // Prevent infinite loops
@@ -144,6 +166,7 @@ Current working directory: ${process.cwd()}`,
           assistantMessage.tool_calls.length > 0
         ) {
           toolRounds++;
+          this.isExecutingTools = true;
 
           // Add assistant message with tool calls
           const assistantEntry: ChatEntry = {
@@ -187,6 +210,8 @@ Current working directory: ${process.cwd()}`,
               tool_call_id: toolCall.id,
             });
           }
+
+          this.isExecutingTools = false;
 
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
@@ -268,6 +293,9 @@ Current working directory: ${process.cwd()}`,
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
+    // Manage context window before processing new message
+    this.manageContextWindow();
+    
     // Create new abort controller for this request
     this.abortController = new AbortController();
     
@@ -279,6 +307,9 @@ Current working directory: ${process.cwd()}`,
     };
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
+
+    // Start a new turn
+    this.currentTurnId = this.generateTurnId();
 
     // Calculate input tokens
     const inputTokens = this.tokenCounter.countMessageTokens(
@@ -384,6 +415,7 @@ Current working directory: ${process.cwd()}`,
         // Handle tool calls if present
         if (accumulatedMessage.tool_calls?.length > 0) {
           toolRounds++;
+          this.isExecutingTools = true;
 
           // Only yield tool_calls if we haven't already yielded them during streaming
           if (!toolCallsYielded) {
@@ -433,6 +465,8 @@ Current working directory: ${process.cwd()}`,
               tool_call_id: toolCall.id,
             });
           }
+
+          this.isExecutingTools = false;
 
           // Continue the loop to get the next response (which might have more tool calls)
         } else {
@@ -550,5 +584,302 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  private async initializeContextConfig(): Promise<void> {
+    try {
+      const userSettings = getUserSettingsManager();
+      await userSettings.initialize();
+      const contextSettings = userSettings.getContextSettings();
+      
+      // Apply user settings to context config
+      this.contextConfig = {
+        maxTokens: contextSettings.maxTokens,
+        bufferTokens: contextSettings.bufferTokens,
+        systemPromptTokens: this.contextConfig.systemPromptTokens, // Keep estimate
+        minRecentTurns: contextSettings.minRecentTurns,
+      };
+    } catch (error) {
+      console.warn('Failed to load user settings for context config:', error);
+      // Keep default config on error
+    }
+  }
+
+  // Turn-based context management methods
+  private generateTurnId(): string {
+    return `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private groupMessagesIntoTurns(): ConversationTurn[] {
+    const turns: ConversationTurn[] = [];
+    const messages = [...this.messages];
+    let currentTurn: ConversationTurn | null = null;
+    
+    // Skip system message - it's handled separately
+    let i = 0;
+    if (messages[0]?.role === 'system') {
+      i = 1;
+    }
+
+    while (i < messages.length) {
+      const message = messages[i];
+
+      if (message.role === 'user') {
+        // Start of a new turn
+        if (currentTurn) {
+          // Finalize previous turn if it has any work or is the last turn
+          currentTurn.isComplete = currentTurn.agentWorkSession.length > 0;
+          currentTurn.tokenCount = this.calculateTurnTokens(currentTurn);
+          turns.push(currentTurn);
+        }
+
+        // Create new turn
+        currentTurn = {
+          id: this.generateTurnId(),
+          userMessage: message,
+          agentWorkSession: [],
+          isComplete: false,
+          tokenCount: 0,
+          timestamp: new Date(),
+          activeFiles: []
+        };
+      } else if (currentTurn) {
+        // Add to current turn's agent work session
+        const workItem: AgentWorkItem = {
+          type: message.role === 'assistant' ? 
+               (message.tool_calls ? 'tool_call' : 'assistant_message') : 'tool_result',
+          message: message,
+          timestamp: new Date()
+        };
+
+        if (message.role === 'assistant' && message.tool_calls) {
+          workItem.toolCall = message.tool_calls[0]; // Store first tool call
+        }
+
+        if (message.role === 'tool') {
+          // Try to find the corresponding tool call
+          const lastToolCall = currentTurn.agentWorkSession
+            .filter(item => item.type === 'tool_call')
+            .pop();
+          
+          if (lastToolCall?.toolCall) {
+            const contentStr = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+            workItem.toolResult = {
+              success: !contentStr?.includes('Error'),
+              output: contentStr || '',
+              error: contentStr?.includes('Error') ? contentStr : undefined
+            };
+          }
+        }
+
+        currentTurn.agentWorkSession.push(workItem);
+
+        // Track active files
+        this.extractActiveFiles(message, currentTurn);
+      }
+
+      i++;
+    }
+
+    // Add the current turn if it exists
+    if (currentTurn) {
+      currentTurn.isComplete = currentTurn.agentWorkSession.length > 0 && 
+                              !this.isExecutingTools && 
+                              currentTurn.agentWorkSession[currentTurn.agentWorkSession.length - 1]?.type === 'assistant_message';
+      currentTurn.tokenCount = this.calculateTurnTokens(currentTurn);
+      turns.push(currentTurn);
+    }
+
+    return turns;
+  }
+
+  private extractActiveFiles(message: any, turn: ConversationTurn): void {
+    if (message.role === 'assistant' && message.tool_calls) {
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.function?.name === 'view_file' || 
+            toolCall.function?.name === 'str_replace_editor' ||
+            toolCall.function?.name === 'create_file') {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            if (args.path) {
+              turn.activeFiles = turn.activeFiles || [];
+              if (!turn.activeFiles.includes(args.path)) {
+                turn.activeFiles.push(args.path);
+              }
+              this.activeFiles.add(args.path);
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
+      }
+    }
+  }
+
+  private calculateTurnTokens(turn: ConversationTurn): number {
+    let tokens = this.tokenCounter.countMessageTokens([turn.userMessage]);
+    
+    for (const workItem of turn.agentWorkSession) {
+      tokens += this.tokenCounter.countMessageTokens([workItem.message]);
+    }
+    
+    return tokens;
+  }
+
+  private isCurrentTurnComplete(): boolean {
+    if (this.isExecutingTools) {
+      return false;
+    }
+
+    const lastMessage = this.messages[this.messages.length - 1];
+    
+    // Turn is complete when last message is assistant response without tool calls
+    return lastMessage?.role === 'assistant' && !lastMessage.tool_calls;
+  }
+
+  private manageContextWindow(): void {
+    try {
+      const currentTokens = this.tokenCounter.countMessageTokens(this.messages as any);
+      const tokenLimit = this.contextConfig.maxTokens - this.contextConfig.bufferTokens;
+
+      if (currentTokens <= tokenLimit) {
+        return; // No need to prune
+      }
+
+    console.log(`Context window management: ${currentTokens} tokens > ${tokenLimit} limit`);
+
+    // Convert current messages to turns
+    const turns = this.groupMessagesIntoTurns();
+    
+    if (turns.length <= this.contextConfig.minRecentTurns) {
+      console.warn('Cannot prune further - would remove minimum required turns');
+      return;
+    }
+
+    // Calculate tokens for essential parts
+    const systemPromptTokens = this.contextConfig.systemPromptTokens;
+    const currentTurn = turns[turns.length - 1]; // Always keep current turn
+    let reservedTokens = systemPromptTokens + currentTurn.tokenCount;
+
+    // Calculate active file context tokens
+    const activeFileTokens = this.calculateActiveFileContextTokens(turns);
+    reservedTokens += activeFileTokens;
+
+    // Add recent complete turns until we approach the limit
+    const keptTurns: ConversationTurn[] = [currentTurn];
+    
+    for (let i = turns.length - 2; i >= 0 && keptTurns.length < this.contextConfig.minRecentTurns + 1; i--) {
+      const turn = turns[i];
+      if (reservedTokens + turn.tokenCount < tokenLimit) {
+        reservedTokens += turn.tokenCount;
+        keptTurns.unshift(turn);
+      } else {
+        break;
+      }
+    }
+
+    // Add more turns if we still have room
+    for (let i = turns.length - keptTurns.length - 1; i >= 0; i--) {
+      const turn = turns[i];
+      if (reservedTokens + turn.tokenCount < tokenLimit) {
+        reservedTokens += turn.tokenCount;
+        keptTurns.unshift(turn);
+      } else {
+        break;
+      }
+    }
+
+    console.log(`Keeping ${keptTurns.length} turns out of ${turns.length} (${reservedTokens} tokens)`);
+
+    // Rebuild messages from kept turns
+    this.rebuildMessagesFromTurns(keptTurns);
+    
+      // Update conversation turns cache
+      this.conversationTurns = keptTurns;
+    } catch (error) {
+      console.warn('Error during context window management:', error);
+      // Continue without context management on error
+    }
+  }
+
+  private calculateActiveFileContextTokens(turns: ConversationTurn[]): number {
+    let tokens = 0;
+    const processedFiles = new Set<string>();
+
+    // Count tokens for active file content (latest version of each file)
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const turn = turns[i];
+      if (turn.activeFiles) {
+        for (const filePath of turn.activeFiles) {
+          if (!processedFiles.has(filePath)) {
+            processedFiles.add(filePath);
+            // Find the latest tool result for this file
+            const fileContent = this.getLatestFileContent(filePath, turns.slice(0, i + 1));
+            if (fileContent) {
+              tokens += this.tokenCounter.countTokens(fileContent);
+            }
+          }
+        }
+      }
+    }
+
+    return tokens;
+  }
+
+  private getLatestFileContent(filePath: string, turns: ConversationTurn[]): string | null {
+    // Search from most recent to oldest for file content
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const turn = turns[i];
+      for (const workItem of turn.agentWorkSession) {
+        if (workItem.type === 'tool_result' && 
+            workItem.toolResult?.output && 
+            workItem.message?.tool_call_id) {
+          
+          // Check if this tool result is for our file
+          const relatedToolCall = turn.agentWorkSession.find(item => 
+            item.type === 'tool_call' && 
+            item.toolCall?.id === workItem.message.tool_call_id
+          );
+          
+          if (relatedToolCall?.toolCall?.function) {
+            try {
+              const args = JSON.parse(relatedToolCall.toolCall.function.arguments);
+              if (args.path === filePath && workItem.toolResult.output) {
+                return workItem.toolResult.output;
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private rebuildMessagesFromTurns(turns: ConversationTurn[]): void {
+    const newMessages: GrokMessage[] = [];
+    
+    // Always keep the system message first
+    const systemMessage = this.messages.find(msg => msg.role === 'system');
+    if (systemMessage) {
+      newMessages.push(systemMessage);
+    }
+
+    // Rebuild from turns
+    for (const turn of turns) {
+      // Add user message
+      newMessages.push(turn.userMessage);
+      
+      // Add agent work session messages in order
+      for (const workItem of turn.agentWorkSession) {
+        newMessages.push(workItem.message);
+      }
+    }
+
+    // Replace the messages array
+    this.messages = newMessages;
+    
+    console.log(`Rebuilt messages: ${newMessages.length} messages (${this.tokenCounter.countMessageTokens(newMessages as any)} tokens)`);
   }
 }
