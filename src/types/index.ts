@@ -31,3 +31,29 @@ export interface ConfirmationState {
   skipThisSession: boolean;
   pendingOperation: boolean;
 }
+
+// Context Management Types
+export interface AgentWorkItem {
+  type: 'assistant_message' | 'tool_call' | 'tool_result';
+  message: any; // GrokMessage type - keeping flexible for now
+  toolCall?: any; // GrokToolCall type
+  toolResult?: ToolResult;
+  timestamp: Date;
+}
+
+export interface ConversationTurn {
+  id: string;
+  userMessage: any; // GrokMessage type
+  agentWorkSession: AgentWorkItem[];
+  isComplete: boolean;
+  tokenCount: number;
+  timestamp: Date;
+  activeFiles?: string[]; // Files that were modified/viewed in this turn
+}
+
+export interface ContextWindowConfig {
+  maxTokens: number;
+  bufferTokens: number;
+  systemPromptTokens: number;
+  minRecentTurns: number;
+}

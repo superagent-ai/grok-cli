@@ -1,52 +1,50 @@
 import React from "react";
 import { Box, Text } from "ink";
 
-interface CommandSuggestion {
-  command: string;
+interface ExportFormat {
+  format: string;
   description: string;
 }
 
-interface CommandSuggestionsProps {
-  suggestions: CommandSuggestion[];
-  input: string;
+interface ExportSelectionProps {
+  formats: ExportFormat[];
   selectedIndex: number;
   isVisible: boolean;
 }
 
-export function CommandSuggestions({
-  suggestions,
-  input,
+export function ExportSelection({
+  formats,
   selectedIndex,
   isVisible,
-}: CommandSuggestionsProps) {
+}: ExportSelectionProps) {
   if (!isVisible) return null;
-
-  const filteredSuggestions = suggestions
-    .filter((suggestion) =>
-      input.startsWith("/")
-        ? suggestion.command.startsWith("/")
-        : suggestion.command.toLowerCase().startsWith(input.toLowerCase())
-    )
-    .slice(0, 8);
 
   return (
     <Box marginTop={1} flexDirection="column">
-      {filteredSuggestions.map((suggestion, index) => (
+      <Text color="yellow" bold>
+        📤 Export Conversation
+      </Text>
+      <Box marginBottom={1}>
+        <Text color="gray">Choose format:</Text>
+      </Box>
+      
+      {formats.map((format, index) => (
         <Box key={index} paddingLeft={1}>
           <Text
             color={index === selectedIndex ? "white" : "cyan"}
             backgroundColor={index === selectedIndex ? "blue" : undefined}
             bold={index === selectedIndex}
           >
-            {index === selectedIndex ? `❯ ${suggestion.command}` : `  ${suggestion.command}`}
+            {index === selectedIndex ? `❯ ${format.format}` : `  ${format.format}`}
           </Text>
           <Box marginLeft={1}>
             <Text color={index === selectedIndex ? "white" : "gray"} dimColor={index !== selectedIndex}>
-              {suggestion.description}
+              {format.description}
             </Text>
           </Box>
         </Box>
       ))}
+      
       <Box marginTop={1}>
         <Text color="gray" dimColor>
           ↑↓ navigate • Enter/Tab select • Esc cancel

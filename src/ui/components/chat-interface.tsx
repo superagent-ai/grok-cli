@@ -5,6 +5,7 @@ import { useInputHandler } from "../../hooks/use-input-handler";
 import { LoadingSpinner } from "./loading-spinner";
 import { CommandSuggestions } from "./command-suggestions";
 import { ModelSelection } from "./model-selection";
+import { ExportSelection } from "./export-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
 import ConfirmationDialog from "./confirmation-dialog";
@@ -26,6 +27,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
   const scrollRef = useRef<any>();
   const processingStartTime = useRef<number>(0);
+  const hasInitialized = useRef<boolean>(false);
   
   const confirmationService = ConfirmationService.getInstance();
 
@@ -35,8 +37,12 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     selectedCommandIndex,
     showModelSelection,
     selectedModelIndex,
+    showExportSelection,
+    selectedExportIndex,
+    exportAwaitingFilename,
     commandSuggestions,
     availableModels,
+    exportFormats,
   } = useInputHandler({
     agent,
     chatHistory,
@@ -52,6 +58,8 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   });
 
   useEffect(() => {
+    if (hasInitialized.current) return;
+    
     console.clear();
     cfonts.say("GROK", {
       font: "3d",
@@ -75,6 +83,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     console.log("");
 
     setChatHistory([]);
+    hasInitialized.current = true;
   }, []);
 
   useEffect(() => {
@@ -162,6 +171,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             input={input}
             isProcessing={isProcessing}
             isStreaming={isStreaming}
+            placeholder={exportAwaitingFilename ? "Enter filename or press Enter for default..." : undefined}
           />
 
           <CommandSuggestions
@@ -176,6 +186,12 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             selectedIndex={selectedModelIndex}
             isVisible={showModelSelection}
             currentModel={agent.getCurrentModel()}
+          />
+
+          <ExportSelection
+            formats={exportFormats}
+            selectedIndex={selectedExportIndex}
+            isVisible={showExportSelection}
           />
         </>
       )}
