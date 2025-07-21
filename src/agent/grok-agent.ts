@@ -5,6 +5,7 @@ import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
+import { MCPService } from "../mcp/mcp-service";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result";
@@ -31,6 +32,7 @@ export class GrokAgent extends EventEmitter {
   private bash: BashTool;
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
+  private mcpService: MCPService;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
@@ -43,6 +45,7 @@ export class GrokAgent extends EventEmitter {
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
+    this.mcpService = new MCPService();
     this.tokenCounter = createTokenCounter("grok-4-latest");
 
     // Load custom instructions
@@ -63,6 +66,16 @@ You have access to these tools:
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+
+MCP (Model Context Protocol) Tools:
+- mcp_list_resources: List available MCP resources (data sources)
+- mcp_read_resource: Read content from MCP resources
+- mcp_list_prompts: List available prompt templates
+- mcp_get_prompt: Get a prompt template with arguments
+- mcp_list_roots: List allowed file system paths
+- mcp_add_root: Add new allowed file system paths
+- mcp_register_resource: Register new MCP resources
+- mcp_register_directory: Register all files in a directory as resources
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
@@ -509,6 +522,90 @@ Current working directory: ${process.cwd()}`,
         case "update_todo_list":
           return await this.todoTool.updateTodoList(args.updates);
 
+        // MCP Tools
+        case "mcp_list_resources":
+          const resources = await this.mcpService.listResources(args.cursor);
+          return {
+            success: true,
+            output: JSON.stringify(resources, null, 2),
+          };
+
+        case "mcp_read_resource":
+          try {
+            const resource = await this.mcpService.readResource(args.uri);
+            return {
+              success: true,
+              output: typeof resource.content.content === 'string' 
+                ? resource.content.content 
+                : resource.content.content.toString(),
+            };
+          } catch (error: any) {
+            return {
+              success: false,
+              error: error.message,
+            };
+          }
+
+        case "mcp_list_prompts":
+          const prompts = await this.mcpService.listPrompts(args.cursor);
+          return {
+            success: true,
+            output: JSON.stringify(prompts, null, 2),
+          };
+
+        case "mcp_get_prompt":
+          try {
+            const prompt = await this.mcpService.getPrompt(args.name, args.arguments);
+            return {
+              success: true,
+              output: JSON.stringify(prompt, null, 2),
+            };
+          } catch (error: any) {
+            return {
+              success: false,
+              error: error.message,
+            };
+          }
+
+        case "mcp_list_roots":
+          const roots = await this.mcpService.listRoots();
+          return {
+            success: true,
+            output: JSON.stringify(roots, null, 2),
+          };
+
+        case "mcp_add_root":
+          this.mcpService.addRoot({
+            uri: args.uri,
+            name: args.name,
+          });
+          return {
+            success: true,
+            output: `Root added: ${args.uri}`,
+          };
+
+        case "mcp_register_resource":
+          this.mcpService.registerResource({
+            uri: args.uri,
+            name: args.name,
+            description: args.description,
+            mimeType: args.mimeType,
+          });
+          if (args.content) {
+            this.mcpService.setResourceContent(args.uri, args.content, args.mimeType);
+          }
+          return {
+            success: true,
+            output: `Resource registered: ${args.uri}`,
+          };
+
+        case "mcp_register_directory":
+          await this.mcpService.registerDirectoryResources(args.path, args.recursive);
+          return {
+            success: true,
+            output: `Directory resources registered: ${args.path}`,
+          };
+
         default:
           return {
             success: false,
@@ -550,5 +647,9 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  getMCPService(): MCPService {
+    return this.mcpService;
   }
 }

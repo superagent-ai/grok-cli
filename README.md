@@ -12,6 +12,7 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 - **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
 - **💬 Interactive UI**: Beautiful terminal interface built with Ink
 - **🌍 Global Installation**: Install and use anywhere with `npm i -g @vibe-kit/grok-cli`
+- **🔌 MCP Support**: Full Model Context Protocol (MCP) support for Resources, Prompts, and Roots
 
 ## Installation
 
@@ -101,6 +102,56 @@ Instead of typing commands, just tell Grok what you want to do:
 💬 "What's the current directory structure?"
 ```
 
+## Model Context Protocol (MCP) Support
+
+Grok CLI now includes full support for the Model Context Protocol, enabling standardized access to resources, prompts, and file system roots.
+
+### MCP Resources
+
+Resources are read-only data sources that can be accessed by the AI:
+
+```
+💬 "List all available MCP resources"
+💬 "Read the grok://config resource"
+💬 "Show me the chat history resource"
+💬 "Register all files in the src directory as resources"
+```
+
+Built-in resources:
+- `grok://config` - Current Grok CLI configuration
+- `grok://history` - Chat history and interactions
+- `grok://tools` - Available tools and descriptions
+
+### MCP Prompts
+
+Pre-defined prompt templates for common tasks:
+
+```
+💬 "List all available prompts"
+💬 "Use the code-review prompt on main.js and utils.js"
+💬 "Apply the refactor prompt to database.js with repository pattern"
+💬 "Get the debug prompt for this error message"
+```
+
+Built-in prompts:
+- `code-review` - Perform code reviews with optional focus areas
+- `refactor` - Suggest refactoring improvements
+- `debug` - Help debug issues with error context
+
+### MCP Roots
+
+Define allowed file system paths for operations:
+
+```
+💬 "Show me the configured MCP roots"
+💬 "Add /home/user/projects as a new root"
+💬 "List all roots and their names"
+```
+
+Default roots:
+- Current working directory
+- User home directory
+
 ## Development
 
 ```bash
@@ -126,6 +177,11 @@ npm run typecheck
 - **Tools**: Text editor and bash tool implementations
 - **UI**: Ink-based terminal interface components
 - **Types**: TypeScript definitions for the entire system
+- **MCP**: Model Context Protocol implementation for Resources, Prompts, and Roots
+  - **MCPService**: Core service managing all MCP functionality
+  - **Resources**: Read-only data sources accessible by the AI
+  - **Prompts**: Pre-defined templates for common interactions
+  - **Roots**: File system boundary management
 
 ## License
 

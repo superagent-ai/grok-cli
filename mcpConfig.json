@@ -1,0 +1,96 @@
+{
+  "mcpServers": {
+    "example-stdio": {
+      "command": "echo",
+      "args": [
+        "MCP server not configured"
+      ],
+      "transport": "stdio",
+      "enabled": false
+    },
+    "example-sse": {
+      "url": "https://example.com/mcp",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Bearer ${MCP_API_KEY}"
+      },
+      "enabled": false
+    },
+    "example-https": {
+      "url": "https://api.example.com/mcp",
+      "transport": "https",
+      "timeout": 30000,
+      "enabled": false
+    },
+    "test-server": {
+      "command": "echo",
+      "args": [
+        "Test MCP server from .grok directory"
+      ],
+      "transport": "stdio",
+      "enabled": false
+    },
+    "personal-context-server": {
+      "timeout": 60,
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/jkneen/Documents/GitHub/flows/pct-mcp-server/dist/index.js"
+      ],
+      "env": {},
+      "enabled": false
+    },
+    "mcp-hooks": {
+      "enabled": true,
+      "timeout": 60,
+      "transport": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/jkneen/.claude/hooks/claude-hooks-sdk/cli",
+        "serve"
+      ]
+    },
+    "sequentialthinking": {
+      "autoApprove": [],
+      "enabled": true,
+      "timeout": 120,
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "claude-code": {
+      "autoApprove": [
+        "Bash",
+        "Glob"
+      ],
+      "enabled": true,
+      "timeout": 60,
+      "transport": "stdio",
+      "command": "/Users/jkneen/.claude/local/claude",
+      "args": [
+        "mcp",
+        "serve"
+      ]
+    },
+    "Fluent MCP Docs": {
+      "autoApprove": [],
+      "enabled": false,
+      "timeout": 60,
+      "transport": "sse",
+      "url": "https://gitmcp.io/jasonkneen/fluent-mcp"
+    },
+    "test-local-server": {
+      "transport": "stdio",
+      "enabled": true,
+      "command": "echo test"
+    }
+  },
+  "globalSettings": {
+    "timeout": 10000,
+    "retryAttempts": 3,
+    "logLevel": "info"
+  }
+}

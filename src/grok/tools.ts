@@ -1,4 +1,5 @@
 import { GrokTool } from './client';
+import { MCP_TOOLS } from '../mcp/mcp-tools';
 
 export const GROK_TOOLS: GrokTool[] = [
   {
@@ -170,5 +171,6 @@ export const GROK_TOOLS: GrokTool[] = [
         required: ['updates']
       }
     }
-  }
+  },
+  ...MCP_TOOLS
 ];
