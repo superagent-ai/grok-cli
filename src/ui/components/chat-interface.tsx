@@ -9,13 +9,15 @@ import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
 import ConfirmationDialog from "./confirmation-dialog";
 import { ConfirmationService, ConfirmationOptions } from "../../utils/confirmation-service";
+import ApiKeyInput from "./api-key-input";
 import cfonts from "cfonts";
 
 interface ChatInterfaceProps {
-  agent: GrokAgent;
+  agent?: GrokAgent;
 }
 
-export default function ChatInterface({ agent }: ChatInterfaceProps) {
+// Main chat component that handles input when agent is available
+function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
@@ -86,7 +88,6 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
       confirmationService.off('confirmation-requested', handleConfirmationRequest);
     };
   }, [confirmationService]);
-
 
   useEffect(() => {
     if (!isProcessing && !isStreaming) {
@@ -180,4 +181,19 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
       )}
     </Box>
   );
+}
+
+// Main component that handles API key input or chat interface
+export default function ChatInterface({ agent }: ChatInterfaceProps) {
+  const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(agent || null);
+
+  const handleApiKeySet = (newAgent: GrokAgent) => {
+    setCurrentAgent(newAgent);
+  };
+
+  if (!currentAgent) {
+    return <ApiKeyInput onApiKeySet={handleApiKeySet} />;
+  }
+
+  return <ChatInterfaceWithAgent agent={currentAgent} />;
 }

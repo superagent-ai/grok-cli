@@ -6,9 +6,35 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 // Load environment variables
 dotenv.config();
+
+// Load API key from user settings if not in environment
+function loadApiKey(): string | undefined {
+  // First check environment variables
+  let apiKey = process.env.GROK_API_KEY;
+  
+  if (!apiKey) {
+    // Try to load from user settings file
+    try {
+      const homeDir = os.homedir();
+      const settingsFile = path.join(homeDir, '.grok', 'user-settings.json');
+      
+      if (fs.existsSync(settingsFile)) {
+        const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+        apiKey = settings.apiKey;
+      }
+    } catch (error) {
+      // Ignore errors, apiKey will remain undefined
+    }
+  }
+  
+  return apiKey;
+}
 
 program
   .name("grok")
@@ -19,18 +45,6 @@ program
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .action((options) => {
-    // Get API key from options or environment
-    const apiKey = options.apiKey || process.env.GROK_API_KEY;
-
-    if (!apiKey) {
-      console.error("❌ Error: Grok API key is required");
-      console.error(
-        "   Set GROK_API_KEY environment variable or use --api-key option"
-      );
-      console.error("   Copy .env.example to .env and add your API key");
-      process.exit(1);
-    }
-
     if (options.directory) {
       try {
         process.chdir(options.directory);
@@ -44,7 +58,9 @@ program
     }
 
     try {
-      const agent = new GrokAgent(apiKey);
+      // Get API key from options, environment, or user settings
+      const apiKey = options.apiKey || loadApiKey();
+      const agent = apiKey ? new GrokAgent(apiKey) : undefined;
 
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
