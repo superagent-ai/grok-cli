@@ -41,7 +41,7 @@
       "enabled": false
     },
     "mcp-hooks": {
-      "enabled": false,
+      "enabled": true,
       "timeout": 60,
       "transport": "stdio",
       "command": "node",

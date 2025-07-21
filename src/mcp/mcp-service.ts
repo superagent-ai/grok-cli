@@ -14,7 +14,6 @@ import {
   MCPListRootsResponse,
   MCPCapabilities,
 } from './types';
-import { MCPSchemaValidator } from './schema-validator';
 
 export class MCPService {
   private resources: Map<string, MCPResource> = new Map();
@@ -26,7 +25,6 @@ export class MCPService {
     resources: true,
     prompts: true,
     roots: true,
-    tools: true,
   };
 
   constructor() {
@@ -46,7 +44,6 @@ export class MCPService {
       name: 'Grok CLI Configuration',
       description: 'Current configuration and settings for Grok CLI',
       mimeType: 'application/json',
-      serverId: 'grok-local',
     });
 
     this.registerResource({
@@ -54,7 +51,6 @@ export class MCPService {
       name: 'Chat History',
       description: 'Recent chat history and interactions',
       mimeType: 'text/plain',
-      serverId: 'grok-local',
     });
 
     this.registerResource({
@@ -62,7 +58,6 @@ export class MCPService {
       name: 'Available Tools',
       description: 'List of available tools and their descriptions',
       mimeType: 'application/json',
-      serverId: 'grok-local',
     });
 
     // Initialize default prompts
@@ -158,308 +153,8 @@ export class MCPService {
     return this.capabilities;
   }
 
-  // Tools Management
-  async listTools(): Promise<{ tools: any[] }> {
-    const tools = [
-      {
-        name: 'view_file',
-        description: 'View contents of a file or list directory contents',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file or directory to view'
-            }
-          },
-          required: ['path']
-        }
-      },
-      {
-        name: 'create_file',
-        description: 'Create a new file with specified content',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path where to create the file'
-            },
-            content: {
-              type: 'string',
-              description: 'Content to write to the file'
-            }
-          },
-          required: ['path', 'content']
-        }
-      },
-      {
-        name: 'str_replace_editor',
-        description: 'Replace specific text in a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file to edit'
-            },
-            old_string: {
-              type: 'string',
-              description: 'Text to replace'
-            },
-            new_string: {
-              type: 'string',
-              description: 'Replacement text'
-            }
-          },
-          required: ['path', 'old_string', 'new_string']
-        }
-      },
-      {
-        name: 'bash',
-        description: 'Execute a bash command',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            command: {
-              type: 'string',
-              description: 'Bash command to execute'
-            }
-          },
-          required: ['command']
-        }
-      },
-      {
-        name: 'create_todo_list',
-        description: 'Create a new todo list for planning and tracking tasks',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            title: {
-              type: 'string',
-              description: 'Title for the todo list'
-            },
-            tasks: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Initial tasks to add to the list'
-            }
-          },
-          required: ['title']
-        }
-      },
-      {
-        name: 'update_todo_list',
-        description: 'Update existing todos in the todo list',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            tasks: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  content: { type: 'string' },
-                  status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] }
-                },
-                required: ['id', 'content', 'status']
-              },
-              description: 'Updated tasks'
-            }
-          },
-          required: ['tasks']
-        }
-      },
-    ];
-
-    return { tools };
-  }
-
-  async callTool(name: string, args: any): Promise<{ content: any[] }> {
-    switch (name) {
-      case 'view_file':
-        return this.handleViewFile(args);
-      case 'create_file':
-        return this.handleCreateFile(args);
-      case 'str_replace_editor':
-        return this.handleStrReplaceEditor(args);
-      case 'bash':
-        return this.handleBash(args);
-      case 'create_todo_list':
-        return this.handleCreateTodoList(args);
-      case 'update_todo_list':
-        return this.handleUpdateTodoList(args);
-      default:
-        throw new Error(`Tool not found: ${name}`);
-    }
-  }
-
-  private async handleViewFile(args: any): Promise<{ content: any[] }> {
-    const filePath = args.path;
-    if (!filePath) {
-      throw new Error('Path parameter is required');
-    }
-
-    const absolutePath = path.resolve(filePath);
-    if (!this.isPathAllowed(absolutePath)) {
-      throw new Error('Path not allowed by MCP roots');
-    }
-
-    try {
-      const stats = await fs.stat(absolutePath);
-      if (stats.isDirectory()) {
-        const files = await fs.readdir(absolutePath);
-        return {
-          content: [{
-            type: 'text',
-            text: `Directory contents of ${absolutePath}:\n${files.join('\n')}`
-          }]
-        };
-      } else {
-        const content = await fs.readFile(absolutePath, 'utf-8');
-        return {
-          content: [{
-            type: 'text',
-            text: content
-          }]
-        };
-      }
-    } catch (error) {
-      throw new Error(`Failed to read ${absolutePath}: ${error}`);
-    }
-  }
-
-  private async handleCreateFile(args: any): Promise<{ content: any[] }> {
-    const filePath = args.path;
-    const content = args.content;
-    
-    if (!filePath || !content) {
-      throw new Error('Both path and content parameters are required');
-    }
-
-    const absolutePath = path.resolve(filePath);
-    if (!this.isPathAllowed(absolutePath)) {
-      throw new Error('Path not allowed by MCP roots');
-    }
-
-    try {
-      await fs.ensureDir(path.dirname(absolutePath));
-      await fs.writeFile(absolutePath, content, 'utf-8');
-      return {
-        content: [{
-          type: 'text',
-          text: `File created successfully: ${absolutePath}`
-        }]
-      };
-    } catch (error) {
-      throw new Error(`Failed to create file ${absolutePath}: ${error}`);
-    }
-  }
-
-  private async handleStrReplaceEditor(args: any): Promise<{ content: any[] }> {
-    const filePath = args.path;
-    const oldString = args.old_string;
-    const newString = args.new_string;
-
-    if (!filePath || !oldString || newString === undefined) {
-      throw new Error('path, old_string, and new_string parameters are required');
-    }
-
-    const absolutePath = path.resolve(filePath);
-    if (!this.isPathAllowed(absolutePath)) {
-      throw new Error('Path not allowed by MCP roots');
-    }
-
-    try {
-      const content = await fs.readFile(absolutePath, 'utf-8');
-      const newContent = content.replace(new RegExp(oldString, 'g'), newString);
-      await fs.writeFile(absolutePath, newContent, 'utf-8');
-      return {
-        content: [{
-          type: 'text',
-          text: `File updated successfully: ${absolutePath}`
-        }]
-      };
-    } catch (error) {
-      throw new Error(`Failed to update file ${absolutePath}: ${error}`);
-    }
-  }
-
-  private async handleBash(args: any): Promise<{ content: any[] }> {
-    const command = args.command;
-    if (!command) {
-      throw new Error('Command parameter is required');
-    }
-
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
-
-    try {
-      const { stdout, stderr } = await execAsync(command, { 
-        cwd: process.cwd(),
-        timeout: 30000,
-        maxBuffer: 1024 * 1024 // 1MB buffer
-      });
-      
-      const output = stdout + (stderr ? `\nStderr: ${stderr}` : '');
-      return {
-        content: [{
-          type: 'text',
-          text: output || 'Command executed successfully with no output'
-        }]
-      };
-    } catch (error: any) {
-      throw new Error(`Command failed: ${error.message}`);
-    }
-  }
-
-  private async handleCreateTodoList(args: any): Promise<{ content: any[] }> {
-    const title = args.title;
-    const tasks = args.tasks || [];
-
-    if (!title) {
-      throw new Error('Title parameter is required');
-    }
-
-    const todoList = {
-      title,
-      tasks: tasks.map((task: string, index: number) => ({
-        id: `task-${Date.now()}-${index}`,
-        content: task,
-        status: 'pending' as const
-      }))
-    };
-
-    return {
-      content: [{
-        type: 'text',
-        text: `Todo list "${title}" created with ${tasks.length} tasks`
-      }]
-    };
-  }
-
-  private async handleUpdateTodoList(args: any): Promise<{ content: any[] }> {
-    const tasks = args.tasks;
-    if (!tasks || !Array.isArray(tasks)) {
-      throw new Error('Tasks parameter must be an array');
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: `Updated ${tasks.length} tasks in todo list`
-      }]
-    };
-  }
-
   // Resource Management
   registerResource(resource: MCPResource): void {
-    const validation = MCPSchemaValidator.validateResource(resource);
-    if (!validation.valid) {
-      throw new Error(`Invalid resource: ${validation.errors.join(', ')}`);
-    }
     this.resources.set(resource.uri, resource);
   }
 
@@ -559,112 +254,26 @@ export class MCPService {
       {
         name: 'view_file',
         description: 'View contents of a file or list directory contents',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file or directory to view'
-            }
-          },
-          required: ['path']
-        }
       },
       {
         name: 'create_file',
         description: 'Create a new file with specified content',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path where to create the file'
-            },
-            content: {
-              type: 'string',
-              description: 'Content to write to the file'
-            }
-          },
-          required: ['path', 'content']
-        }
       },
       {
         name: 'str_replace_editor',
         description: 'Replace specific text in a file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            path: {
-              type: 'string',
-              description: 'Path to the file to edit'
-            },
-            old_string: {
-              type: 'string',
-              description: 'Text to replace'
-            },
-            new_string: {
-              type: 'string',
-              description: 'Replacement text'
-            }
-          },
-          required: ['path', 'old_string', 'new_string']
-        }
       },
       {
         name: 'bash',
         description: 'Execute a bash command',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            command: {
-              type: 'string',
-              description: 'Bash command to execute'
-            }
-          },
-          required: ['command']
-        }
       },
       {
         name: 'create_todo_list',
         description: 'Create a new todo list for planning and tracking tasks',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            title: {
-              type: 'string',
-              description: 'Title for the todo list'
-            },
-            tasks: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Initial tasks to add to the list'
-            }
-          },
-          required: ['title']
-        }
       },
       {
         name: 'update_todo_list',
         description: 'Update existing todos in the todo list',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            tasks: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  content: { type: 'string' },
-                  status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] }
-                },
-                required: ['id', 'content', 'status']
-              },
-              description: 'Updated tasks'
-            }
-          },
-          required: ['tasks']
-        }
       },
     ];
 
@@ -713,10 +322,6 @@ export class MCPService {
 
   // Prompt Management
   registerPrompt(prompt: MCPPrompt, template: MCPPromptMessage[]): void {
-    const validation = MCPSchemaValidator.validatePrompt(prompt);
-    if (!validation.valid) {
-      throw new Error(`Invalid prompt: ${validation.errors.join(', ')}`);
-    }
     this.prompts.set(prompt.name, prompt);
     this.promptTemplates.set(prompt.name, template);
   }
@@ -772,11 +377,6 @@ export class MCPService {
 
   // Roots Management
   addRoot(root: MCPRoot): void {
-    const validation = MCPSchemaValidator.validateRoot(root);
-    if (!validation.valid) {
-      throw new Error(`Invalid root: ${validation.errors.join(', ')}`);
-    }
-    
     // Check if root already exists
     const exists = this.roots.some(r => r.uri === root.uri);
     if (!exists) {
@@ -821,7 +421,6 @@ export class MCPService {
             name: entry.name,
             description: `File: ${fullPath}`,
             mimeType: this.getMimeType(fullPath),
-            serverId: 'grok-local',
           });
         } else if (entry.isDirectory() && recursive) {
           await this.registerDirectoryResources(fullPath, recursive);

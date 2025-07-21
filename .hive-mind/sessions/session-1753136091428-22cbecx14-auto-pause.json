@@ -1,0 +1,20 @@
+{
+  "sessionId": "session-1753136091428-22cbecx14",
+  "checkpointId": "checkpoint-1753136115677-cnt9xusbx",
+  "checkpointName": "auto-pause",
+  "timestamp": "2025-07-21T22:15:15.677Z",
+  "data": {
+    "timestamp": "2025-07-21T22:15:15.677Z",
+    "swarmId": "swarm-1753136091428-wffviejpb",
+    "objective": "add MCP Model Context Protocol support for Resouces, Prompts, Roots",
+    "workerCount": 4,
+    "workerTypes": [
+      "researcher",
+      "coder",
+      "analyst",
+      "tester"
+    ],
+    "status": "paused_by_user",
+    "reason": "User pressed Ctrl+C"
+  }
+}

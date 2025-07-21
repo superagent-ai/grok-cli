@@ -11,9 +11,6 @@ import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
-import { MCPManager } from "../mcp/manager";
-import { MCPConfigManager } from "../mcp/config";
-import { MCPTool } from "../mcp/types";
 import { MCPService } from "../mcp/mcp-service";
 
 export interface ChatEntry {
@@ -40,13 +37,11 @@ export class GrokAgent extends EventEmitter {
   private textEditor: TextEditorTool;
   private bash: BashTool;
   private todoTool: TodoTool;
-  private confirmation: ConfirmationTool;
-  private mcpManager: MCPManager;
-  private mcpConfigManager: MCPConfigManager;
+  private confirmationTool: ConfirmationTool;
   private mcpService: MCPService;
   private search: SearchTool;
   private chatHistory: ChatEntry[] = [];
-  private messages: any[] = [];
+  private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
 
@@ -56,15 +51,10 @@ export class GrokAgent extends EventEmitter {
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
-    this.confirmation = new ConfirmationTool();
-    this.mcpConfigManager = new MCPConfigManager();
-    this.mcpManager = new MCPManager(this.mcpConfigManager);
+    this.confirmationTool = new ConfirmationTool();
     this.mcpService = new MCPService();
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter("grok-4-latest");
-
-    // Initialize MCP connections
-    this.initializeMCP();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -145,32 +135,6 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
-  private async initializeMCP(): Promise<void> {
-    try {
-      await this.mcpManager.initialize();
-    } catch (error) {
-      console.warn('Failed to initialize MCP:', error);
-    }
-  }
-
-  private async getAllTools(): Promise<any[]> {
-    try {
-      const mcpTools = await this.mcpManager.getAvailableTools();
-      const convertedMcpTools = mcpTools.map(tool => ({
-        type: 'function',
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.inputSchema
-        }
-      }));
-      return [...GROK_TOOLS, ...convertedMcpTools];
-    } catch (error) {
-      console.warn('Failed to get MCP tools:', error);
-      return GROK_TOOLS;
-    }
-  }
-
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -186,10 +150,9 @@ Current working directory: ${process.cwd()}`,
     let toolRounds = 0;
 
     try {
-      const allTools = await this.getAllTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        allTools,
+        GROK_TOOLS,
         undefined,
         { search_parameters: { mode: "auto" } }
       );
@@ -283,7 +246,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            allTools,
+            GROK_TOOLS,
             undefined,
             { search_parameters: { mode: "auto" } }
           );
@@ -401,14 +364,12 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
-        const allTools = await this.getAllTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          allTools,
+          GROK_TOOLS,
           undefined,
           { search_parameters: { mode: "auto" } }
         );
-
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let toolCallsYielded = false;
@@ -716,13 +677,6 @@ Current working directory: ${process.cwd()}`,
           });
 
         default:
-          // Check if it's an MCP tool
-          const mcpTools = await this.mcpManager.getAvailableTools();
-          const mcpTool = mcpTools.find(tool => tool.name === toolCall.function.name);
-          if (mcpTool) {
-            return await this.mcpManager.executeTool(toolCall.function.name, args);
-          }
-          
           return {
             success: false,
             error: `Unknown tool: ${toolCall.function.name}`,

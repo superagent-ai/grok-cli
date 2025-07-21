@@ -1,104 +1,4 @@
-export interface MCPServerConfig {
-  command?: string;
-  args?: string[];
-  url?: string;
-  transport: 'stdio' | 'sse' | 'https';
-  env?: Record<string, string>;
-  headers?: Record<string, string>;
-  timeout?: number;
-  enabled: boolean;
-}
-
-export interface MCPConfig {
-  mcpServers: Record<string, MCPServerConfig>;
-  globalSettings: {
-    timeout: number;
-    retryAttempts: number;
-    logLevel: 'debug' | 'info' | 'warn' | 'error';
-  };
-}
-
-export interface MCPTool {
-  name: string;
-  description: string;
-  inputSchema: any;
-  serverId: string;
-}
-
 export interface MCPResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-  serverId?: string;
-}
-
-export interface MCPServerStatus {
-  id: string;
-  status: 'connected' | 'disconnected' | 'connecting' | 'error';
-  lastActivity?: Date;
-  error?: string;
-  tools: MCPTool[];
-  resources: MCPResource[];
-  prompts: MCPPrompt[];
-}
-
-export interface MCPMessage {
-  jsonrpc: '2.0';
-  id?: string | number;
-  method?: string;
-  params?: any;
-  result?: any;
-  error?: {
-    code: number;
-    message: string;
-    data?: any;
-  };
-}
-
-export interface MCPTransport {
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  send(message: MCPMessage): Promise<void>;
-  onMessage(callback: (message: MCPMessage) => void): void;
-  onError(callback: (error: Error) => void): void;
-  onClose(callback: () => void): void;
-  isConnected(): boolean;
-}
-
-export interface MCPClientOptions {
-  serverId: string;
-  config: MCPServerConfig;
-  onStatusChange?: (status: MCPServerStatus) => void;
-  onToolsUpdated?: (tools: MCPTool[]) => void;
-  onResourcesUpdated?: (resources: MCPResource[]) => void;
-  onPromptsUpdated?: (prompts: MCPPrompt[]) => void;
-}
-
-export class MCPError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public serverId?: string,
-    public originalError?: Error
-  ) {
-    super(message);
-    this.name = 'MCPError';
-  }
-}
-
-export interface MCPToolCall {
-  name: string;
-  arguments: Record<string, any>;
-  serverId: string;
-}
-
-export interface MCPToolResult {
-  success: boolean;
-  content?: any;
-  error?: string;
-  isText?: boolean;
-}export interface MCPResource {
   uri: string;
   name: string;
   description?: string;
@@ -119,7 +19,6 @@ export interface MCPPrompt {
     description?: string;
     required: boolean;
   }>;
-  serverId?: string;
 }
 
 export interface MCPPromptMessage {
@@ -136,7 +35,6 @@ export interface MCPCapabilities {
   resources?: boolean;
   prompts?: boolean;
   roots?: boolean;
-  tools?: boolean;
 }
 
 export interface MCPServer {
