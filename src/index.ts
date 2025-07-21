@@ -6,6 +6,7 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
+import { createMCPCommands } from "./cli/mcp-commands";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -43,7 +44,12 @@ program
   )
   .version("1.0.0")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
-  .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
+  .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)");
+
+// Add MCP commands
+program.addCommand(createMCPCommands());
+
+program
   .action((options) => {
     if (options.directory) {
       try {

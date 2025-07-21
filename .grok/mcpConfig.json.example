@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "."],
+      "transport": "stdio",
+      "enabled": true,
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    "git": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-git"],
+      "transport": "stdio",
+      "enabled": true
+    },
+    "project-specific-tool": {
+      "command": "node",
+      "args": ["./scripts/mcp-server.js"],
+      "transport": "stdio",
+      "enabled": false,
+      "timeout": 30000
+    }
+  },
+  "globalSettings": {
+    "timeout": 10000,
+    "retryAttempts": 3,
+    "logLevel": "info"
+  }
+}

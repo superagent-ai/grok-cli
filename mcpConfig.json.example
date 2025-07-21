@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"],
+      "transport": "stdio",
+      "enabled": true,
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "git": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-git"],
+      "transport": "stdio",
+      "enabled": true
+    },
+    "web-search": {
+      "url": "https://api.example.com/mcp",
+      "transport": "sse",
+      "enabled": true,
+      "env": {
+        "API_KEY": "${SEARCH_API_KEY}"
+      }
+    },
+    "database": {
+      "url": "wss://db.example.com/mcp",
+      "transport": "https",
+      "enabled": false,
+      "env": {
+        "DB_CONNECTION_STRING": "${DATABASE_URL}"
+      }
+    }
+  },
+  "globalSettings": {
+    "timeout": 30000,
+    "retryAttempts": 3,
+    "logLevel": "info"
+  }
+}

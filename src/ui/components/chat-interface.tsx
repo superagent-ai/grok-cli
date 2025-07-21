@@ -7,6 +7,7 @@ import { CommandSuggestions } from "./command-suggestions";
 import { ModelSelection } from "./model-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
+import { MCPStatus } from "./mcp-status";
 import ConfirmationDialog from "./confirmation-dialog";
 import { ConfirmationService, ConfirmationOptions } from "../../utils/confirmation-service";
 import ApiKeyInput from "./api-key-input";
@@ -24,6 +25,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const [tokenCount, setTokenCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
+  const [mcpExpanded, setMcpExpanded] = useState(false);
   const scrollRef = useRef<any>();
   const processingStartTime = useRef<number>(0);
   
@@ -132,6 +134,12 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
           Type your request in natural language. Type 'exit' or Ctrl+C to quit.
         </Text>
       </Box>
+
+      <MCPStatus 
+        agent={agent} 
+        isExpanded={mcpExpanded} 
+        onToggleExpanded={() => setMcpExpanded(!mcpExpanded)} 
+      />
 
       <Box flexDirection="column" ref={scrollRef}>
         <ChatHistory entries={chatHistory} />

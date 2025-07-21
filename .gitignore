@@ -91,3 +91,8 @@ temp/
 
 # Coding agents
 .claude/
+mcpConfig.json
+.vercel/project.json
+.trae/documents/mcp-integration-requirements.md
+mcpConfig.json
+.grok/mcpConfig.json

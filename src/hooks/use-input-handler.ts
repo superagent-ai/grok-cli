@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useInput, useApp } from "ink";
+import chalk from "chalk";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 
@@ -51,6 +52,7 @@ export function useInputHandler({
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/models", description: "Switch Grok Model" },
+    { command: "/mcp", description: "Show MCP server status" },
     { command: "/exit", description: "Exit the application" },
   ];
 
@@ -92,6 +94,10 @@ Built-in Commands:
   /clear      - Clear chat history
   /help       - Show this help
   /models     - Switch Grok models
+  /mcp        - Show MCP server status and tools
+    /mcp -d   - Show detailed tool descriptions and schemas
+    /mcp -t   - Show only tools
+    /mcp -s   - Show only servers
   /exit       - Exit application
   exit, quit  - Exit application
 
@@ -102,6 +108,9 @@ Direct Commands (executed immediately):
   cat <file>  - View file contents
   mkdir <dir> - Create directory
   touch <file>- Create empty file
+
+Keyboard Shortcuts:
+  Tab         - Toggle MCP status display (expand/collapse)
 
 For complex operations, just describe what you want in natural language.
 Examples:
@@ -140,6 +149,181 @@ Examples:
           content: `Invalid model: ${modelArg}
 
 Available models: ${modelNames.join(", ")}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/mcp" || trimmedInput.startsWith("/mcp ")) {
+      try {
+        const mcpManager = (agent as any).mcpManager;
+        if (!mcpManager) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: "MCP manager not available",
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          setInput("");
+          return true;
+        }
+
+        const args = trimmedInput.split(" ").slice(1);
+        const showDetailed = args.includes("--detailed") || args.includes("-d");
+        const showTools = args.includes("--tools") || args.includes("-t") || args.length === 0;
+        const showServers = args.includes("--servers") || args.includes("-s") || args.length === 0;
+
+        const serverStatuses = mcpManager.getServerStatuses();
+        const allTools = mcpManager.getAllTools();
+        const configManager = mcpManager.getConfigManager();
+        
+        const connectedServers = Object.values(serverStatuses).filter(
+          (status: any) => status.status === 'connected'
+        );
+        
+        const disconnectedServers = Object.values(serverStatuses).filter(
+          (status: any) => status.status !== 'connected'
+        );
+        
+        // Calculate scope counts
+        const scopeCounts = { project: 0, user: 0, local: 0, fallback: 0 };
+        Object.values(serverStatuses).forEach((status: any) => {
+          const scope = configManager?.getServerScope(status.id) || 'fallback';
+          scopeCounts[scope]++;
+        });
+
+        // Build scope display
+        const scopeDisplay = [];
+        if (scopeCounts.project > 0) {
+          scopeDisplay.push(chalk.cyan(`Project:${scopeCounts.project}`));
+        }
+        if (scopeCounts.user > 0) {
+          scopeDisplay.push(chalk.green(`User:${scopeCounts.user}`));
+        }
+        if (scopeCounts.local > 0) {
+          scopeDisplay.push(chalk.yellow(`Local:${scopeCounts.local}`));
+        }
+        if (scopeCounts.fallback > 0) {
+          scopeDisplay.push(chalk.gray(`Fallback:${scopeCounts.fallback}`));
+        }
+        
+        const scopeText = scopeDisplay.length > 0 ? ` (${scopeDisplay.join(' ')})` : '';
+        
+        let statusContent = `🔧 ${chalk.bold('MCP Server Status')}\n\n`;
+        statusContent += `📊 ${chalk.bold('Summary')}: ${chalk.magenta(connectedServers.length)} connected servers${scopeText}, ${chalk.magenta(allTools.length)} total tools\n\n`;
+        
+        if (showServers && connectedServers.length > 0) {
+          statusContent += `${chalk.green('✅ Connected Servers')}:\n`;
+          connectedServers.forEach((server: any) => {
+            const scope = configManager?.getServerScope(server.id) || 'fallback';
+            const scopeColor = scope === 'project' ? chalk.cyan : 
+                              scope === 'user' ? chalk.green : 
+                              scope === 'local' ? chalk.yellow : chalk.gray;
+            statusContent += `  • ${chalk.cyan(server.id)} ${scopeColor(`[${scope}]`)} (${server.tools?.length || 0} tools)\n`;
+          });
+          statusContent += `\n`;
+        }
+        
+        if (showServers && disconnectedServers.length > 0) {
+          statusContent += `${chalk.red('❌ Disconnected/Error Servers')}:\n`;
+          disconnectedServers.forEach((server: any) => {
+            const scope = configManager?.getServerScope(server.id) || 'fallback';
+            const scopeColor = scope === 'project' ? chalk.cyan : 
+                              scope === 'user' ? chalk.green : 
+                              scope === 'local' ? chalk.yellow : chalk.gray;
+            const statusIcon = server.status === 'connecting' ? '🔄' : '❌';
+            statusContent += `  ${statusIcon} ${chalk.cyan(server.id)} ${scopeColor(`[${scope}]`)} (${chalk.red(server.status)})`;
+            if (server.error) {
+              statusContent += ` - ${chalk.red(server.error)}`;
+            }
+            statusContent += `\n`;
+          });
+          statusContent += `\n`;
+        }
+        
+        if (showTools && allTools.length > 0) {
+          statusContent += `${chalk.blue('🛠️ Available Tools')}:\n`;
+          
+          if (showDetailed) {
+            // Group tools by server for detailed view
+            const toolsByServer = new Map();
+            allTools.forEach((tool: any) => {
+              if (!toolsByServer.has(tool.serverId)) {
+                toolsByServer.set(tool.serverId, []);
+              }
+              toolsByServer.get(tool.serverId).push(tool);
+            });
+            
+            toolsByServer.forEach((tools: any[], serverId: string) => {
+              const scope = configManager?.getServerScope(serverId) || 'fallback';
+              const scopeColor = scope === 'project' ? chalk.cyan : 
+                                scope === 'user' ? chalk.green : 
+                                scope === 'local' ? chalk.yellow : chalk.gray;
+              statusContent += `\n  📁 ${chalk.cyan(serverId)} ${scopeColor(`[${scope}]`)}:\n`;
+              tools.forEach((tool: any) => {
+                statusContent += `    🔧 ${chalk.yellow(tool.name)}\n`;
+                if (tool.description) {
+                  statusContent += `       📝 ${chalk.gray(tool.description)}\n`;
+                }
+                if (tool.inputSchema) {
+                  statusContent += `       📋 ${chalk.blue('Schema')}: `;
+                  if (tool.inputSchema.properties) {
+                    const props = Object.keys(tool.inputSchema.properties);
+                    statusContent += `{${chalk.green(props.join(', '))}}\n`;
+                  } else {
+                    statusContent += `${JSON.stringify(tool.inputSchema, null, 2).replace(/\n/g, '\n           ')}\n`;
+                  }
+                }
+                statusContent += `\n`;
+              });
+            });
+          } else {
+            // Simple view - just tool names grouped by server
+            const toolsByServer = new Map();
+            allTools.forEach((tool: any) => {
+              if (!toolsByServer.has(tool.serverId)) {
+                toolsByServer.set(tool.serverId, []);
+              }
+              toolsByServer.get(tool.serverId).push(tool.name);
+            });
+            
+            toolsByServer.forEach((tools: string[], serverId: string) => {
+              const scope = configManager?.getServerScope(serverId) || 'fallback';
+              const scopeColor = scope === 'project' ? chalk.cyan : 
+                                scope === 'user' ? chalk.green : 
+                                scope === 'local' ? chalk.yellow : chalk.gray;
+              statusContent += `  📁 ${chalk.cyan(serverId)} ${scopeColor(`[${scope}]`)}: ${chalk.yellow(tools.join(', '))}\n`;
+            });
+            
+            statusContent += `\n💡 Use ${chalk.cyan("'/mcp --detailed'")} or ${chalk.cyan("'/mcp -d'")} to see tool descriptions and schemas\n`;
+          }
+        }
+        
+        if (args.length === 0) {
+          statusContent += `\n${chalk.blue('📖 Usage')}:\n`;
+          statusContent += `  ${chalk.cyan('/mcp')}              - Show summary (default)\n`;
+          statusContent += `  ${chalk.cyan('/mcp --detailed')}   - Show detailed tool info with descriptions and schemas\n`;
+          statusContent += `  ${chalk.cyan('/mcp --tools')}      - Show only tools\n`;
+          statusContent += `  ${chalk.cyan('/mcp --servers')}    - Show only servers\n`;
+          statusContent += `  ${chalk.cyan('/mcp -d')}           - Short for --detailed\n`;
+          statusContent += `  ${chalk.cyan('/mcp -t')}           - Short for --tools\n`;
+          statusContent += `  ${chalk.cyan('/mcp -s')}           - Short for --servers\n`;
+        }
+
+        const mcpEntry: ChatEntry = {
+          type: "assistant",
+          content: statusContent,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, mcpEntry]);
+      } catch (error: any) {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Error getting MCP status: ${error.message}`,
           timestamp: new Date(),
         };
         setChatHistory((prev) => [...prev, errorEntry]);
