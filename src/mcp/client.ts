@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { MCPTransport, MCPMessage, MCPServerConfig, MCPClientOptions, MCPServerStatus, MCPTool, MCPResource, MCPError, MCPToolCall, MCPToolResult } from './types';
+import { MCPTransport, MCPMessage, MCPServerConfig, MCPClientOptions, MCPServerStatus, MCPTool, MCPResource, MCPPrompt, MCPError, MCPToolCall, MCPToolResult } from './types';
 import { createTransport } from './transports';
 
 export class MCPClient extends EventEmitter {
@@ -8,6 +8,7 @@ export class MCPClient extends EventEmitter {
   private messageId = 0;
   private tools: MCPTool[] = [];
   private resources: MCPResource[] = [];
+  private prompts: MCPPrompt[] = [];
   private initialized = false;
   private pendingRequests = new Map<string | number, {
     resolve: (value: any) => void;
@@ -23,7 +24,8 @@ export class MCPClient extends EventEmitter {
       id: options.serverId,
       status: 'disconnected',
       tools: [],
-      resources: []
+      resources: [],
+      prompts: []
     };
 
     this.setupTransportHandlers();
@@ -148,6 +150,42 @@ export class MCPClient extends EventEmitter {
     }
   }
 
+  async listPrompts(): Promise<MCPPrompt[]> {
+    if (!this.isConnected()) {
+      throw new MCPError('Client not connected', 'NOT_CONNECTED', this.options.serverId);
+    }
+
+    try {
+      const response = await this.sendRequest('prompts/list');
+      return response.prompts || [];
+    } catch (error) {
+      throw new MCPError(
+        `Failed to list prompts: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'PROMPT_LIST_ERROR',
+        this.options.serverId,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  async getPrompt(name: string, args: Record<string, string> = {}): Promise<any> {
+    if (!this.isConnected()) {
+      throw new MCPError('Client not connected', 'NOT_CONNECTED', this.options.serverId);
+    }
+
+    try {
+      const response = await this.sendRequest('prompts/get', { name, arguments: args });
+      return response;
+    } catch (error) {
+      throw new MCPError(
+        `Failed to get prompt: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'PROMPT_GET_ERROR',
+        this.options.serverId,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
   getStatus(): MCPServerStatus {
     return { ...this.status };
   }
@@ -158,6 +196,10 @@ export class MCPClient extends EventEmitter {
 
   getResources(): MCPResource[] {
     return [...this.resources];
+  }
+
+  getPrompts(): MCPPrompt[] {
+    return [...this.prompts];
   }
 
   isConnected(): boolean {
@@ -248,6 +290,10 @@ export class MCPClient extends EventEmitter {
         this.discoverResources();
         break;
       
+      case 'notifications/prompts/list_changed':
+        this.discoverPrompts();
+        break;
+      
       default:
         // Emit unknown notifications for custom handling
         this.emit('notification', message);
@@ -271,7 +317,8 @@ export class MCPClient extends EventEmitter {
         protocolVersion: '2024-11-05',
         capabilities: {
           tools: {},
-          resources: {}
+          resources: {},
+          prompts: {}
         },
         clientInfo: {
           name: 'grok-cli',
@@ -317,7 +364,8 @@ export class MCPClient extends EventEmitter {
   private async discoverCapabilities(): Promise<void> {
     await Promise.all([
       this.discoverTools(),
-      this.discoverResources()
+      this.discoverResources(),
+      this.discoverPrompts()
     ]);
   }
 
@@ -359,6 +407,30 @@ export class MCPClient extends EventEmitter {
         this.options.onResourcesUpdated?.(this.resources);
       } else {
         console.warn(`Failed to discover resources for ${this.options.serverId}:`, error);
+      }
+    }
+  }
+
+  private async discoverPrompts(): Promise<void> {
+    try {
+      const response = await this.sendRequest('prompts/list');
+      this.prompts = (response.prompts || []).map((prompt: any) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments || [],
+        serverId: this.options.serverId
+      }));
+      
+      this.status.prompts = this.prompts;
+      this.options.onPromptsUpdated?.(this.prompts);
+    } catch (error) {
+      // Silently handle "Method not found" errors as prompts/list is optional
+      if (error instanceof MCPError && error.message.includes('Method not found')) {
+        this.prompts = [];
+        this.status.prompts = this.prompts;
+        this.options.onPromptsUpdated?.(this.prompts);
+      } else {
+        console.warn(`Failed to discover prompts for ${this.options.serverId}:`, error);
       }
     }
   }

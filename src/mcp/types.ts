@@ -40,6 +40,7 @@ export interface MCPServerStatus {
   error?: string;
   tools: MCPTool[];
   resources: MCPResource[];
+  prompts: MCPPrompt[];
 }
 
 export interface MCPMessage {
@@ -71,6 +72,7 @@ export interface MCPClientOptions {
   onStatusChange?: (status: MCPServerStatus) => void;
   onToolsUpdated?: (tools: MCPTool[]) => void;
   onResourcesUpdated?: (resources: MCPResource[]) => void;
+  onPromptsUpdated?: (prompts: MCPPrompt[]) => void;
 }
 
 export class MCPError extends Error {
@@ -117,6 +119,7 @@ export interface MCPPrompt {
     description?: string;
     required: boolean;
   }>;
+  serverId?: string;
 }
 
 export interface MCPPromptMessage {

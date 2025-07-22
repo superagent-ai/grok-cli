@@ -20,6 +20,7 @@ interface MCPStatusSummary {
     status: string;
     toolCount: number;
     resourceCount: number;
+    promptCount: number;
     error?: string;
     scope?: 'project' | 'user' | 'local' | 'fallback';
   }>;
@@ -57,11 +58,24 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
         const { MCPService } = await import('../../mcp/mcp-service');
         const service = new MCPService();
         
-        const [resourcesResponse, promptsResponse, rootsResponse] = await Promise.all([
-          service.listResources(),
-          service.listPrompts(),
-          service.listRoots()
-        ]);
+        // Initialize response objects with error handling
+        let resourcesResponse = { resources: [] };
+        let promptsResponse = { prompts: [] };
+        let rootsResponse = { roots: [] };
+        
+        try {
+          const [resRes, promptRes, rootRes] = await Promise.allSettled([
+            service.listResources(),
+            service.listPrompts(),
+            service.listRoots()
+          ]);
+          
+          if (resRes.status === 'fulfilled') resourcesResponse = resRes.value;
+          if (promptRes.status === 'fulfilled') promptsResponse = promptRes.value;
+          if (rootRes.status === 'fulfilled') rootsResponse = rootRes.value;
+        } catch (error) {
+          console.error('Error fetching MCP data:', error);
+        }
         
         const connectedServers = Object.values(serverStatuses).filter(
           (status: any) => status.status === 'connected'
@@ -78,6 +92,7 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
             status: status.status,
             toolCount: status.tools?.length || 0,
             resourceCount: status.resources?.length || 0,
+            promptCount: status.prompts?.length || 0,
             error: status.error,
             scope
           };
@@ -93,7 +108,15 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
           scopeCounts
         });
       } catch (error) {
-        // Silently handle errors
+        console.error('Error updating MCP status:', error);
+        // Set empty state with error indication
+        setStatusSummary(prev => ({
+          ...prev,
+          serverDetails: prev.serverDetails.map(server => ({
+            ...server,
+            error: server.error || 'Connection lost'
+          }))
+        }));
       }
     };
 
@@ -142,8 +165,11 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
   }
   
   const scopeText = scopeDisplay.length > 0 ? ` (${scopeDisplay.join(' ')})` : '';
-  const displayText = `${statusSummary.connectedServers} MCP Server${statusSummary.connectedServers !== 1 ? 's' : ''}${scopeText} ${statusSummary.totalTools} Tools ${statusSummary.totalResources} Resources ${statusSummary.totalPrompts} Prompts ${statusSummary.totalRoots} Roots`;
   
+  // Enhanced display with icons and counts
+  const displayText = `${statusSummary.connectedServers} MCP Server${statusSummary.connectedServers !== 1 ? 's' : ''}${scopeText} ${statusSummary.totalTools}🔧 ${statusSummary.totalResources}📁 ${statusSummary.totalPrompts}📝 ${statusSummary.totalRoots}🏠`;
+  
+  // Summary text for expanded view
   const summaryText = `
 ${statusSummary.connectedServers} MCP Servers ${statusSummary.totalTools} Tools ${statusSummary.totalResources} Resources ${statusSummary.totalPrompts} Prompts ${statusSummary.totalRoots} Roots`;
   const compactText = `${statusSummary.connectedServers}🔧${statusSummary.totalTools}📁${statusSummary.totalResources}📝${statusSummary.totalPrompts}🏠${statusSummary.totalRoots}`;
@@ -157,6 +183,9 @@ ${statusSummary.connectedServers} MCP Servers ${statusSummary.totalTools} Tools 
           <Text>{scopeText}</Text>
           <Text color="magenta"> {statusSummary.totalTools}</Text>
           <Text color="cyan"> Tools</Text>
+          <Text color="green"> {statusSummary.totalResources} Resources</Text>
+          <Text color="yellow"> {statusSummary.totalPrompts} Prompts</Text>
+          <Text color="blue"> {statusSummary.totalRoots} Roots</Text>
           <Text dimColor> (press Tab to expand or use /mcp for details)</Text>
         </Text>
       </Box>
@@ -188,7 +217,7 @@ ${statusSummary.connectedServers} MCP Servers ${statusSummary.totalTools} Tools 
                   {getStatusIcon(server.status)}
                   <Text color={getStatusColor(server.status)}> {server.id}</Text>
                   <Text color={scopeColor}> [{server.scope}]</Text>
-                  <Text dimColor> ({server.toolCount} tools)</Text>
+                  <Text dimColor> ({server.toolCount}🔧 {server.resourceCount}📁 {server.promptCount}📝)</Text>
                   {server.error && (
                     <Text color="red"> - {server.error}</Text>
                   )}

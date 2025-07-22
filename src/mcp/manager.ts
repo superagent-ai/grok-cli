@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { MCPConfigManager } from './config';
 import { MCPClient } from './client';
-import { MCPConfig, MCPServerConfig, MCPServerStatus, MCPTool, MCPResource, MCPError, MCPToolCall, MCPToolResult } from './types';
+import { MCPConfig, MCPServerConfig, MCPServerStatus, MCPTool, MCPResource, MCPPrompt, MCPError, MCPToolCall, MCPToolResult } from './types';
 
 export class MCPManager extends EventEmitter {
   private configManager: MCPConfigManager;
@@ -9,6 +9,7 @@ export class MCPManager extends EventEmitter {
   private serverStatuses = new Map<string, MCPServerStatus>();
   private allTools: MCPTool[] = [];
   private allResources: MCPResource[] = [];
+  private allPrompts: MCPPrompt[] = [];
   private initialized = false;
 
   constructor(configManager: MCPConfigManager) {
@@ -193,12 +194,20 @@ export class MCPManager extends EventEmitter {
     return [...this.allResources];
   }
 
+  getAllPrompts(): MCPPrompt[] {
+    return [...this.allPrompts];
+  }
+
   getToolsByServer(serverId: string): MCPTool[] {
     return this.allTools.filter(tool => tool.serverId === serverId);
   }
 
   getResourcesByServer(serverId: string): MCPResource[] {
     return this.allResources.filter(resource => resource.serverId === serverId);
+  }
+
+  getPromptsByServer(serverId: string): MCPPrompt[] {
+    return this.allPrompts.filter(prompt => prompt.serverId === serverId);
   }
 
   findTool(name: string): MCPTool | null {
@@ -383,6 +392,10 @@ export class MCPManager extends EventEmitter {
       onResourcesUpdated: (resources) => {
         this.updateAggregatedData();
         this.emit('resourcesUpdated', serverId, resources);
+      },
+      onPromptsUpdated: (prompts) => {
+        this.updateAggregatedData();
+        this.emit('promptsUpdated', serverId, prompts);
       }
     });
 
@@ -405,15 +418,18 @@ export class MCPManager extends EventEmitter {
     // Aggregate all tools from all connected clients
     this.allTools = [];
     this.allResources = [];
+    this.allPrompts = [];
     
     for (const client of this.clients.values()) {
       this.allTools.push(...client.getTools());
       this.allResources.push(...client.getResources());
+      this.allPrompts.push(...client.getPrompts());
     }
 
     this.emit('dataUpdated', {
       tools: this.allTools,
-      resources: this.allResources
+      resources: this.allResources,
+      prompts: this.allPrompts
     });
   }
 }
