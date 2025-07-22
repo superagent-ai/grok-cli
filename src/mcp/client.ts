@@ -216,10 +216,18 @@ export class MCPClient extends EventEmitter {
     };
 
     return new Promise((resolve, reject) => {
+      const timeoutMs = (this.options.config.timeout || this.options.config.timeout === 0) 
+        ? this.options.config.timeout * 1000 
+        : 30000; // Default 30 seconds
+      
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new MCPError('Request timeout', 'REQUEST_TIMEOUT', this.options.serverId));
-      }, (this.options.config.timeout || 10) * 1000);
+        reject(new MCPError(
+          `Request timeout after ${timeoutMs}ms`, 
+          'REQUEST_TIMEOUT', 
+          this.options.serverId
+        ));
+      }, timeoutMs);
 
       this.pendingRequests.set(id, {
         resolve,
@@ -344,9 +352,17 @@ export class MCPClient extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
+      const timeoutMs = (this.options.config.timeout || this.options.config.timeout === 0) 
+        ? this.options.config.timeout * 1000 
+        : 30000; // Default 30 seconds
+      
       const timeout = setTimeout(() => {
-        reject(new MCPError('Initialization timeout', 'INIT_TIMEOUT', this.options.serverId));
-      }, (this.options.config.timeout || 10) * 1000);
+        reject(new MCPError(
+          `Initialization timeout after ${timeoutMs}ms`, 
+          'INIT_TIMEOUT', 
+          this.options.serverId
+        ));
+      }, timeoutMs);
 
       const checkInitialized = () => {
         if (this.initialized) {

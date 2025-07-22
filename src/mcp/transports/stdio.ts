@@ -24,6 +24,18 @@ export class StdioTransport extends EventEmitter implements MCPTransport {
       throw new MCPError('Command is required for STDIO transport', 'INVALID_CONFIG', this.serverId);
     }
 
+    // Validate command exists before spawning
+    const { execSync } = require('child_process');
+    try {
+      execSync(`which "${this.config.command}"`, { stdio: 'ignore' });
+    } catch (error) {
+      throw new MCPError(
+        `Command not found: ${this.config.command}`, 
+        'COMMAND_NOT_FOUND', 
+        this.serverId
+      );
+    }
+
     try {
       this.process = spawn(this.config.command, this.config.args || [], {
         stdio: ['pipe', 'pipe', 'pipe'],

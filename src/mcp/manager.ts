@@ -365,11 +365,24 @@ export class MCPManager extends EventEmitter {
     
     const connectionPromises = Object.entries(enabledServers).map(async ([serverId, config]) => {
       try {
+        // Validate command exists for stdio transport
+        if (config.transport === 'stdio' && config.command) {
+          const { execSync } = require('child_process');
+          try {
+            execSync(`which "${config.command}"`, { stdio: 'ignore' });
+          } catch (error) {
+            console.warn(`MCP server ${serverId}: command not found: ${config.command}`);
+            this.clients.delete(serverId);
+            return;
+          }
+        }
+
         const client = this.createClient(serverId, config);
         this.clients.set(serverId, client);
         await client.connect();
+        console.log(`✅ MCP server ${serverId} connected successfully`);
       } catch (error) {
-        console.warn(`Failed to connect to MCP server ${serverId}:`, error);
+        console.warn(`❌ Failed to connect to MCP server ${serverId}:`, error);
         this.clients.delete(serverId);
       }
     });
