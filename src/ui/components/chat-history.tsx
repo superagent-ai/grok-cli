@@ -6,9 +6,13 @@ import { MarkdownRenderer } from "../utils/markdown-renderer";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
+  isConfirmationActive?: boolean;
 }
 
-export function ChatHistory({ entries }: ChatHistoryProps) {
+export function ChatHistory({
+  entries,
+  isConfirmationActive = false,
+}: ChatHistoryProps) {
   const renderDiff = (diffContent: string, filename?: string) => {
     return (
       <DiffRenderer
@@ -76,6 +80,7 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
           </Box>
         );
 
+      case "tool_call":
       case "tool_result":
         const getToolActionName = (toolName: string) => {
           switch (toolName) {
@@ -87,6 +92,7 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
               return "Create";
             case "bash":
               return "Bash";
+
             case "create_todo_list":
               return "Created Todo";
             case "update_todo_list":
@@ -107,6 +113,7 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
               ) {
                 return "";
               }
+
               return args.path || args.file_path || args.command || "unknown";
             } catch {
               return "unknown";
@@ -119,10 +126,10 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
         const actionName = getToolActionName(toolName);
         const filePath = getToolFilePath(entry.toolCall);
 
-
         const shouldShowDiff =
           toolName === "str_replace_editor" || toolName === "create_file";
         const shouldShowFileContent = toolName === "view_file";
+        const isExecuting = entry.type === "tool_call";
 
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
@@ -134,7 +141,9 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
               </Text>
             </Box>
             <Box marginLeft={2} flexDirection="column">
-              {shouldShowFileContent ? (
+              {isExecuting ? (
+                <Text color="cyan">⎿ Executing...</Text>
+              ) : shouldShowFileContent ? (
                 <Box flexDirection="column">
                   <Text color="gray">⎿ File contents:</Text>
                   <Box marginLeft={2} flexDirection="column">
@@ -143,12 +152,12 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
                 </Box>
               ) : shouldShowDiff ? (
                 // For diff results, show only the summary line, not the raw content
-                <Text color="gray">⎿ {entry.content.split('\n')[0]}</Text>
+                <Text color="gray">⎿ {entry.content.split("\n")[0]}</Text>
               ) : (
                 <Text color="gray">⎿ {entry.content}</Text>
               )}
             </Box>
-            {shouldShowDiff && (
+            {shouldShowDiff && !isExecuting && (
               <Box marginLeft={4} flexDirection="column">
                 {renderDiff(entry.content, filePath)}
               </Box>
@@ -161,7 +170,17 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
     }
   };
 
+  // Filter out tool_call entries with "Executing..." when confirmation is active
+  const filteredEntries = isConfirmationActive
+    ? entries.filter(
+        (entry) =>
+          !(entry.type === "tool_call" && entry.content === "Executing...")
+      )
+    : entries;
+
   return (
-    <Box flexDirection="column">{entries.slice(-20).map(renderChatEntry)}</Box>
+    <Box flexDirection="column">
+      {filteredEntries.slice(-20).map(renderChatEntry)}
+    </Box>
   );
 }

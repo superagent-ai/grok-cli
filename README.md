@@ -55,6 +55,37 @@ cp .env.example .env
 grok --api-key your_api_key_here
 ```
 
+**Method 4: User Settings File**
+Create `~/.grok/user-settings.json`:
+```json
+{
+  "apiKey": "your_api_key_here"
+}
+```
+
+### Custom Base URL (Optional)
+
+You can configure a custom Grok API endpoint (choose one method):
+
+**Method 1: Environment Variable**
+```bash
+export GROK_BASE_URL=https://your-custom-endpoint.com/v1
+```
+
+**Method 2: Command Line Flag**
+```bash
+grok --api-key your_api_key_here --baseurl https://your-custom-endpoint.com/v1
+```
+
+**Method 3: User Settings File**
+Add to `~/.grok/user-settings.json`:
+```json
+{
+  "apiKey": "your_api_key_here",
+  "baseURL": "https://your-custom-endpoint.com/v1"
+}
+```
+
 ## Usage
 
 Start the conversational AI assistant:

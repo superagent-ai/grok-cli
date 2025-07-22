@@ -7,7 +7,7 @@ import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 
 export interface ChatEntry {
-  type: "user" | "assistant" | "tool_result";
+  type: "user" | "assistant" | "tool_result" | "tool_call";
   content: string;
   timestamp: Date;
   toolCalls?: GrokToolCall[];
@@ -36,9 +36,9 @@ export class GrokAgent extends EventEmitter {
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, baseURL?: string) {
     super();
-    this.grokClient = new GrokClient(apiKey);
+    this.grokClient = new GrokClient(apiKey, undefined, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
@@ -63,6 +63,9 @@ You have access to these tools:
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+
+REAL-TIME INFORMATION:
+You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
@@ -127,7 +130,9 @@ Current working directory: ${process.cwd()}`,
     try {
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        GROK_TOOLS
+        GROK_TOOLS,
+        undefined,
+        { search_parameters: { mode: "auto" } }
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -162,21 +167,49 @@ Current working directory: ${process.cwd()}`,
             tool_calls: assistantMessage.tool_calls,
           } as any);
 
-          // Execute tool calls
+          // Create initial tool call entries to show tools are being executed
+          assistantMessage.tool_calls.forEach((toolCall) => {
+            const toolCallEntry: ChatEntry = {
+              type: "tool_call",
+              content: "Executing...",
+              timestamp: new Date(),
+              toolCall: toolCall,
+            };
+            this.chatHistory.push(toolCallEntry);
+            newEntries.push(toolCallEntry);
+          });
+
+          // Execute tool calls and update the entries
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await this.executeTool(toolCall);
 
-            const toolResultEntry: ChatEntry = {
-              type: "tool_result",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error occurred",
-              timestamp: new Date(),
-              toolCall: toolCall,
-              toolResult: result,
-            };
-            this.chatHistory.push(toolResultEntry);
-            newEntries.push(toolResultEntry);
+            // Update the existing tool_call entry with the result
+            const entryIndex = this.chatHistory.findIndex(
+              (entry) =>
+                entry.type === "tool_call" && entry.toolCall?.id === toolCall.id
+            );
+
+            if (entryIndex !== -1) {
+              const updatedEntry: ChatEntry = {
+                ...this.chatHistory[entryIndex],
+                type: "tool_result",
+                content: result.success
+                  ? result.output || "Success"
+                  : result.error || "Error occurred",
+                toolResult: result,
+              };
+              this.chatHistory[entryIndex] = updatedEntry;
+
+              // Also update in newEntries for return value
+              const newEntryIndex = newEntries.findIndex(
+                (entry) =>
+                  entry.type === "tool_call" &&
+                  entry.toolCall?.id === toolCall.id
+              );
+              if (newEntryIndex !== -1) {
+                newEntries[newEntryIndex] = updatedEntry;
+              }
+            }
 
             // Add tool result to messages with proper format (needed for AI context)
             this.messages.push({
@@ -191,7 +224,9 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            GROK_TOOLS
+            GROK_TOOLS,
+            undefined,
+            { search_parameters: { mode: "auto" } }
           );
         } else {
           // No more tool calls, add final response
@@ -270,7 +305,7 @@ Current working directory: ${process.cwd()}`,
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Create new abort controller for this request
     this.abortController = new AbortController();
-    
+
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -307,7 +342,12 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
-        const stream = this.grokClient.chatStream(this.messages, GROK_TOOLS);
+        const stream = this.grokClient.chatStream(
+          this.messages,
+          GROK_TOOLS,
+          undefined,
+          { search_parameters: { mode: "auto" } }
+        );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let toolCallsYielded = false;
@@ -497,7 +537,8 @@ Current working directory: ${process.cwd()}`,
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
-            args.new_str
+            args.new_str,
+            args.replace_all
           );
 
         case "bash":
