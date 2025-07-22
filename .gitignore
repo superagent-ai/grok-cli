@@ -91,3 +91,16 @@ temp/
 
 # Coding agents
 .claude/
+*.db-wal
+MCP_TIMEOUT_FIX.md
+.hive-mind/sessions/session-1753146963831-n10y0je1i-auto-save-1753146993832.json
+.hive-mind/sessions/session-1753144744670-kg9qsd3s9-auto-save-1753144774671.json
+.hive-mind/sessions/session-1753143751202-6uo20a585-auto-save-1753143781165.json
+.hive-mind/sessions/hive-mind-prompt-swarm-1753146963830-3r1nfk20i.txt
+.hive-mind/sessions/hive-mind-prompt-swarm-1753144744670-2ieqcy6jz.txt
+.hive-mind/sessions/hive-mind-prompt-swarm-1753143751202-mb77uzt72.txt
+.hive-mind/sessions/hive-mind-prompt-swarm-1753143700633-poujavei7.txt
+.hive-mind/memory.db
+.hive-mind/hive.db-shm
+.hive-mind/hive.db
+.cluso/config.json
