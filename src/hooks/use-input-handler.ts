@@ -45,6 +45,11 @@ export function useInputHandler({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [autoEditEnabled, setAutoEditEnabled] = useState(() => {
+    const confirmationService = ConfirmationService.getInstance();
+    const sessionFlags = confirmationService.getSessionFlags();
+    return sessionFlags.allOperations;
+  });
   const { exit } = useApp();
 
   const commandSuggestions: CommandSuggestion[] = [
@@ -97,6 +102,9 @@ Built-in Commands:
   /models     - Switch Grok models
   /exit       - Exit application
   exit, quit  - Exit application
+  
+Keyboard Shortcuts:
+  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
   ls [path]   - List directory contents
@@ -346,6 +354,23 @@ Available models: ${modelNames.join(", ")}`,
       return;
     }
 
+    // Handle shift+tab to toggle auto-edit mode
+    if (key.shift && key.tab) {
+      const newAutoEditState = !autoEditEnabled;
+      setAutoEditEnabled(newAutoEditState);
+
+      const confirmationService = ConfirmationService.getInstance();
+      if (newAutoEditState) {
+        // Enable auto-edit: set all operations to be accepted
+        confirmationService.setSessionFlag("allOperations", true);
+      } else {
+        // Disable auto-edit: reset session flags
+        confirmationService.resetSession();
+      }
+
+      return;
+    }
+
     if (key.escape) {
       if (showCommandSuggestions) {
         setShowCommandSuggestions(false);
@@ -476,5 +501,6 @@ Available models: ${modelNames.join(", ")}`,
     commandSuggestions,
     availableModels,
     agent,
+    autoEditEnabled,
   };
 }

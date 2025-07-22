@@ -6,9 +6,13 @@ import { MarkdownRenderer } from "../utils/markdown-renderer";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
+  isConfirmationActive?: boolean;
 }
 
-export function ChatHistory({ entries }: ChatHistoryProps) {
+export function ChatHistory({
+  entries,
+  isConfirmationActive = false,
+}: ChatHistoryProps) {
   const renderDiff = (diffContent: string, filename?: string) => {
     return (
       <DiffRenderer
@@ -166,7 +170,17 @@ export function ChatHistory({ entries }: ChatHistoryProps) {
     }
   };
 
+  // Filter out tool_call entries with "Executing..." when confirmation is active
+  const filteredEntries = isConfirmationActive
+    ? entries.filter(
+        (entry) =>
+          !(entry.type === "tool_call" && entry.content === "Executing...")
+      )
+    : entries;
+
   return (
-    <Box flexDirection="column">{entries.slice(-20).map(renderChatEntry)}</Box>
+    <Box flexDirection="column">
+      {filteredEntries.slice(-20).map(renderChatEntry)}
+    </Box>
   );
 }

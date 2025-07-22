@@ -8,7 +8,10 @@ import { ModelSelection } from "./model-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
 import ConfirmationDialog from "./confirmation-dialog";
-import { ConfirmationService, ConfirmationOptions } from "../../utils/confirmation-service";
+import {
+  ConfirmationService,
+  ConfirmationOptions,
+} from "../../utils/confirmation-service";
 import ApiKeyInput from "./api-key-input";
 import cfonts from "cfonts";
 
@@ -23,10 +26,11 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const [processingTime, setProcessingTime] = useState(0);
   const [tokenCount, setTokenCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
+  const [confirmationOptions, setConfirmationOptions] =
+    useState<ConfirmationOptions | null>(null);
   const scrollRef = useRef<any>();
   const processingStartTime = useRef<number>(0);
-  
+
   const confirmationService = ConfirmationService.getInstance();
 
   const {
@@ -37,6 +41,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     selectedModelIndex,
     commandSuggestions,
     availableModels,
+    autoEditEnabled,
   } = useInputHandler({
     agent,
     chatHistory,
@@ -71,7 +76,8 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     console.log(
       "3. Create GROK.md files to customize your interactions with Grok."
     );
-    console.log("4. /help for more information.");
+    console.log("4. Press Shift+Tab to toggle auto-edit mode.");
+    console.log("5. /help for more information.");
     console.log("");
 
     setChatHistory([]);
@@ -82,10 +88,13 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       setConfirmationOptions(options);
     };
 
-    confirmationService.on('confirmation-requested', handleConfirmationRequest);
+    confirmationService.on("confirmation-requested", handleConfirmationRequest);
 
     return () => {
-      confirmationService.off('confirmation-requested', handleConfirmationRequest);
+      confirmationService.off(
+        "confirmation-requested",
+        handleConfirmationRequest
+      );
     };
   }, [confirmationService]);
 
@@ -116,7 +125,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const handleRejection = (feedback?: string) => {
     confirmationService.rejectOperation(feedback);
     setConfirmationOptions(null);
-    
+
     // Reset processing states when operation is cancelled
     setIsProcessing(false);
     setIsStreaming(false);
@@ -134,7 +143,10 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       </Box>
 
       <Box flexDirection="column" ref={scrollRef}>
-        <ChatHistory entries={chatHistory} />
+        <ChatHistory
+          entries={chatHistory}
+          isConfirmationActive={!!confirmationOptions}
+        />
       </Box>
 
       {/* Show confirmation dialog if one is pending */}
@@ -149,7 +161,6 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
         />
       )}
 
-
       {!confirmationOptions && (
         <>
           <LoadingSpinner
@@ -163,6 +174,13 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             isProcessing={isProcessing}
             isStreaming={isStreaming}
           />
+
+          <Box marginLeft={1}>
+            <Text color="cyan">
+              {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
+              {autoEditEnabled ? "on" : "off"}
+            </Text>
+          </Box>
 
           <CommandSuggestions
             suggestions={commandSuggestions}
@@ -185,7 +203,9 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
 // Main component that handles API key input or chat interface
 export default function ChatInterface({ agent }: ChatInterfaceProps) {
-  const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(agent || null);
+  const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
+    agent || null
+  );
 
   const handleApiKeySet = (newAgent: GrokAgent) => {
     setCurrentAgent(newAgent);

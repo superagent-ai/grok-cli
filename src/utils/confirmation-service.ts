@@ -1,6 +1,6 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { EventEmitter } from 'events';
+import { exec } from "child_process";
+import { promisify } from "util";
+import { EventEmitter } from "events";
 
 const execAsync = promisify(exec);
 
@@ -8,7 +8,7 @@ export interface ConfirmationOptions {
   operation: string;
   filename: string;
   showVSCodeOpen?: boolean;
-  content?: string;  // Content to show in confirmation dialog
+  content?: string; // Content to show in confirmation dialog
 }
 
 export interface ConfirmationResult {
@@ -21,13 +21,14 @@ export class ConfirmationService extends EventEmitter {
   private static instance: ConfirmationService;
   private skipConfirmationThisSession = false;
   private pendingConfirmation: Promise<ConfirmationResult> | null = null;
-  private resolveConfirmation: ((result: ConfirmationResult) => void) | null = null;
-  
+  private resolveConfirmation: ((result: ConfirmationResult) => void) | null =
+    null;
+
   // Session flags for different operation types
   private sessionFlags = {
     fileOperations: false,
     bashCommands: false,
-    allOperations: false
+    allOperations: false,
   };
 
   static getInstance(): ConfirmationService {
@@ -41,11 +42,16 @@ export class ConfirmationService extends EventEmitter {
     super();
   }
 
-  async requestConfirmation(options: ConfirmationOptions, operationType: 'file' | 'bash' = 'file'): Promise<ConfirmationResult> {
+  async requestConfirmation(
+    options: ConfirmationOptions,
+    operationType: "file" | "bash" = "file"
+  ): Promise<ConfirmationResult> {
     // Check session flags
-    if (this.sessionFlags.allOperations || 
-        (operationType === 'file' && this.sessionFlags.fileOperations) ||
-        (operationType === 'bash' && this.sessionFlags.bashCommands)) {
+    if (
+      this.sessionFlags.allOperations ||
+      (operationType === "file" && this.sessionFlags.fileOperations) ||
+      (operationType === "bash" && this.sessionFlags.bashCommands)
+    ) {
       return { confirmed: true };
     }
 
@@ -66,16 +72,16 @@ export class ConfirmationService extends EventEmitter {
 
     // Emit custom event that the UI can listen to (using setImmediate to ensure the UI updates)
     setImmediate(() => {
-      this.emit('confirmation-requested', options);
+      this.emit("confirmation-requested", options);
     });
 
     const result = await this.pendingConfirmation;
-    
+
     if (result.dontAskAgain) {
       // Set the appropriate session flag based on operation type
-      if (operationType === 'file') {
+      if (operationType === "file") {
         this.sessionFlags.fileOperations = true;
-      } else if (operationType === 'bash') {
+      } else if (operationType === "bash") {
         this.sessionFlags.bashCommands = true;
       }
       // Could also set allOperations for global skip
@@ -102,8 +108,8 @@ export class ConfirmationService extends EventEmitter {
 
   private async openInVSCode(filename: string): Promise<void> {
     // Try different VS Code commands
-    const commands = ['code', 'code-insiders', 'codium'];
-    
+    const commands = ["code", "code-insiders", "codium"];
+
     for (const cmd of commands) {
       try {
         await execAsync(`which ${cmd}`);
@@ -114,8 +120,8 @@ export class ConfirmationService extends EventEmitter {
         continue;
       }
     }
-    
-    throw new Error('VS Code not found');
+
+    throw new Error("VS Code not found");
   }
 
   isPending(): boolean {
@@ -126,11 +132,18 @@ export class ConfirmationService extends EventEmitter {
     this.sessionFlags = {
       fileOperations: false,
       bashCommands: false,
-      allOperations: false
+      allOperations: false,
     };
   }
-  
+
   getSessionFlags() {
     return { ...this.sessionFlags };
+  }
+
+  setSessionFlag(
+    flagType: "fileOperations" | "bashCommands" | "allOperations",
+    value: boolean
+  ) {
+    this.sessionFlags[flagType] = value;
   }
 }
