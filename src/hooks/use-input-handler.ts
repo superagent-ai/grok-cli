@@ -46,6 +46,11 @@ export function useInputHandler({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [autoEditEnabled, setAutoEditEnabled] = useState(() => {
+    const confirmationService = ConfirmationService.getInstance();
+    const sessionFlags = confirmationService.getSessionFlags();
+    return sessionFlags.allOperations;
+  });
   const { exit } = useApp();
 
   const commandSuggestions: CommandSuggestion[] = [
@@ -60,10 +65,13 @@ export function useInputHandler({
   ];
 
   const availableModels: ModelOption[] = [
-    { model: "grok-4-latest", description: "Latest Grok-4 model (most capable)" },
+    {
+      model: "grok-4-latest",
+      description: "Latest Grok-4 model (most capable)",
+    },
     { model: "grok-3-latest", description: "Latest Grok-3 model" },
     { model: "grok-3-fast", description: "Fast Grok-3 variant" },
-    { model: "grok-3-mini-fast", description: "Fastest Grok-3 variant" }
+    { model: "grok-3-mini-fast", description: "Fastest Grok-3 variant" },
   ];
 
   const handleDirectCommand = async (input: string): Promise<boolean> => {
@@ -72,18 +80,18 @@ export function useInputHandler({
     if (trimmedInput === "/clear") {
       // Reset chat history
       setChatHistory([]);
-      
+
       // Reset processing states
       setIsProcessing(false);
       setIsStreaming(false);
       setTokenCount(0);
       setProcessingTime(0);
       processingStartTime.current = 0;
-      
+
       // Reset confirmation service session flags
       const confirmationService = ConfirmationService.getInstance();
       confirmationService.resetSession();
-      
+
       setInput("");
       return true;
     }
@@ -93,7 +101,6 @@ export function useInputHandler({
         type: "assistant",
         content: `Grok CLI Help - MCP Enhanced
 
-Built-in Commands:
   /clear        - Clear chat history
   /help         - Show this help
   /models       - Switch Grok models
@@ -108,6 +115,9 @@ Built-in Commands:
   /get-prompt <name> [args...] - Get an MCP prompt with optional arguments
   /exit         - Exit application
   exit, quit    - Exit application
+
+Keyboard Shortcuts:
+  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
 
 Direct Commands (executed immediately):
   ls [path]     - List directory contents
@@ -151,7 +161,7 @@ Examples:
 
     if (trimmedInput.startsWith("/models ")) {
       const modelArg = trimmedInput.split(" ")[1];
-      const modelNames = availableModels.map(m => m.model);
+      const modelNames = availableModels.map((m) => m.model);
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
@@ -566,7 +576,18 @@ Available models: ${modelNames.join(", ")}`,
     }
 
     const directBashCommands = [
-      "ls", "pwd", "cd", "cat", "mkdir", "touch", "echo", "grep", "find", "cp", "mv", "rm",
+      "ls",
+      "pwd",
+      "cd",
+      "cat",
+      "mkdir",
+      "touch",
+      "echo",
+      "grep",
+      "find",
+      "cp",
+      "mv",
+      "rm",
     ];
     const firstWord = trimmedInput.split(" ")[0];
 
@@ -665,31 +686,54 @@ Available models: ${modelNames.join(", ")}`,
               // Stop streaming for the current assistant message
               setChatHistory((prev) =>
                 prev.map((entry) =>
-                  entry.isStreaming ? { ...entry, isStreaming: false, toolCalls: chunk.toolCalls } : entry
+                  entry.isStreaming
+                    ? {
+                        ...entry,
+                        isStreaming: false,
+                        toolCalls: chunk.toolCalls,
+                      }
+                    : entry
                 )
               );
               streamingEntry = null;
+
+              // Add individual tool call entries to show tools are being executed
+              chunk.toolCalls.forEach((toolCall) => {
+                const toolCallEntry: ChatEntry = {
+                  type: "tool_call",
+                  content: "Executing...",
+                  timestamp: new Date(),
+                  toolCall: toolCall,
+                };
+                setChatHistory((prev) => [...prev, toolCallEntry]);
+              });
             }
             break;
 
           case "tool_result":
             if (chunk.toolCall && chunk.toolResult) {
               setChatHistory((prev) =>
-                prev.map((entry) =>
-                  entry.isStreaming ? { ...entry, isStreaming: false } : entry
-                )
+                prev.map((entry) => {
+                  if (entry.isStreaming) {
+                    return { ...entry, isStreaming: false };
+                  }
+                  // Update the existing tool_call entry with the result
+                  if (
+                    entry.type === "tool_call" &&
+                    entry.toolCall?.id === chunk.toolCall?.id
+                  ) {
+                    return {
+                      ...entry,
+                      type: "tool_result",
+                      content: chunk.toolResult.success
+                        ? chunk.toolResult.output || "Success"
+                        : chunk.toolResult.error || "Error occurred",
+                      toolResult: chunk.toolResult,
+                    };
+                  }
+                  return entry;
+                })
               );
-
-              const toolResultEntry: ChatEntry = {
-                type: "tool_result",
-                content: chunk.toolResult.success
-                  ? chunk.toolResult.output || "Success"
-                  : chunk.toolResult.error || "Error occurred",
-                timestamp: new Date(),
-                toolCall: chunk.toolCall,
-                toolResult: chunk.toolResult,
-              };
-              setChatHistory((prev) => [...prev, toolResultEntry]);
               streamingEntry = null;
             }
             break;
@@ -725,9 +769,26 @@ Available models: ${modelNames.join(", ")}`,
     if (isConfirmationActive) {
       return;
     }
-    
+
     if (key.ctrl && inputChar === "c") {
       exit();
+      return;
+    }
+
+    // Handle shift+tab to toggle auto-edit mode
+    if (key.shift && key.tab) {
+      const newAutoEditState = !autoEditEnabled;
+      setAutoEditEnabled(newAutoEditState);
+
+      const confirmationService = ConfirmationService.getInstance();
+      if (newAutoEditState) {
+        // Enable auto-edit: set all operations to be accepted
+        confirmationService.setSessionFlag("allOperations", true);
+      } else {
+        // Disable auto-edit: reset session flags
+        confirmationService.resetSession();
+      }
+
       return;
     }
 
@@ -761,7 +822,9 @@ Available models: ${modelNames.join(", ")}`,
         return;
       }
       if (key.downArrow) {
-        setSelectedCommandIndex((prev) => (prev + 1) % commandSuggestions.length);
+        setSelectedCommandIndex(
+          (prev) => (prev + 1) % commandSuggestions.length
+        );
         return;
       }
       if (key.tab || key.return) {
@@ -859,5 +922,6 @@ Available models: ${modelNames.join(", ")}`,
     commandSuggestions,
     availableModels,
     agent,
+    autoEditEnabled,
   };
 }
