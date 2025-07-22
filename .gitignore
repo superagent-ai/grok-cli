@@ -98,3 +98,4 @@ mcpConfig.json
 .grok/mcpConfig.json
 hive*.*
 .hive*
+MCP_TIMEOUT_FIX.md
