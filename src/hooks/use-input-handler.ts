@@ -53,6 +53,9 @@ export function useInputHandler({
     { command: "/clear", description: "Clear chat history" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/mcp", description: "Show MCP server status" },
+    { command: "/resources", description: "List available MCP resources" },
+    { command: "/prompts", description: "List available MCP prompts" },
+    { command: "/roots", description: "List available MCP roots" },
     { command: "/exit", description: "Exit the application" },
   ];
 
@@ -88,35 +91,50 @@ export function useInputHandler({
     if (trimmedInput === "/help") {
       const helpEntry: ChatEntry = {
         type: "assistant",
-        content: `Grok CLI Help:
+        content: `Grok CLI Help - MCP Enhanced
 
 Built-in Commands:
-  /clear      - Clear chat history
-  /help       - Show this help
-  /models     - Switch Grok models
-  /mcp        - Show MCP server status and tools
-    /mcp -d   - Show detailed tool descriptions and schemas
-    /mcp -t   - Show only tools
-    /mcp -s   - Show only servers
-  /exit       - Exit application
-  exit, quit  - Exit application
+  /clear        - Clear chat history
+  /help         - Show this help
+  /models       - Switch Grok models
+  /mcp          - Show MCP server status and tools
+    /mcp -d     - Show detailed tool descriptions and schemas
+    /mcp -t     - Show only tools
+    /mcp -s     - Show only servers
+  /resources    - List all available MCP resources
+  /prompts      - List all available MCP prompts
+  /roots        - List all configured MCP roots
+  /read-resource <uri> - Read content from an MCP resource
+  /get-prompt <name> [args...] - Get an MCP prompt with optional arguments
+  /exit         - Exit application
+  exit, quit    - Exit application
 
 Direct Commands (executed immediately):
-  ls [path]   - List directory contents
-  pwd         - Show current directory  
-  cd <path>   - Change directory
-  cat <file>  - View file contents
-  mkdir <dir> - Create directory
-  touch <file>- Create empty file
+  ls [path]     - List directory contents
+  pwd           - Show current directory  
+  cd <path>     - Change directory
+  cat <file>    - View file contents
+  mkdir <dir>   - Create directory
+  touch <file>  - Create empty file
+
+MCP Commands (via CLI):
+  grok mcp resources list     - List all MCP resources
+  grok mcp resources read <uri> - Read a specific resource
+  grok mcp prompts list       - List all MCP prompts
+  grok mcp prompts get <name> - Get a specific prompt
+  grok mcp roots list         - List all MCP roots
+  grok mcp serve              - Start Grok as MCP server
 
 Keyboard Shortcuts:
-  Tab         - Toggle MCP status display (expand/collapse)
+  Tab           - Toggle MCP status display (expand/collapse)
 
 For complex operations, just describe what you want in natural language.
 Examples:
   "edit package.json and add a new script"
   "create a new React component called Header"
-  "show me all TypeScript files in this project"`,
+  "show me all TypeScript files in this project"
+  "use the code-review prompt to review src/main.ts"
+  "read the grok://config resource to see current settings"`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
@@ -154,6 +172,220 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/resources" || trimmedInput.startsWith("/resources ")) {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listResources();
+        
+        let content = `${chalk.bold('Available MCP Resources:')}\n\n`;
+        
+        if (response.resources.length === 0) {
+          content += chalk.yellow('No resources available.');
+        } else {
+          response.resources.forEach((resource, index) => {
+            content += `${chalk.cyan(`${index + 1}. ${resource.name}`)}\n`;
+            content += chalk.gray(`   URI: ${resource.uri}\n`);
+            if (resource.description) {
+              content += chalk.gray(`   ${resource.description}\n`);
+            }
+            if (resource.mimeType) {
+              content += chalk.gray(`   Type: ${resource.mimeType}\n`);
+            }
+            content += '\n';
+          });
+        }
+        
+        content += `\n${chalk.blue('Usage:')} ${chalk.cyan('/read-resource <uri>')} - Read a specific resource`;
+        
+        const resourceEntry: ChatEntry = {
+          type: "assistant",
+          content,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, resourceEntry]);
+      } catch (error: any) {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Error listing resources: ${error.message}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+      
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/prompts" || trimmedInput.startsWith("/prompts ")) {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listPrompts();
+        
+        let content = `${chalk.bold('Available MCP Prompts:')}\n\n`;
+        
+        if (response.prompts.length === 0) {
+          content += chalk.yellow('No prompts available.');
+        } else {
+          response.prompts.forEach((prompt, index) => {
+            content += `${chalk.cyan(`${index + 1}. ${prompt.name}`)}\n`;
+            if (prompt.description) {
+              content += chalk.gray(`   ${prompt.description}\n`);
+            }
+            if (prompt.arguments && prompt.arguments.length > 0) {
+              content += chalk.gray(`   Arguments: ${prompt.arguments.map(arg => arg.name).join(', ')}\n`);
+            }
+            content += '\n';
+          });
+        }
+        
+        content += `\n${chalk.blue('Usage:')} ${chalk.cyan('/get-prompt <name> [args...]')} - Get a specific prompt`;
+        
+        const promptEntry: ChatEntry = {
+          type: "assistant",
+          content,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, promptEntry]);
+      } catch (error: any) {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Error listing prompts: ${error.message}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+      
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/roots" || trimmedInput.startsWith("/roots ")) {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listRoots();
+        
+        let content = `${chalk.bold('Configured MCP Roots:')}\n\n`;
+        
+        if (response.roots.length === 0) {
+          content += chalk.yellow('No roots configured.');
+        } else {
+          response.roots.forEach((root, index) => {
+            content += `${chalk.cyan(`${index + 1}. ${root.name || 'Unnamed Root'}`)}\n`;
+            content += chalk.gray(`   URI: ${root.uri}\n`);
+            content += '\n';
+          });
+        }
+        
+        content += `\n${chalk.blue('Usage:')} ${chalk.cyan('/add-root <uri> [--name <name>]')} - Add a new root`;
+        
+        const rootEntry: ChatEntry = {
+          type: "assistant",
+          content,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, rootEntry]);
+      } catch (error: any) {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Error listing roots: ${error.message}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+      
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/read-resource ")) {
+      const uri = trimmedInput.substring("/read-resource ".length).trim();
+      if (uri) {
+        try {
+          const { MCPService } = await import('../mcp/mcp-service');
+          const service = new MCPService();
+          
+          const response = await service.readResource(uri);
+          
+          const contentEntry: ChatEntry = {
+            type: "assistant",
+            content: typeof response.content.content === 'string' ? response.content.content : response.content.content.toString(),
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, contentEntry]);
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error reading resource: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+        }
+      } else {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /read-resource <uri>",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+      
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput.startsWith("/get-prompt ")) {
+      const promptName = trimmedInput.substring("/get-prompt ".length).trim();
+      if (promptName) {
+        try {
+          const { MCPService } = await import('../mcp/mcp-service');
+          const service = new MCPService();
+          
+          const response = await service.getPrompt(promptName);
+          
+          let content = `${chalk.bold(`Prompt: ${promptName}`)}\n\n`;
+          if (response.description) {
+            content += chalk.gray(`${response.description}\n\n`);
+          }
+          
+          response.messages.forEach((msg, index) => {
+            content += `${chalk.cyan(`${index + 1}. [${msg.role.toUpperCase()}]`)}\n`;
+            content += msg.content;
+            content += '\n\n';
+          });
+          
+          const promptEntry: ChatEntry = {
+            type: "assistant",
+            content,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, promptEntry]);
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error getting prompt: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+        }
+      } else {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: "Usage: /get-prompt <name>",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+      
       setInput("");
       return true;
     }

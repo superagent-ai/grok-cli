@@ -166,6 +166,178 @@ export class StdioTransport extends EventEmitter implements MCPTransport {
       }
     }
   }
+}
 
+export class MCPServerTransport extends EventEmitter {
+  private connected = false;
 
+  constructor(private service: any) {
+    super();
+    this.setupStdioHandlers();
+  }
+
+  private setupStdioHandlers(): void {
+    // Handle incoming messages from stdin
+    process.stdin.setEncoding('utf8');
+    let messageBuffer = '';
+
+    process.stdin.on('data', (data: string) => {
+      messageBuffer += data;
+      
+      // Process complete messages (separated by newlines)
+      const lines = messageBuffer.split('\n');
+      messageBuffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const message = JSON.parse(line.trim());
+            this.handleMessage(message);
+          } catch (error) {
+            this.sendError(-32700, 'Parse error');
+          }
+        }
+      }
+    });
+
+    // Handle process termination
+    process.on('SIGINT', () => {
+      this.emit('close');
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      this.emit('close');
+      process.exit(0);
+    });
+
+    this.connected = true;
+  }
+
+  private async handleMessage(message: any): Promise<void> {
+    try {
+      if (!message.jsonrpc || message.jsonrpc !== '2.0') {
+        this.sendError(-32600, 'Invalid Request');
+        return;
+      }
+
+      if (message.method) {
+        await this.handleRequest(message);
+      } else {
+        this.sendError(-32600, 'Invalid Request');
+      }
+    } catch (error) {
+      this.sendError(-32603, 'Internal error');
+    }
+  }
+
+  private async handleRequest(request: any): Promise<void> {
+    try {
+      let result: any;
+
+      switch (request.method) {
+        case 'initialize':
+          result = {
+            protocolVersion: '2024-11-05',
+            capabilities: this.service.getCapabilities(),
+            serverInfo: {
+              name: 'grok-cli',
+              version: '1.0.0'
+            }
+          };
+          break;
+
+        case 'tools/list':
+          result = { tools: [] }; // TODO: Implement tools listing
+          break;
+
+        case 'resources/list':
+          const resourcesResponse = await this.service.listResources();
+          result = { resources: resourcesResponse.resources };
+          break;
+
+        case 'resources/read':
+          if (!request.params?.uri) {
+            this.sendError(-32602, 'Invalid params: URI parameter is required');
+            return;
+          }
+          const resourceResponse = await this.service.readResource(request.params.uri);
+          result = { contents: [resourceResponse.content] };
+          break;
+
+        case 'prompts/list':
+          const promptsResponse = await this.service.listPrompts();
+          result = { prompts: promptsResponse.prompts };
+          break;
+
+        case 'prompts/get':
+          if (!request.params?.name) {
+            this.sendError(-32602, 'Invalid params: Name parameter is required');
+            return;
+          }
+          const promptResponse = await this.service.getPrompt(
+            request.params.name,
+            request.params.arguments || {}
+          );
+          result = {
+            description: promptResponse.description,
+            messages: promptResponse.messages
+          };
+          break;
+
+        case 'roots/list':
+          const rootsResponse = await this.service.listRoots();
+          result = { roots: rootsResponse.roots };
+          break;
+
+        default:
+          this.sendError(-32601, `Method not found: ${request.method}`);
+          return;
+      }
+
+      this.sendResponse(request.id, result);
+    } catch (error) {
+      this.sendError(-32603, error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  private sendResponse(id: any, result: any): void {
+    const response = {
+      jsonrpc: '2.0',
+      id,
+      result
+    };
+    this.sendMessage(response);
+  }
+
+  private sendError(code: number, message: string, data?: any): void {
+    const errorResponse = {
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code,
+        message,
+        ...(data && { data })
+      }
+    };
+    this.sendMessage(errorResponse);
+  }
+
+  private sendMessage(message: any): void {
+    const messageStr = JSON.stringify(message) + '\n';
+    process.stdout.write(messageStr);
+  }
+
+  async start(): Promise<void> {
+    // Start the server
+    console.error = () => {}; // Suppress console.error
+  }
+
+  async stop(): Promise<void> {
+    this.connected = false;
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
 }

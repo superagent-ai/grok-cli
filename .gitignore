@@ -96,3 +96,5 @@ mcpConfig.json
 .trae/documents/mcp-integration-requirements.md
 mcpConfig.json
 .grok/mcpConfig.json
+hive*.*
+.hive*

@@ -14,6 +14,7 @@ import {
   MCPListRootsResponse,
   MCPCapabilities,
 } from './types';
+import { MCPSchemaValidator } from './schema-validator';
 
 export class MCPService {
   private resources: Map<string, MCPResource> = new Map();
@@ -44,6 +45,7 @@ export class MCPService {
       name: 'Grok CLI Configuration',
       description: 'Current configuration and settings for Grok CLI',
       mimeType: 'application/json',
+      serverId: 'grok-local',
     });
 
     this.registerResource({
@@ -51,6 +53,7 @@ export class MCPService {
       name: 'Chat History',
       description: 'Recent chat history and interactions',
       mimeType: 'text/plain',
+      serverId: 'grok-local',
     });
 
     this.registerResource({
@@ -58,6 +61,7 @@ export class MCPService {
       name: 'Available Tools',
       description: 'List of available tools and their descriptions',
       mimeType: 'application/json',
+      serverId: 'grok-local',
     });
 
     // Initialize default prompts
@@ -155,6 +159,10 @@ export class MCPService {
 
   // Resource Management
   registerResource(resource: MCPResource): void {
+    const validation = MCPSchemaValidator.validateResource(resource);
+    if (!validation.valid) {
+      throw new Error(`Invalid resource: ${validation.errors.join(', ')}`);
+    }
     this.resources.set(resource.uri, resource);
   }
 
@@ -322,6 +330,10 @@ export class MCPService {
 
   // Prompt Management
   registerPrompt(prompt: MCPPrompt, template: MCPPromptMessage[]): void {
+    const validation = MCPSchemaValidator.validatePrompt(prompt);
+    if (!validation.valid) {
+      throw new Error(`Invalid prompt: ${validation.errors.join(', ')}`);
+    }
     this.prompts.set(prompt.name, prompt);
     this.promptTemplates.set(prompt.name, template);
   }
@@ -377,6 +389,11 @@ export class MCPService {
 
   // Roots Management
   addRoot(root: MCPRoot): void {
+    const validation = MCPSchemaValidator.validateRoot(root);
+    if (!validation.valid) {
+      throw new Error(`Invalid root: ${validation.errors.join(', ')}`);
+    }
+    
     // Check if root already exists
     const exists = this.roots.some(r => r.uri === root.uri);
     if (!exists) {
@@ -421,6 +438,7 @@ export class MCPService {
             name: entry.name,
             description: `File: ${fullPath}`,
             mimeType: this.getMimeType(fullPath),
+            serverId: 'grok-local',
           });
         } else if (entry.isDirectory() && recursive) {
           await this.registerDirectoryResources(fullPath, recursive);

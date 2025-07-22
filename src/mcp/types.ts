@@ -30,7 +30,7 @@ export interface MCPResource {
   name: string;
   description?: string;
   mimeType?: string;
-  serverId: string;
+  serverId?: string;
 }
 
 export interface MCPServerStatus {

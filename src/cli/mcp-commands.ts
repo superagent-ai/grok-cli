@@ -269,5 +269,254 @@ export function createMCPCommands(): Command {
       }
     });
 
+  // Resources commands
+  const resourcesCommand = mcpCommand
+    .command('resources')
+    .alias('res')
+    .description('Manage MCP resources');
+
+  resourcesCommand
+    .command('list')
+    .alias('ls')
+    .description('List all available MCP resources')
+    .action(async () => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listResources();
+        
+        console.log(chalk.bold('\nAvailable MCP Resources:'));
+        console.log(chalk.gray('─'.repeat(50)));
+        
+        if (response.resources.length === 0) {
+          console.log(chalk.yellow('No resources available.'));
+          return;
+        }
+
+        response.resources.forEach((resource, index) => {
+          console.log(chalk.cyan(`${index + 1}. ${resource.name}`));
+          console.log(chalk.gray(`   URI: ${resource.uri}`));
+          if (resource.description) {
+            console.log(chalk.gray(`   ${resource.description}`));
+          }
+          if (resource.mimeType) {
+            console.log(chalk.gray(`   Type: ${resource.mimeType}`));
+          }
+          console.log();
+        });
+      } catch (error: any) {
+        console.error(chalk.red(`Error listing resources: ${error.message}`));
+      }
+    });
+
+  resourcesCommand
+    .command('read <uri>')
+    .description('Read content from an MCP resource')
+    .action(async (uri: string) => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.readResource(uri);
+        
+        console.log(chalk.bold(`\nResource: ${uri}`));
+        console.log(chalk.gray('─'.repeat(50)));
+        console.log(response.content.content);
+      } catch (error: any) {
+        console.error(chalk.red(`Error reading resource: ${error.message}`));
+      }
+    });
+
+  // Prompts commands
+  const promptsCommand = mcpCommand
+    .command('prompts')
+    .description('Manage MCP prompts');
+
+  promptsCommand
+    .command('list')
+    .alias('ls')
+    .description('List all available MCP prompts')
+    .action(async () => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listPrompts();
+        
+        console.log(chalk.bold('\nAvailable MCP Prompts:'));
+        console.log(chalk.gray('─'.repeat(50)));
+        
+        if (response.prompts.length === 0) {
+          console.log(chalk.yellow('No prompts available.'));
+          return;
+        }
+
+        response.prompts.forEach((prompt, index) => {
+          console.log(chalk.cyan(`${index + 1}. ${prompt.name}`));
+          if (prompt.description) {
+            console.log(chalk.gray(`   ${prompt.description}`));
+          }
+          if (prompt.arguments && prompt.arguments.length > 0) {
+            console.log(chalk.gray(`   Arguments: ${prompt.arguments.map(arg => arg.name).join(', ')}`));
+          }
+          console.log();
+        });
+      } catch (error: any) {
+        console.error(chalk.red(`Error listing prompts: ${error.message}`));
+      }
+    });
+
+  promptsCommand
+    .command('get <name>')
+    .description('Get an MCP prompt with optional arguments')
+    .option('-a, --args <args...>', 'Arguments in KEY=VALUE format')
+    .action(async (name: string, options: any) => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        // Parse arguments
+        const args: Record<string, string> = {};
+        if (options.args) {
+          for (const arg of options.args) {
+            const [key, ...valueParts] = arg.split('=');
+            if (key && valueParts.length > 0) {
+              args[key] = valueParts.join('=');
+            }
+          }
+        }
+        
+        const response = await service.getPrompt(name, args);
+        
+        console.log(chalk.bold(`\nPrompt: ${name}`));
+        if (response.description) {
+          console.log(chalk.gray(response.description));
+        }
+        console.log(chalk.gray('─'.repeat(50)));
+        
+        response.messages.forEach((msg, index) => {
+          console.log(chalk.cyan(`${index + 1}. [${msg.role.toUpperCase()}]`));
+          console.log(msg.content);
+          console.log();
+        });
+      } catch (error: any) {
+        console.error(chalk.red(`Error getting prompt: ${error.message}`));
+      }
+    });
+
+  // Roots commands
+  const rootsCommand = mcpCommand
+    .command('roots')
+    .description('Manage MCP roots (allowed file system paths)');
+
+  rootsCommand
+    .command('list')
+    .alias('ls')
+    .description('List all configured MCP roots')
+    .action(async () => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const response = await service.listRoots();
+        
+        console.log(chalk.bold('\nConfigured MCP Roots:'));
+        console.log(chalk.gray('─'.repeat(50)));
+        
+        if (response.roots.length === 0) {
+          console.log(chalk.yellow('No roots configured.'));
+          return;
+        }
+
+        response.roots.forEach((root, index) => {
+          console.log(chalk.cyan(`${index + 1}. ${root.name || 'Unnamed Root'}`));
+          console.log(chalk.gray(`   URI: ${root.uri}`));
+          console.log();
+        });
+      } catch (error: any) {
+        console.error(chalk.red(`Error listing roots: ${error.message}`));
+      }
+    });
+
+  rootsCommand
+    .command('add <uri>')
+    .description('Add a new MCP root')
+    .option('-n, --name <name>', 'Friendly name for the root')
+    .action(async (uri: string, options: any) => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        service.addRoot({
+          uri,
+          name: options.name
+        });
+        
+        console.log(chalk.green(`✓ Added root: ${uri}`));
+        if (options.name) {
+          console.log(chalk.gray(`  Name: ${options.name}`));
+        }
+      } catch (error: any) {
+        console.error(chalk.red(`Error adding root: ${error.message}`));
+      }
+    });
+
+  rootsCommand
+    .command('remove <uri>')
+    .alias('rm')
+    .description('Remove an MCP root')
+    .action(async (uri: string) => {
+      try {
+        const { MCPService } = await import('../mcp/mcp-service');
+        const service = new MCPService();
+        
+        service.removeRoot(uri);
+        
+        console.log(chalk.green(`✓ Removed root: ${uri}`));
+      } catch (error: any) {
+        console.error(chalk.red(`Error removing root: ${error.message}`));
+      }
+    });
+
+  // Serve command - make grok an MCP server
+  mcpCommand
+    .command('serve')
+    .description('Start Grok CLI as an MCP server via stdio')
+    .option('-p, --port <port>', 'Port to serve on (default: stdio)', 'stdio')
+    .action(async (options: any) => {
+      try {
+        const { MCPServerTransport } = await import('../mcp/transports/stdio');
+        const { MCPService } = await import('../mcp/mcp-service');
+        
+        console.log(chalk.blue('🚀 Starting Grok CLI as MCP server...'));
+        console.log(chalk.gray('Transport: stdio'));
+        console.log(chalk.gray('Capabilities: tools, resources, prompts, roots'));
+        console.log();
+        
+        const service = new MCPService();
+        const transport = new MCPServerTransport(service);
+        
+        await transport.start();
+        
+        // Keep the process alive
+        process.on('SIGINT', async () => {
+          console.log(chalk.yellow('\n🛑 Shutting down MCP server...'));
+          await transport.stop();
+          process.exit(0);
+        });
+        
+        process.on('SIGTERM', async () => {
+          console.log(chalk.yellow('\n🛑 Shutting down MCP server...'));
+          await transport.stop();
+          process.exit(0);
+        });
+        
+      } catch (error: any) {
+        console.error(chalk.red(`Error starting MCP server: ${error.message}`));
+        process.exit(1);
+      }
+    });
+
   return mcpCommand;
 }

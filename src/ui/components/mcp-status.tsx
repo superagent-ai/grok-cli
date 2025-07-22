@@ -12,10 +12,14 @@ interface MCPStatusProps {
 interface MCPStatusSummary {
   connectedServers: number;
   totalTools: number;
+  totalResources: number;
+  totalPrompts: number;
+  totalRoots: number;
   serverDetails: Array<{
     id: string;
     status: string;
     toolCount: number;
+    resourceCount: number;
     error?: string;
     scope?: 'project' | 'user' | 'local' | 'fallback';
   }>;
@@ -31,6 +35,9 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
   const [statusSummary, setStatusSummary] = useState<MCPStatusSummary>({
     connectedServers: 0,
     totalTools: 0,
+    totalResources: 0,
+    totalPrompts: 0,
+    totalRoots: 0,
     serverDetails: [],
     scopeCounts: { project: 0, user: 0, local: 0, fallback: 0 }
   });
@@ -46,6 +53,16 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
         const allTools = mcpManager.getAllTools();
         const configManager = mcpManager.getConfigManager();
         
+        // Get local MCP service for resources, prompts, and roots
+        const { MCPService } = await import('../../mcp/mcp-service');
+        const service = new MCPService();
+        
+        const [resourcesResponse, promptsResponse, rootsResponse] = await Promise.all([
+          service.listResources(),
+          service.listPrompts(),
+          service.listRoots()
+        ]);
+        
         const connectedServers = Object.values(serverStatuses).filter(
           (status: any) => status.status === 'connected'
         ).length;
@@ -60,6 +77,7 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
             id: status.id,
             status: status.status,
             toolCount: status.tools?.length || 0,
+            resourceCount: status.resources?.length || 0,
             error: status.error,
             scope
           };
@@ -68,6 +86,9 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
         setStatusSummary({
           connectedServers,
           totalTools: allTools.length,
+          totalResources: resourcesResponse.resources.length,
+          totalPrompts: promptsResponse.prompts.length,
+          totalRoots: rootsResponse.roots.length,
           serverDetails,
           scopeCounts
         });
@@ -121,7 +142,11 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
   }
   
   const scopeText = scopeDisplay.length > 0 ? ` (${scopeDisplay.join(' ')})` : '';
-  const displayText = `${statusSummary.connectedServers} MCP Server${statusSummary.connectedServers !== 1 ? 's' : ''}${scopeText} ${statusSummary.totalTools} Tool${statusSummary.totalTools !== 1 ? 's' : ''}`;
+  const displayText = `${statusSummary.connectedServers} MCP Server${statusSummary.connectedServers !== 1 ? 's' : ''}${scopeText} ${statusSummary.totalTools} Tools ${statusSummary.totalResources} Resources ${statusSummary.totalPrompts} Prompts ${statusSummary.totalRoots} Roots`;
+  
+  const summaryText = `
+${statusSummary.connectedServers} MCP Servers ${statusSummary.totalTools} Tools ${statusSummary.totalResources} Resources ${statusSummary.totalPrompts} Prompts ${statusSummary.totalRoots} Roots`;
+  const compactText = `${statusSummary.connectedServers}🔧${statusSummary.totalTools}📁${statusSummary.totalResources}📝${statusSummary.totalPrompts}🏠${statusSummary.totalRoots}`;
 
   if (!isExpanded) {
     return (
