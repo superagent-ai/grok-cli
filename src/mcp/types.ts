@@ -136,6 +136,7 @@ export interface MCPCapabilities {
   resources?: boolean;
   prompts?: boolean;
   roots?: boolean;
+  tools?: boolean;
 }
 
 export interface MCPServer {

@@ -251,7 +251,12 @@ export class MCPServerTransport extends EventEmitter {
         case 'initialize':
           result = {
             protocolVersion: '2024-11-05',
-            capabilities: this.service.getCapabilities(),
+            capabilities: {
+              tools: {},
+              resources: {},
+              prompts: {},
+              roots: {}
+            },
             serverInfo: {
               name: 'grok-cli',
               version: '1.0.0'
@@ -260,7 +265,20 @@ export class MCPServerTransport extends EventEmitter {
           break;
 
         case 'tools/list':
-          result = { tools: [] }; // TODO: Implement tools listing
+          const toolsResponse = await this.service.listTools();
+          result = toolsResponse;
+          break;
+
+        case 'tools/call':
+          if (!request.params?.name) {
+            this.sendError(-32602, 'Invalid params: name parameter is required');
+            return;
+          }
+          const toolResponse = await this.service.callTool(
+            request.params.name,
+            request.params.arguments || {}
+          );
+          result = toolResponse;
           break;
 
         case 'resources/list':
