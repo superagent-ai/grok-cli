@@ -509,7 +509,8 @@ Current working directory: ${process.cwd()}`,
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
-            args.new_str
+            args.new_str,
+            args.replace_all
           );
 
         case "bash":

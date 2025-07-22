@@ -62,11 +62,15 @@ export const GROK_TOOLS: GrokTool[] = [
           },
           old_str: {
             type: "string",
-            description: "Text to replace (must match exactly)",
+            description: "Text to replace (must match exactly, or will use fuzzy matching for multi-line strings)",
           },
           new_str: {
             type: "string",
             description: "Text to replace with",
+          },
+          replace_all: {
+            type: "boolean",
+            description: "Replace all occurrences (default: false, only replaces first occurrence)",
           },
         },
         required: ["path", "old_str", "new_str"],
