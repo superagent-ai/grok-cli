@@ -7,7 +7,7 @@ import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 
 export interface ChatEntry {
-  type: "user" | "assistant" | "tool_result";
+  type: "user" | "assistant" | "tool_result" | "tool_call";
   content: string;
   timestamp: Date;
   toolCalls?: GrokToolCall[];
@@ -63,6 +63,9 @@ You have access to these tools:
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+
+REAL-TIME INFORMATION:
+You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
@@ -127,7 +130,9 @@ Current working directory: ${process.cwd()}`,
     try {
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        GROK_TOOLS
+        GROK_TOOLS,
+        undefined,
+        { search_parameters: { mode: "auto" } }
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -191,7 +196,9 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            GROK_TOOLS
+            GROK_TOOLS,
+            undefined,
+            { search_parameters: { mode: "auto" } }
           );
         } else {
           // No more tool calls, add final response
@@ -270,7 +277,7 @@ Current working directory: ${process.cwd()}`,
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Create new abort controller for this request
     this.abortController = new AbortController();
-    
+
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -307,7 +314,12 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
-        const stream = this.grokClient.chatStream(this.messages, GROK_TOOLS);
+        const stream = this.grokClient.chatStream(
+          this.messages,
+          GROK_TOOLS,
+          undefined,
+          { search_parameters: { mode: "auto" } }
+        );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let toolCallsYielded = false;
