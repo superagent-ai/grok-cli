@@ -167,21 +167,49 @@ Current working directory: ${process.cwd()}`,
             tool_calls: assistantMessage.tool_calls,
           } as any);
 
-          // Execute tool calls
+          // Create initial tool call entries to show tools are being executed
+          assistantMessage.tool_calls.forEach((toolCall) => {
+            const toolCallEntry: ChatEntry = {
+              type: "tool_call",
+              content: "Executing...",
+              timestamp: new Date(),
+              toolCall: toolCall,
+            };
+            this.chatHistory.push(toolCallEntry);
+            newEntries.push(toolCallEntry);
+          });
+
+          // Execute tool calls and update the entries
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await this.executeTool(toolCall);
 
-            const toolResultEntry: ChatEntry = {
-              type: "tool_result",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error occurred",
-              timestamp: new Date(),
-              toolCall: toolCall,
-              toolResult: result,
-            };
-            this.chatHistory.push(toolResultEntry);
-            newEntries.push(toolResultEntry);
+            // Update the existing tool_call entry with the result
+            const entryIndex = this.chatHistory.findIndex(
+              (entry) =>
+                entry.type === "tool_call" && entry.toolCall?.id === toolCall.id
+            );
+
+            if (entryIndex !== -1) {
+              const updatedEntry: ChatEntry = {
+                ...this.chatHistory[entryIndex],
+                type: "tool_result",
+                content: result.success
+                  ? result.output || "Success"
+                  : result.error || "Error occurred",
+                toolResult: result,
+              };
+              this.chatHistory[entryIndex] = updatedEntry;
+
+              // Also update in newEntries for return value
+              const newEntryIndex = newEntries.findIndex(
+                (entry) =>
+                  entry.type === "tool_call" &&
+                  entry.toolCall?.id === toolCall.id
+              );
+              if (newEntryIndex !== -1) {
+                newEntries[newEntryIndex] = updatedEntry;
+              }
+            }
 
             // Add tool result to messages with proper format (needed for AI context)
             this.messages.push({

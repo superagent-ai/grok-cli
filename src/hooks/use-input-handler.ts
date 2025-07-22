@@ -298,21 +298,27 @@ Available models: ${modelNames.join(", ")}`,
           case "tool_result":
             if (chunk.toolCall && chunk.toolResult) {
               setChatHistory((prev) =>
-                prev.map((entry) =>
-                  entry.isStreaming ? { ...entry, isStreaming: false } : entry
-                )
+                prev.map((entry) => {
+                  if (entry.isStreaming) {
+                    return { ...entry, isStreaming: false };
+                  }
+                  // Update the existing tool_call entry with the result
+                  if (
+                    entry.type === "tool_call" &&
+                    entry.toolCall?.id === chunk.toolCall?.id
+                  ) {
+                    return {
+                      ...entry,
+                      type: "tool_result",
+                      content: chunk.toolResult.success
+                        ? chunk.toolResult.output || "Success"
+                        : chunk.toolResult.error || "Error occurred",
+                      toolResult: chunk.toolResult,
+                    };
+                  }
+                  return entry;
+                })
               );
-
-              const toolResultEntry: ChatEntry = {
-                type: "tool_result",
-                content: chunk.toolResult.success
-                  ? chunk.toolResult.output || "Success"
-                  : chunk.toolResult.error || "Error occurred",
-                timestamp: new Date(),
-                toolCall: chunk.toolCall,
-                toolResult: chunk.toolResult,
-              };
-              setChatHistory((prev) => [...prev, toolResultEntry]);
               streamingEntry = null;
             }
             break;
