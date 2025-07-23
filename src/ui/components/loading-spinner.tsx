@@ -25,7 +25,11 @@ const loadingTexts = [
   "Downloading...",
 ];
 
-export function LoadingSpinner({ isActive, processingTime, tokenCount }: LoadingSpinnerProps) {
+export function LoadingSpinner({
+  isActive,
+  processingTime,
+  tokenCount,
+}: LoadingSpinnerProps) {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
 
@@ -33,9 +37,10 @@ export function LoadingSpinner({ isActive, processingTime, tokenCount }: Loading
     if (!isActive) return;
 
     const spinnerFrames = ["/", "-", "\\", "|"];
+    // Reduced frequency: 500ms instead of 250ms to reduce flickering on Windows
     const interval = setInterval(() => {
       setSpinnerFrame((prev) => (prev + 1) % spinnerFrames.length);
-    }, 250);
+    }, 500);
 
     return () => clearInterval(interval);
   }, [isActive]);
@@ -45,9 +50,10 @@ export function LoadingSpinner({ isActive, processingTime, tokenCount }: Loading
 
     setLoadingTextIndex(Math.floor(Math.random() * loadingTexts.length));
 
+    // Increased interval: 4s instead of 2s to reduce state changes
     const interval = setInterval(() => {
       setLoadingTextIndex(Math.floor(Math.random() * loadingTexts.length));
-    }, 2000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [isActive]);
@@ -62,7 +68,8 @@ export function LoadingSpinner({ isActive, processingTime, tokenCount }: Loading
         {spinnerFrames[spinnerFrame]} {loadingTexts[loadingTextIndex]}{" "}
       </Text>
       <Text color="gray">
-        ({processingTime}s · ↑ {formatTokenCount(tokenCount)} tokens · esc to interrupt)
+        ({processingTime}s · ↑ {formatTokenCount(tokenCount)} tokens · esc to
+        interrupt)
       </Text>
     </Box>
   );
