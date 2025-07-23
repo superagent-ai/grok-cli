@@ -1,6 +1,12 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
 import { GROK_TOOLS } from "../grok/tools";
-import { TextEditorTool, BashTool, TodoTool, ConfirmationTool } from "../tools";
+import {
+  TextEditorTool,
+  BashTool,
+  TodoTool,
+  ConfirmationTool,
+  SearchTool,
+} from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
@@ -38,6 +44,7 @@ export class GrokAgent extends EventEmitter {
   private mcpManager: MCPManager;
   private mcpConfigManager: MCPConfigManager;
   private mcpService: MCPService;
+  private search: SearchTool;
   private chatHistory: ChatEntry[] = [];
   private messages: any[] = [];
   private tokenCounter: TokenCounter;
@@ -53,6 +60,7 @@ export class GrokAgent extends EventEmitter {
     this.mcpConfigManager = new MCPConfigManager();
     this.mcpManager = new MCPManager(this.mcpConfigManager);
     this.mcpService = new MCPService();
+    this.search = new SearchTool();
     this.tokenCounter = createTokenCounter("grok-4-latest");
 
     // Initialize MCP connections
@@ -74,6 +82,7 @@ You have access to these tools:
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
 - str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
+- search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
 
@@ -97,9 +106,9 @@ IMPORTANT TOOL USAGE RULES:
 - Use create_file ONLY when creating entirely new files that don't exist
 
 SEARCHING AND EXPLORATION:
-- Use bash with commands like 'find', 'grep', 'rg' (ripgrep), 'ls', etc. for searching files and content
-- Examples: 'find . -name "*.js"', 'grep -r "function" src/', 'rg "import.*react"'
-- Use bash for directory navigation, file discovery, and content searching
+- Use search for fast, powerful text search across files or finding files by name (unified search tool)
+- Examples: search for text content like "import.*react", search for files like "component.tsx"
+- Use bash with commands like 'find', 'grep', 'rg', 'ls' for complex file operations and navigation
 - view_file is best for reading specific files you already know exist
 
 When a user asks you to edit, update, modify, or change an existing file:
@@ -685,6 +694,19 @@ Current working directory: ${process.cwd()}`,
             success: true,
             output: `Directory resources registered: ${args.path}`,
           };
+
+        case "search":
+          return await this.search.search(args.query, {
+            searchType: args.search_type,
+            includePattern: args.include_pattern,
+            excludePattern: args.exclude_pattern,
+            caseSensitive: args.case_sensitive,
+            wholeWord: args.whole_word,
+            regex: args.regex,
+            maxResults: args.max_results,
+            fileTypes: args.file_types,
+            includeHidden: args.include_hidden,
+          });
 
         default:
           // Check if it's an MCP tool
