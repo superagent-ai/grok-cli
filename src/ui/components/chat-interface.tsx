@@ -57,7 +57,16 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   });
 
   useEffect(() => {
-    console.clear();
+    // Only clear console on non-Windows platforms or if not PowerShell
+    // Windows PowerShell can have issues with console.clear() causing flickering
+    const isWindows = process.platform === "win32";
+    const isPowerShell =
+      process.env.ComSpec?.toLowerCase().includes("powershell") ||
+      process.env.PSModulePath !== undefined;
+
+    if (!isWindows || !isPowerShell) {
+      console.clear();
+    }
 
     // Add top padding
     console.log("    ");
