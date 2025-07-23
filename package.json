@@ -34,6 +34,7 @@
     "ink-markdown": "^1.0.4",
     "openai": "^5.10.1",
     "react": "^17.0.2",
+    "ripgrep-node": "^1.0.0",
     "tiktoken": "^1.0.21"
   },
   "devDependencies": {

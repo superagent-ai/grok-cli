@@ -92,7 +92,8 @@ export function ChatHistory({
               return "Create";
             case "bash":
               return "Bash";
-
+            case "search":
+              return "Search";
             case "create_todo_list":
               return "Created Todo";
             case "update_todo_list":
@@ -112,6 +113,11 @@ export function ChatHistory({
                 toolCall.function.name === "update_todo_list"
               ) {
                 return "";
+              }
+
+              // Handle search tool specially - show the query
+              if (toolCall.function.name === "search") {
+                return args.query || "unknown";
               }
 
               return args.path || args.file_path || args.command || "unknown";
