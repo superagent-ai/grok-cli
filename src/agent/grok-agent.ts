@@ -44,7 +44,6 @@ export class GrokAgent {
   private abortController: AbortController | null = null;
 
   constructor(apiKey: string, baseURL?: string) {
-    super();
     this.grokClient = new GrokClient(apiKey, undefined, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
@@ -180,8 +179,7 @@ Current working directory: ${process.cwd()}`,
       const allTools = await this.getAllTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        allTools
-        GROK_TOOLS,
+        allTools,
         undefined,
         { search_parameters: { mode: "auto" } }
       );
@@ -275,8 +273,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            allTools
-            GROK_TOOLS,
+            allTools,
             undefined,
             { search_parameters: { mode: "auto" } }
           );
@@ -395,9 +392,9 @@ Current working directory: ${process.cwd()}`,
 
         // Stream response and accumulate
         const allTools = await this.getAllTools();
-        const stream = this.grokClient.chatStream(this.messages, allTools);
+        const stream = this.grokClient.chatStream(
           this.messages,
-          GROK_TOOLS,
+          allTools,
           undefined,
           { search_parameters: { mode: "auto" } }
         );
