@@ -29,7 +29,7 @@ export interface StreamingChunk {
   tokenCount?: number;
 }
 
-export class GrokAgent {
+export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
   private bash: BashTool;
@@ -43,8 +43,9 @@ export class GrokAgent {
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
 
-  constructor(apiKey: string, baseURL?: string) {
-    this.grokClient = new GrokClient(apiKey, undefined, baseURL);
+  constructor(apiKey: string, baseURL?: string, model?: string) {
+    super();
+    this.grokClient = new GrokClient(apiKey, model, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
     this.todoTool = new TodoTool();

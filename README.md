@@ -100,6 +100,21 @@ Or specify a working directory:
 grok -d /path/to/project
 ```
 
+### Model Selection
+
+You can specify which AI model to use with the `--model` parameter:
+
+```bash
+# Use Grok models
+grok --model grok-4-latest
+grok --model grok-3-latest
+grok --model grok-3-fast
+
+# Use other models (with appropriate API endpoint)
+grok --model gemini-2.5-pro --base-url https://api-endpoint.com/v1
+grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
+```
+
 ### Custom Instructions
 
 You can provide custom instructions to tailor Grok's behavior to your project by creating a `.grok/GROK.md` file in your project directory:
