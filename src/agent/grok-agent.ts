@@ -325,7 +325,7 @@ Current working directory: ${process.cwd()}`,
     this.messages.push({ role: "user", content: message });
 
     // Calculate input tokens
-    const inputTokens = this.tokenCounter.countMessageTokens(
+    let inputTokens = this.tokenCounter.countMessageTokens(
       this.messages as any
     );
     yield {
@@ -396,9 +396,9 @@ Current working directory: ${process.cwd()}`,
           if (chunk.choices[0].delta?.content) {
             accumulatedContent += chunk.choices[0].delta.content;
 
-            // Update token count in real-time
-            const currentOutputTokens =
-              this.tokenCounter.estimateStreamingTokens(accumulatedContent);
+            // Update token count in real-time including accumulated content and any tool calls
+            const currentOutputTokens = this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
+              (accumulatedMessage.tool_calls ? this.tokenCounter.countTokens(JSON.stringify(accumulatedMessage.tool_calls)) : 0);
             totalOutputTokens = currentOutputTokens;
 
             yield {
@@ -482,6 +482,13 @@ Current working directory: ${process.cwd()}`,
               tool_call_id: toolCall.id,
             });
           }
+
+          // Update token count after processing all tool calls to include tool results
+          inputTokens = this.tokenCounter.countMessageTokens(this.messages as any);
+          yield {
+            type: "token_count",
+            tokenCount: inputTokens + totalOutputTokens,
+          };
 
           // Continue the loop to get the next response (which might have more tool calls)
         } else {
