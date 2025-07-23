@@ -80,7 +80,30 @@ const MemoizedChatEntry = React.memo(
 
       case "tool_call":
       case "tool_result":
-        const actionName = entry.toolCall?.function?.name || "unknown";
+        const getToolActionName = (toolName: string) => {
+          switch (toolName) {
+            case "view_file":
+              return "Read";
+            case "str_replace_editor":
+              return "Update";
+            case "create_file":
+              return "Create";
+            case "bash":
+              return "Bash";
+            case "search":
+              return "Search";
+            case "create_todo_list":
+              return "Created Todo";
+            case "update_todo_list":
+              return "Updated Todo";
+            default:
+              return "Tool";
+          }
+        };
+
+        const toolName = entry.toolCall?.function?.name || "unknown";
+        const actionName = getToolActionName(toolName);
+
         const getFilePath = (toolCall: any) => {
           if (toolCall?.function?.arguments) {
             try {
