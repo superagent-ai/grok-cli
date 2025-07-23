@@ -88,6 +88,8 @@ Add to `~/.grok/user-settings.json`:
 
 ## Usage
 
+### Interactive Mode
+
 Start the conversational AI assistant:
 ```bash
 grok
@@ -97,6 +99,21 @@ Or specify a working directory:
 ```bash
 grok -d /path/to/project
 ```
+
+### Headless Mode
+
+Process a single prompt and exit (useful for scripting and automation):
+```bash
+grok --prompt "show me the package.json file"
+grok -p "create a new file called example.js with a hello world function"
+grok --prompt "run npm test and show me the results" --directory /path/to/project
+```
+
+This mode is particularly useful for:
+- **CI/CD pipelines**: Automate code analysis and file operations
+- **Scripting**: Integrate AI assistance into shell scripts
+- **Terminal benchmarks**: Perfect for tools like Terminal Bench that need non-interactive execution
+- **Batch processing**: Process multiple prompts programmatically
 
 ### Model Selection
 
@@ -111,6 +128,21 @@ grok --model grok-3-fast
 # Use other models (with appropriate API endpoint)
 grok --model gemini-2.5-pro --base-url https://api-endpoint.com/v1
 grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
+```
+
+### Command Line Options
+
+```bash
+grok [options]
+
+Options:
+  -V, --version          output the version number
+  -d, --directory <dir>  set working directory
+  -k, --api-key <key>    Grok API key (or set GROK_API_KEY env var)
+  -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
+  -m, --model <model>    AI model to use (e.g., grok-4-latest, grok-3-latest)
+  -p, --prompt <prompt>  process a single prompt and exit (headless mode)
+  -h, --help             display help for command
 ```
 
 ### Custom Instructions
