@@ -67,6 +67,23 @@ export class TokenCounter {
 }
 
 /**
+ * Format token count for display (e.g., 1.2k for 1200)
+ */
+export function formatTokenCount(count: number): string {
+  if (count <= 999) {
+    return count.toString();
+  }
+  
+  if (count < 1_000_000) {
+    const k = count / 1000;
+    return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
+  }
+  
+  const m = count / 1_000_000;
+  return m % 1 === 0 ? `${m}m` : `${m.toFixed(1)}m`;
+}
+
+/**
  * Create a token counter instance
  */
 export function createTokenCounter(model?: string): TokenCounter {
