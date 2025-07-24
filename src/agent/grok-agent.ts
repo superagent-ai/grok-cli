@@ -668,7 +668,7 @@ Current working directory: ${process.cwd()}`,
             success: true,
             output: `Directory resources registered: ${args.path}`,
           };
-
+          
         case "search":
           return await this.search.search(args.query, {
             searchType: args.search_type,
