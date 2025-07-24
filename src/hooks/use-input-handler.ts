@@ -57,6 +57,7 @@ export function useInputHandler({
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/models", description: "Switch Grok Model" },
+    { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
   ];
 
@@ -103,6 +104,9 @@ Built-in Commands:
   /models     - Switch Grok models
   /exit       - Exit application
   exit, quit  - Exit application
+  
+Git Commands:
+  /commit-and-push - AI-generated commit + push to remote
   
 Keyboard Shortcuts:
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
@@ -158,6 +162,146 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/commit-and-push") {
+      const userEntry: ChatEntry = {
+        type: "user",
+        content: "/commit-and-push",
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, userEntry]);
+
+      setIsProcessing(true);
+      setIsStreaming(true);
+
+      try {
+        // Get git status and diff first
+        const statusResult = await agent.executeBashCommand("git status --porcelain");
+        const diffResult = await agent.executeBashCommand("git diff --cached");
+        
+        if (!statusResult.success || !statusResult.output?.trim()) {
+          const noChangesEntry: ChatEntry = {
+            type: "assistant",
+            content: "No changes to commit. Stage your changes first with `git add`.",
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, noChangesEntry]);
+          setIsProcessing(false);
+          setIsStreaming(false);
+          setInput("");
+          return true;
+        }
+
+        // Generate commit message using AI
+        const commitPrompt = `Generate a concise, professional git commit message for these changes:
+
+Git Status:
+${statusResult.output}
+
+Git Diff (staged changes):
+${diffResult.output || "No staged changes shown"}
+
+Follow conventional commit format (feat:, fix:, docs:, etc.) and keep it under 72 characters.
+Respond with ONLY the commit message, no additional text.`;
+
+        let commitMessage = "";
+        let streamingEntry: ChatEntry | null = null;
+
+        for await (const chunk of agent.processUserMessageStream(commitPrompt)) {
+          if (chunk.type === "content" && chunk.content) {
+            if (!streamingEntry) {
+              const newEntry = {
+                type: "assistant" as const,
+                content: `Generating commit message...\n\n${chunk.content}`,
+                timestamp: new Date(),
+                isStreaming: true,
+              };
+              setChatHistory((prev) => [...prev, newEntry]);
+              streamingEntry = newEntry;
+              commitMessage = chunk.content;
+            } else {
+              commitMessage += chunk.content;
+              setChatHistory((prev) =>
+                prev.map((entry, idx) =>
+                  idx === prev.length - 1 && entry.isStreaming
+                    ? { ...entry, content: `Generating commit message...\n\n${commitMessage}` }
+                    : entry
+                )
+              );
+            }
+          } else if (chunk.type === "done") {
+            if (streamingEntry) {
+              setChatHistory((prev) =>
+                prev.map((entry) =>
+                  entry.isStreaming 
+                    ? { ...entry, content: `Generated commit message: "${commitMessage.trim()}"`, isStreaming: false }
+                    : entry
+                )
+              );
+            }
+            break;
+          }
+        }
+
+        // Execute the commit
+        const cleanCommitMessage = commitMessage.trim().replace(/^["']|["']$/g, '');
+        const commitCommand = `git commit -m "${cleanCommitMessage}"`;
+        const commitResult = await agent.executeBashCommand(commitCommand);
+
+        const commitEntry: ChatEntry = {
+          type: "tool_result",
+          content: commitResult.success
+            ? commitResult.output || "Commit successful"
+            : commitResult.error || "Commit failed",
+          timestamp: new Date(),
+          toolCall: {
+            id: `git_commit_${Date.now()}`,
+            type: "function",
+            function: {
+              name: "bash",
+              arguments: JSON.stringify({ command: commitCommand }),
+            },
+          },
+          toolResult: commitResult,
+        };
+        setChatHistory((prev) => [...prev, commitEntry]);
+
+        // If commit was successful, push to remote
+        if (commitResult.success) {
+          const pushResult = await agent.executeBashCommand("git push");
+          const pushEntry: ChatEntry = {
+            type: "tool_result",
+            content: pushResult.success
+              ? pushResult.output || "Push successful"
+              : pushResult.error || "Push failed",
+            timestamp: new Date(),
+            toolCall: {
+              id: `git_push_${Date.now()}`,
+              type: "function",
+              function: {
+                name: "bash",
+                arguments: JSON.stringify({ command: "git push" }),
+              },
+            },
+            toolResult: pushResult,
+          };
+          setChatHistory((prev) => [...prev, pushEntry]);
+        }
+
+      } catch (error: any) {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Error during commit and push: ${error.message}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+      }
+
+      setIsProcessing(false);
+      setIsStreaming(false);
       setInput("");
       return true;
     }

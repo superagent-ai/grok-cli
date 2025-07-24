@@ -88,6 +88,94 @@ function loadBaseURL(): string | undefined {
   return baseURL;
 }
 
+// Handle commit-and-push command in headless mode
+async function handleCommitAndPushHeadless(
+  apiKey: string,
+  baseURL?: string,
+  model?: string
+): Promise<void> {
+  try {
+    const agent = new GrokAgent(apiKey, baseURL, model);
+
+    // Configure confirmation service for headless mode (auto-approve all operations)
+    const confirmationService = ConfirmationService.getInstance();
+    confirmationService.setSessionFlag("allOperations", true);
+
+    console.log("🤖 Processing commit and push...\n");
+    console.log("> /commit-and-push\n");
+
+    // Get git status and diff first
+    const statusResult = await agent.executeBashCommand("git status --porcelain");
+    const diffResult = await agent.executeBashCommand("git diff --cached");
+    
+    if (!statusResult.success || !statusResult.output?.trim()) {
+      console.log("❌ No changes to commit. Stage your changes first with `git add`.");
+      process.exit(1);
+    }
+
+    console.log("✅ git status: Changes detected");
+
+    // Generate commit message using AI
+    const commitPrompt = `Generate a concise, professional git commit message for these changes:
+
+Git Status:
+${statusResult.output}
+
+Git Diff (staged changes):
+${diffResult.output || "No staged changes shown"}
+
+Follow conventional commit format (feat:, fix:, docs:, etc.) and keep it under 72 characters.
+Respond with ONLY the commit message, no additional text.`;
+
+    console.log("🤖 Generating commit message...");
+    
+    const commitMessageEntries = await agent.processUserMessage(commitPrompt);
+    let commitMessage = "";
+    
+    // Extract the commit message from the AI response
+    for (const entry of commitMessageEntries) {
+      if (entry.type === "assistant" && entry.content.trim()) {
+        commitMessage = entry.content.trim();
+        break;
+      }
+    }
+
+    if (!commitMessage) {
+      console.log("❌ Failed to generate commit message");
+      process.exit(1);
+    }
+
+    // Clean the commit message
+    const cleanCommitMessage = commitMessage.replace(/^["']|["']$/g, '');
+    console.log(`✅ Generated commit message: "${cleanCommitMessage}"`);
+
+    // Execute the commit
+    const commitCommand = `git commit -m "${cleanCommitMessage}"`;
+    const commitResult = await agent.executeBashCommand(commitCommand);
+
+    if (commitResult.success) {
+      console.log(`✅ git commit: ${commitResult.output?.split('\n')[0] || 'Commit successful'}`);
+      
+      // If commit was successful, push to remote
+      const pushResult = await agent.executeBashCommand("git push");
+      
+      if (pushResult.success) {
+        console.log(`✅ git push: ${pushResult.output?.split('\n')[0] || 'Push successful'}`);
+      } else {
+        console.log(`❌ git push: ${pushResult.error || 'Push failed'}`);
+        process.exit(1);
+      }
+    } else {
+      console.log(`❌ git commit: ${commitResult.error || 'Commit failed'}`);
+      process.exit(1);
+    }
+
+  } catch (error: any) {
+    console.error("❌ Error during commit and push:", error.message);
+    process.exit(1);
+  }
+}
+
 // Headless mode processing function
 async function processPromptHeadless(
   prompt: string,
@@ -96,6 +184,12 @@ async function processPromptHeadless(
   model?: string
 ): Promise<void> {
   try {
+    // Handle special commands
+    if (prompt === "/commit-and-push") {
+      await handleCommitAndPushHeadless(apiKey, baseURL, model);
+      return;
+    }
+
     const agent = new GrokAgent(apiKey, baseURL, model);
 
     // Configure confirmation service for headless mode (auto-approve all operations)
@@ -173,7 +267,7 @@ program
   )
   .option(
     "-p, --prompt <prompt>",
-    "process a single prompt and exit (headless mode)"
+    "process a single prompt and exit (headless mode). Use '/commit-and-push' for AI commit and push"
   )
   .action(async (options) => {
     if (options.directory) {
