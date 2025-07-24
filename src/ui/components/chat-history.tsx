@@ -9,46 +9,44 @@ interface ChatHistoryProps {
   isConfirmationActive?: boolean;
 }
 
-export function ChatHistory({
-  entries,
-  isConfirmationActive = false,
-}: ChatHistoryProps) {
-  const renderDiff = (diffContent: string, filename?: string) => {
-    return (
-      <DiffRenderer
-        diffContent={diffContent}
-        filename={filename}
-        terminalWidth={80}
-      />
-    );
-  };
-
-  const renderFileContent = (content: string) => {
-    const lines = content.split("\n");
-
-    // Calculate minimum indentation like DiffRenderer does
-    let baseIndentation = Infinity;
-    for (const line of lines) {
-      if (line.trim() === "") continue;
-      const firstCharIndex = line.search(/\S/);
-      const currentIndent = firstCharIndex === -1 ? 0 : firstCharIndex;
-      baseIndentation = Math.min(baseIndentation, currentIndent);
-    }
-    if (!isFinite(baseIndentation)) {
-      baseIndentation = 0;
-    }
-
-    return lines.map((line, index) => {
-      const displayContent = line.substring(baseIndentation);
+// Memoized ChatEntry component to prevent unnecessary re-renders
+const MemoizedChatEntry = React.memo(
+  ({ entry, index }: { entry: ChatEntry; index: number }) => {
+    const renderDiff = (diffContent: string, filename?: string) => {
       return (
-        <Text key={index} color="gray">
-          {displayContent}
-        </Text>
+        <DiffRenderer
+          diffContent={diffContent}
+          filename={filename}
+          terminalWidth={80}
+        />
       );
-    });
-  };
+    };
 
-  const renderChatEntry = (entry: ChatEntry, index: number) => {
+    const renderFileContent = (content: string) => {
+      const lines = content.split("\n");
+
+      // Calculate minimum indentation like DiffRenderer does
+      let baseIndentation = Infinity;
+      for (const line of lines) {
+        if (line.trim() === "") continue;
+        const firstCharIndex = line.search(/\S/);
+        const currentIndent = firstCharIndex === -1 ? 0 : firstCharIndex;
+        baseIndentation = Math.min(baseIndentation, currentIndent);
+      }
+      if (!isFinite(baseIndentation)) {
+        baseIndentation = 0;
+      }
+
+      return lines.map((line, index) => {
+        const displayContent = line.substring(baseIndentation);
+        return (
+          <Text key={index} color="gray">
+            {displayContent}
+          </Text>
+        );
+      });
+    };
+
     switch (entry.type) {
       case "user":
         return (
@@ -103,39 +101,38 @@ export function ChatHistory({
           }
         };
 
-        const getToolFilePath = (toolCall: any) => {
+        const toolName = entry.toolCall?.function?.name || "unknown";
+        const actionName = getToolActionName(toolName);
+
+        const getFilePath = (toolCall: any) => {
           if (toolCall?.function?.arguments) {
             try {
               const args = JSON.parse(toolCall.function.arguments);
-              // Handle todo tools specially - they don't have file paths
-              if (
-                toolCall.function.name === "create_todo_list" ||
-                toolCall.function.name === "update_todo_list"
-              ) {
-                return "";
-              }
-
-              // Handle search tool specially - show the query
               if (toolCall.function.name === "search") {
-                return args.query || "unknown";
+                return args.query;
               }
-
-              return args.path || args.file_path || args.command || "unknown";
+              return args.path || args.file_path || args.command || "";
             } catch {
-              return "unknown";
+              return "";
             }
           }
-          return "unknown";
+          return "";
         };
 
-        const toolName = entry.toolCall?.function?.name || "unknown";
-        const actionName = getToolActionName(toolName);
-        const filePath = getToolFilePath(entry.toolCall);
-
+        const filePath = getFilePath(entry.toolCall);
+        const isExecuting = entry.type === "tool_call" || !entry.toolResult;
         const shouldShowDiff =
-          toolName === "str_replace_editor" || toolName === "create_file";
-        const shouldShowFileContent = toolName === "view_file";
-        const isExecuting = entry.type === "tool_call";
+          entry.toolCall?.function?.name === "str_replace_editor" &&
+          entry.toolResult?.success &&
+          entry.content.includes("Updated") &&
+          entry.content.includes("---") &&
+          entry.content.includes("+++");
+
+        const shouldShowFileContent =
+          (entry.toolCall?.function?.name === "view_file" ||
+            entry.toolCall?.function?.name === "create_file") &&
+          entry.toolResult?.success &&
+          !shouldShowDiff;
 
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
@@ -174,8 +171,15 @@ export function ChatHistory({
       default:
         return null;
     }
-  };
+  }
+);
 
+MemoizedChatEntry.displayName = "MemoizedChatEntry";
+
+export function ChatHistory({
+  entries,
+  isConfirmationActive = false,
+}: ChatHistoryProps) {
   // Filter out tool_call entries with "Executing..." when confirmation is active
   const filteredEntries = isConfirmationActive
     ? entries.filter(
@@ -186,7 +190,13 @@ export function ChatHistory({
 
   return (
     <Box flexDirection="column">
-      {filteredEntries.slice(-20).map(renderChatEntry)}
+      {filteredEntries.slice(-20).map((entry, index) => (
+        <MemoizedChatEntry
+          key={`${entry.timestamp.getTime()}-${index}`}
+          entry={entry}
+          index={index}
+        />
+      ))}
     </Box>
   );
 }
