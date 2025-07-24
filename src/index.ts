@@ -157,7 +157,13 @@ Respond with ONLY the commit message, no additional text.`;
       console.log(`✅ git commit: ${commitResult.output?.split('\n')[0] || 'Commit successful'}`);
       
       // If commit was successful, push to remote
-      const pushResult = await agent.executeBashCommand("git push");
+      // First try regular push, if it fails try with upstream setup
+      let pushResult = await agent.executeBashCommand("git push");
+      
+      if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
+        console.log("🔄 Setting upstream and pushing...");
+        pushResult = await agent.executeBashCommand("git push -u origin HEAD");
+      }
       
       if (pushResult.success) {
         console.log(`✅ git push: ${pushResult.output?.split('\n')[0] || 'Push successful'}`);

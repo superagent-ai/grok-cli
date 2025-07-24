@@ -271,7 +271,15 @@ Respond with ONLY the commit message, no additional text.`;
 
         // If commit was successful, push to remote
         if (commitResult.success) {
-          const pushResult = await agent.executeBashCommand("git push");
+          // First try regular push, if it fails try with upstream setup
+          let pushResult = await agent.executeBashCommand("git push");
+          let pushCommand = "git push";
+          
+          if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
+            pushCommand = "git push -u origin HEAD";
+            pushResult = await agent.executeBashCommand(pushCommand);
+          }
+
           const pushEntry: ChatEntry = {
             type: "tool_result",
             content: pushResult.success
@@ -283,7 +291,7 @@ Respond with ONLY the commit message, no additional text.`;
               type: "function",
               function: {
                 name: "bash",
-                arguments: JSON.stringify({ command: "git push" }),
+                arguments: JSON.stringify({ command: pushCommand }),
               },
             },
             toolResult: pushResult,
