@@ -178,14 +178,13 @@ Available models: ${modelNames.join(", ")}`,
       setIsStreaming(true);
 
       try {
-        // Get git status and diff first
-        const statusResult = await agent.executeBashCommand("git status --porcelain");
-        const diffResult = await agent.executeBashCommand("git diff --cached");
+        // First check if there are any changes at all
+        const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
         
-        if (!statusResult.success || !statusResult.output?.trim()) {
+        if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
           const noChangesEntry: ChatEntry = {
             type: "assistant",
-            content: "No changes to commit. Stage your changes first with `git add`.",
+            content: "No changes to commit. Working directory is clean.",
             timestamp: new Date(),
           };
           setChatHistory((prev) => [...prev, noChangesEntry]);
@@ -195,11 +194,47 @@ Available models: ${modelNames.join(", ")}`,
           return true;
         }
 
+        // Add all changes
+        const addResult = await agent.executeBashCommand("git add .");
+        
+        if (!addResult.success) {
+          const addErrorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Failed to stage changes: ${addResult.error || 'Unknown error'}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, addErrorEntry]);
+          setIsProcessing(false);
+          setIsStreaming(false);
+          setInput("");
+          return true;
+        }
+
+        // Show that changes were staged
+        const addEntry: ChatEntry = {
+          type: "tool_result",
+          content: "Changes staged successfully",
+          timestamp: new Date(),
+          toolCall: {
+            id: `git_add_${Date.now()}`,
+            type: "function",
+            function: {
+              name: "bash",
+              arguments: JSON.stringify({ command: "git add ." }),
+            },
+          },
+          toolResult: addResult,
+        };
+        setChatHistory((prev) => [...prev, addEntry]);
+
+        // Get staged changes for commit message generation
+        const diffResult = await agent.executeBashCommand("git diff --cached");
+
         // Generate commit message using AI
         const commitPrompt = `Generate a concise, professional git commit message for these changes:
 
 Git Status:
-${statusResult.output}
+${initialStatusResult.output}
 
 Git Diff (staged changes):
 ${diffResult.output || "No staged changes shown"}

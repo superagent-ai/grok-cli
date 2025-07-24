@@ -104,22 +104,34 @@ async function handleCommitAndPushHeadless(
     console.log("🤖 Processing commit and push...\n");
     console.log("> /commit-and-push\n");
 
-    // Get git status and diff first
-    const statusResult = await agent.executeBashCommand("git status --porcelain");
-    const diffResult = await agent.executeBashCommand("git diff --cached");
+    // First check if there are any changes at all
+    const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
     
-    if (!statusResult.success || !statusResult.output?.trim()) {
-      console.log("❌ No changes to commit. Stage your changes first with `git add`.");
+    if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
+      console.log("❌ No changes to commit. Working directory is clean.");
       process.exit(1);
     }
 
     console.log("✅ git status: Changes detected");
 
+    // Add all changes
+    const addResult = await agent.executeBashCommand("git add .");
+    
+    if (!addResult.success) {
+      console.log(`❌ git add: ${addResult.error || 'Failed to stage changes'}`);
+      process.exit(1);
+    }
+
+    console.log("✅ git add: Changes staged");
+
+    // Get staged changes for commit message generation
+    const diffResult = await agent.executeBashCommand("git diff --cached");
+
     // Generate commit message using AI
     const commitPrompt = `Generate a concise, professional git commit message for these changes:
 
 Git Status:
-${statusResult.output}
+${initialStatusResult.output}
 
 Git Diff (staged changes):
 ${diffResult.output || "No staged changes shown"}
@@ -254,7 +266,7 @@ program
   .description(
     "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
-  .version("1.0.0")
+  .version("1.0.1")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
