@@ -20,13 +20,18 @@ function ensureSettingsDirectory(): void {
   }
 }
 
+const DEFAULT_SETTINGS: Settings = {
+  selectedModel: 'grok-4-latest'
+};
+
 export function loadSettings(): Settings {
   try {
     ensureSettingsDirectory();
     const settingsPath = getSettingsPath();
     
     if (!fs.existsSync(settingsPath)) {
-      return {};
+      saveSettings(DEFAULT_SETTINGS);
+      return DEFAULT_SETTINGS;
     }
     
     const settingsContent = fs.readFileSync(settingsPath, 'utf-8');

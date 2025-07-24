@@ -14,6 +14,32 @@ import { ConfirmationService } from "./utils/confirmation-service";
 // Load environment variables
 dotenv.config();
 
+// Ensure user .grok directory exists with default settings
+function ensureUserSettingsDirectory(): void {
+  try {
+    const homeDir = os.homedir();
+    const grokDir = path.join(homeDir, ".grok");
+    const settingsFile = path.join(grokDir, "user-settings.json");
+
+    // Create .grok directory if it doesn't exist
+    if (!fs.existsSync(grokDir)) {
+      fs.mkdirSync(grokDir, { recursive: true });
+    }
+
+    // Create default user-settings.json if it doesn't exist
+    if (!fs.existsSync(settingsFile)) {
+      const defaultSettings = {
+        apiKey: "",
+        baseURL: "",
+        defaultModel: "grok-4-latest"
+      };
+      fs.writeFileSync(settingsFile, JSON.stringify(defaultSettings, null, 2));
+    }
+  } catch (error) {
+    // Silently ignore errors during setup
+  }
+}
+
 // Load API key from user settings if not in environment
 function loadApiKey(): string | undefined {
   // First check environment variables
@@ -22,6 +48,7 @@ function loadApiKey(): string | undefined {
   if (!apiKey) {
     // Try to load from user settings file
     try {
+      ensureUserSettingsDirectory();
       const homeDir = os.homedir();
       const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
 
@@ -45,6 +72,7 @@ function loadBaseURL(): string | undefined {
   if (!baseURL) {
     // Try to load from user settings file
     try {
+      ensureUserSettingsDirectory();
       const homeDir = os.homedir();
       const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
 
