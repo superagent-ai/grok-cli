@@ -204,11 +204,17 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             isStreaming={isStreaming}
           />
 
-          <Box>
+          <Box flexDirection="row">
             <Text color="cyan">
               {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
               {autoEditEnabled ? "on" : "off"}
             </Text>
+            <Box marginLeft={1}>
+              <Text dimColor>(shift + tab)</Text>
+            </Box>
+            <Box marginLeft={2}>
+              <Text color="yellow">⚡{agent.getCurrentModel()}</Text>
+            </Box>
           </Box>
 
           <CommandSuggestions

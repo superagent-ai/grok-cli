@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useInput, useApp } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
+import { updateSetting } from "../utils/settings";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -139,6 +140,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
+        updateSetting('selectedModel', modelArg);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -435,6 +437,7 @@ Available models: ${modelNames.join(", ")}`,
       if (key.tab || key.return) {
         const selectedModel = availableModels[selectedModelIndex];
         agent.setModel(selectedModel.model);
+        updateSetting('selectedModel', selectedModel.model);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${selectedModel.model}`,

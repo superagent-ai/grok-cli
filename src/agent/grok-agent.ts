@@ -11,6 +11,7 @@ import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
+import { getSetting } from "../utils/settings";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -45,13 +46,16 @@ export class GrokAgent extends EventEmitter {
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
-    this.grokClient = new GrokClient(apiKey, model, baseURL);
+    // Use saved model if no model is explicitly provided
+    const savedModel = getSetting('selectedModel');
+    const modelToUse = model || savedModel || 'grok-4-latest';
+    this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
-    this.tokenCounter = createTokenCounter("grok-4-latest");
+    this.tokenCounter = createTokenCounter(modelToUse);
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
