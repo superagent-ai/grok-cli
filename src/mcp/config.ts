@@ -7,7 +7,7 @@ export class MCPConfigManager {
   private config: MCPConfig | null = null;
   private configPath: string;
   private watchers: Array<(config: MCPConfig) => void> = [];
-  private serverScopes: Map<string, 'project' | 'user' | 'local' | 'fallback'> = new Map();
+  private serverScopes: Map<string, 'project' | 'user' | 'local' | 'system'> = new Map();
 
   constructor(configPath?: string) {
     this.configPath = configPath || this.getDefaultConfigPath();
@@ -93,21 +93,21 @@ export class MCPConfigManager {
     return mergedConfig;
   }
 
-  private getAllConfigPaths(): Array<{ path: string; scope: 'project' | 'user' | 'local' | 'fallback' }> {
+  private getAllConfigPaths(): Array<{ path: string; scope: 'project' | 'user' | 'local' | 'system' }> {
     return [
-      { path: path.join(os.homedir(), '.config', 'grok-cli', 'mcpConfig.json'), scope: 'fallback' },
+      { path: path.join(os.homedir(), '.config', 'grok-cli', 'mcpConfig.json'), scope: 'system' },
       { path: path.join(process.cwd(), 'mcpConfig.json'), scope: 'local' },
       { path: path.join(os.homedir(), '.grok', 'mcpConfig.json'), scope: 'user' },
       { path: path.join(process.cwd(), '.grok', 'mcpConfig.json'), scope: 'project' }
     ];
   }
 
-  getServerScope(serverId: string): 'project' | 'user' | 'local' | 'fallback' | undefined {
+  getServerScope(serverId: string): 'project' | 'user' | 'local' | 'system' | undefined {
     return this.serverScopes.get(serverId);
   }
 
-  getServersByScope(): Record<'project' | 'user' | 'local' | 'fallback', string[]> {
-    const result = { project: [], user: [], local: [], fallback: [] } as Record<'project' | 'user' | 'local' | 'fallback', string[]>;
+  getServersByScope(): Record<'project' | 'user' | 'local' | 'system', string[]> {
+    const result = { project: [], user: [], local: [], system: [] } as Record<'project' | 'user' | 'local' | 'system', string[]>;
     
     for (const [serverId, scope] of this.serverScopes.entries()) {
       result[scope].push(serverId);

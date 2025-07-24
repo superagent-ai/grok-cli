@@ -30,7 +30,7 @@ interface ModelOption {
 
 export function useInputHandler({
   agent,
-  chatHistory,
+  chatHistory,  
   setChatHistory,
   setIsProcessing,
   setIsStreaming,

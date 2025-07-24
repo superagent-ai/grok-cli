@@ -380,9 +380,9 @@ export class MCPManager extends EventEmitter {
         const client = this.createClient(serverId, config);
         this.clients.set(serverId, client);
         await client.connect();
-        console.log(`✅ MCP server ${serverId} connected successfully`);
+        // Server connected successfully (removed success log)
       } catch (error) {
-        console.warn(`❌ Failed to connect to MCP server ${serverId}:`, error);
+        // Failed to connect (removed error log - UI will show status)
         this.clients.delete(serverId);
       }
     });

@@ -12,6 +12,8 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 import { MCPService } from "../mcp/mcp-service";
+import { MCPManager } from "../mcp/manager";
+import { MCPConfigManager } from "../mcp/config";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -44,6 +46,7 @@ export class GrokAgent extends EventEmitter {
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  public mcpManager: MCPManager | null = null;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
@@ -55,6 +58,9 @@ export class GrokAgent extends EventEmitter {
     this.mcpService = new MCPService();
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter("grok-4-latest");
+
+    // Initialize MCP Manager
+    this.initializeMCPManager();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -721,5 +727,19 @@ Current working directory: ${process.cwd()}`,
 
   getMCPService(): MCPService {
     return this.mcpService;
+  }
+
+  private async initializeMCPManager(): Promise<void> {
+    try {
+      const configManager = new MCPConfigManager();
+      this.mcpManager = new MCPManager(configManager);
+      
+      // Initialize the manager asynchronously without blocking constructor
+      this.mcpManager.initialize().catch(error => {
+        // Silent failure - UI will show status
+      });
+    } catch (error) {
+      // Failed to create MCP manager - UI will show status
+    }
   }
 }

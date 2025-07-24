@@ -22,13 +22,13 @@ interface MCPStatusSummary {
     resourceCount: number;
     promptCount: number;
     error?: string;
-    scope?: 'project' | 'user' | 'local' | 'fallback';
+    scope?: 'project' | 'user' | 'local' | 'system';
   }>;
   scopeCounts: {
     project: number;
     user: number;
     local: number;
-    fallback: number;
+    system: number;
   };
 }
 
@@ -40,15 +40,56 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
     totalPrompts: 0,
     totalRoots: 0,
     serverDetails: [],
-    scopeCounts: { project: 0, user: 0, local: 0, fallback: 0 }
+    scopeCounts: { project: 0, user: 0, local: 0, system: 0 }
   });
+  const [mcpAvailable, setMcpAvailable] = useState(false);
+  const [configuredServers, setConfiguredServers] = useState<number>(0);
+  const [loadingState, setLoadingState] = useState<'checking' | 'loading' | 'ready'>('checking');
+  const [loadingFrame, setLoadingFrame] = useState(0);
 
   useEffect(() => {
     const updateStatus = async () => {
       try {
         // Access the MCP manager from the agent
         const mcpManager = (agent as any).mcpManager;
-        if (!mcpManager) return;
+        
+        // Check for configured servers even if manager isn't ready
+        if (!mcpManager) {
+          setLoadingState('checking');
+          setMcpAvailable(false);
+          return;
+        }
+        
+        // Get config to see how many servers should be loading
+        const config = mcpManager.getConfig();
+        const configManagerInstance = mcpManager.getConfigManager();
+        
+        // If no config yet, try to check the config files directly
+        if (!config && configManagerInstance) {
+          // We're still loading config
+          setLoadingState('loading');
+          setMcpAvailable(false);
+          return;
+        }
+        
+        if (config) {
+          const enabledServerCount = Object.values(config.mcpServers)
+            .filter((server: any) => server.enabled).length;
+          // Only update if we have a real count, never go back to 0 once we know servers exist
+          if (enabledServerCount > 0 || configuredServers === 0) {
+            setConfiguredServers(enabledServerCount);
+          }
+        }
+        
+        if (!mcpManager.isInitialized()) {
+          setLoadingState('loading');
+          setMcpAvailable(false);
+          // Keep current counts to show progress
+          return;
+        }
+        
+        setMcpAvailable(true);
+        setLoadingState('ready');
 
         const serverStatuses = mcpManager.getServerStatuses();
         const allTools = mcpManager.getAllTools();
@@ -81,10 +122,10 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
           (status: any) => status.status === 'connected'
         ).length;
         
-        const scopeCounts = { project: 0, user: 0, local: 0, fallback: 0 };
+        const scopeCounts = { project: 0, user: 0, local: 0, system: 0 };
         
         const serverDetails = Object.values(serverStatuses).map((status: any) => {
-          const scope = configManager?.getServerScope(status.id) || 'fallback';
+          const scope = configManager?.getServerScope(status.id) || 'system';
           scopeCounts[scope]++;
           
           return {
@@ -131,6 +172,16 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
       onToggleExpanded();
     }
   });
+  
+  // Loading animation
+  useEffect(() => {
+    if (loadingState === 'loading') {
+      const timer = setInterval(() => {
+        setLoadingFrame(f => (f + 1) % 10);
+      }, 80);
+      return () => clearInterval(timer);
+    }
+  }, [loadingState]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -160,8 +211,8 @@ export function MCPStatus({ agent, isExpanded, onToggleExpanded }: MCPStatusProp
   if (statusSummary.scopeCounts.local > 0) {
     scopeDisplay.push(chalk.yellow(`Local:${statusSummary.scopeCounts.local}`));
   }
-  if (statusSummary.scopeCounts.fallback > 0) {
-    scopeDisplay.push(chalk.gray(`Fallback:${statusSummary.scopeCounts.fallback}`));
+  if (statusSummary.scopeCounts.system > 0) {
+    scopeDisplay.push(chalk.gray(`System:${statusSummary.scopeCounts.system}`));
   }
   
   const scopeText = scopeDisplay.length > 0 ? ` (${scopeDisplay.join(' ')})` : '';
@@ -175,6 +226,40 @@ ${statusSummary.connectedServers} MCP Servers ${statusSummary.totalTools} Tools 
   const compactText = `${statusSummary.connectedServers}🔧${statusSummary.totalTools}📁${statusSummary.totalResources}📝${statusSummary.totalPrompts}🏠${statusSummary.totalRoots}`;
 
   if (!isExpanded) {
+    if (!mcpAvailable) {
+      if (loadingState === 'checking') {
+        return (
+          <Box marginBottom={1}>
+            <Text color="yellow">
+              ⏳ Checking MCP configuration...
+            </Text>
+          </Box>
+        );
+      } else if (loadingState === 'loading' && configuredServers > 0) {
+        const loadingFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        
+        return (
+          <Box marginBottom={1}>
+            <Text color="cyan">
+              {loadingFrames[loadingFrame]} Loading {configuredServers} MCP server{configuredServers !== 1 ? 's' : ''}... 
+              {statusSummary.connectedServers > 0 && (
+                <Text color="green">({statusSummary.connectedServers} connected)</Text>
+              )}
+            </Text>
+          </Box>
+        );
+      } else {
+        // Default loading state - we don't know yet if servers are configured
+        return (
+          <Box marginBottom={1}>
+            <Text color="yellow">
+              ⏳ Loading MCP servers...
+            </Text>
+          </Box>
+        );
+      }
+    }
+    
     return (
       <Box marginBottom={1}>
         <Text>
