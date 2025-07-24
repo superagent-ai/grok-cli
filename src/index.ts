@@ -190,12 +190,6 @@ async function processPromptHeadless(
   model?: string
 ): Promise<void> {
   try {
-    // Handle special commands
-    if (prompt === "/commit-and-push") {
-      await handleCommitAndPushHeadless(apiKey, baseURL, model);
-      return;
-    }
-
     const agent = new GrokAgent(apiKey, baseURL, model);
 
     // Configure confirmation service for headless mode (auto-approve all operations)
@@ -258,7 +252,7 @@ async function processPromptHeadless(
 program
   .name("grok")
   .description(
-    "A conversational AI CLI tool powered by Grok-3 with text editor capabilities"
+    "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
   .version("1.0.0")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
@@ -273,7 +267,7 @@ program
   )
   .option(
     "-p, --prompt <prompt>",
-    "process a single prompt and exit (headless mode). Use '/commit-and-push' for AI commit and push"
+    "process a single prompt and exit (headless mode)"
   )
   .action(async (options) => {
     if (options.directory) {
@@ -313,6 +307,57 @@ program
       render(React.createElement(ChatInterface, { agent }));
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
+      process.exit(1);
+    }
+  });
+
+// Git subcommand
+const gitCommand = program
+  .command("git")
+  .description("Git operations with AI assistance");
+
+gitCommand
+  .command("commit-and-push")
+  .description("Generate AI commit message and push to remote")
+  .option("-d, --directory <dir>", "set working directory", process.cwd())
+  .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
+  .option(
+    "-u, --base-url <url>",
+    "Grok API base URL (or set GROK_BASE_URL env var)"
+  )
+  .option(
+    "-m, --model <model>",
+    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)"
+  )
+  .action(async (options) => {
+    if (options.directory) {
+      try {
+        process.chdir(options.directory);
+      } catch (error: any) {
+        console.error(
+          `Error changing directory to ${options.directory}:`,
+          error.message
+        );
+        process.exit(1);
+      }
+    }
+
+    try {
+      // Get API key from options, environment, or user settings
+      const apiKey = options.apiKey || loadApiKey();
+      const baseURL = options.baseUrl || loadBaseURL();
+      const model = options.model;
+
+      if (!apiKey) {
+        console.error(
+          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
+        );
+        process.exit(1);
+      }
+
+      await handleCommitAndPushHeadless(apiKey, baseURL, model);
+    } catch (error: any) {
+      console.error("❌ Error during git commit-and-push:", error.message);
       process.exit(1);
     }
   });
