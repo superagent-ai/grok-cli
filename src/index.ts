@@ -15,6 +15,36 @@ import { createMCPCommand } from "./commands/mcp";
 // Load environment variables
 dotenv.config();
 
+// Add proper signal handling for terminal cleanup
+process.on('SIGINT', () => {
+  // Restore terminal to normal mode before exit
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false);
+  }
+  console.log('\nGracefully shutting down...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  // Restore terminal to normal mode before exit
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false);
+  }
+  console.log('\nGracefully shutting down...');
+  process.exit(0);
+});
+
+// Handle uncaught exceptions to prevent hanging
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
 // Ensure user .grok directory exists with default settings
 function ensureUserSettingsDirectory(): void {
   try {

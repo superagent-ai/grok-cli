@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { Agent } from '../agent';
 import { ToolResult } from '../types';
 import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service';
@@ -15,7 +15,7 @@ export default function App({ agent }: Props) {
   const [history, setHistory] = useState<Array<{ command: string; result: ToolResult }>>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
-  const { exit } = useApp();
+  // Removed useApp().exit - using process.exit(0) instead for better terminal handling
   
   const confirmationService = ConfirmationService.getInstance();
 
@@ -42,13 +42,13 @@ export default function App({ agent }: Props) {
       return;
     }
     if (key.ctrl && inputChar === 'c') {
-      exit();
+      process.exit(0);
       return;
     }
 
     if (key.return) {
       if (input.trim() === 'exit' || input.trim() === 'quit') {
-        exit();
+        process.exit(0);
         return;
       }
 
