@@ -3,6 +3,7 @@ import { useInput, useApp } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { updateSetting } from "../utils/settings";
+import { filterCommandSuggestions } from "../ui/components/command-suggestions";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -180,7 +181,7 @@ Available models: ${modelNames.join(", ")}`,
       try {
         // First check if there are any changes at all
         const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
-        
+
         if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
           const noChangesEntry: ChatEntry = {
             type: "assistant",
@@ -196,7 +197,7 @@ Available models: ${modelNames.join(", ")}`,
 
         // Add all changes
         const addResult = await agent.executeBashCommand("git add .");
-        
+
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
             type: "assistant",
@@ -271,7 +272,7 @@ Respond with ONLY the commit message, no additional text.`;
             if (streamingEntry) {
               setChatHistory((prev) =>
                 prev.map((entry) =>
-                  entry.isStreaming 
+                  entry.isStreaming
                     ? { ...entry, content: `Generated commit message: "${commitMessage.trim()}"`, isStreaming: false }
                     : entry
                 )
@@ -309,7 +310,7 @@ Respond with ONLY the commit message, no additional text.`;
           // First try regular push, if it fails try with upstream setup
           let pushResult = await agent.executeBashCommand("git push");
           let pushCommand = "git push";
-          
+
           if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
             pushCommand = "git push -u origin HEAD";
             pushResult = await agent.executeBashCommand(pushCommand);
@@ -462,10 +463,10 @@ Respond with ONLY the commit message, no additional text.`;
                 prev.map((entry) =>
                   entry.isStreaming
                     ? {
-                        ...entry,
-                        isStreaming: false,
-                        toolCalls: chunk.toolCalls,
-                      }
+                      ...entry,
+                      isStreaming: false,
+                      toolCalls: chunk.toolCalls,
+                    }
                     : entry
                 )
               );
@@ -589,20 +590,31 @@ Respond with ONLY the commit message, no additional text.`;
     }
 
     if (showCommandSuggestions) {
+      const filteredSuggestions = filterCommandSuggestions(
+        commandSuggestions,
+        input
+      );
+
+      if (filteredSuggestions.length === 0) {
+        return;
+      }
+
       if (key.upArrow) {
         setSelectedCommandIndex((prev) =>
-          prev === 0 ? commandSuggestions.length - 1 : prev - 1
+          prev === 0 ? filteredSuggestions.length - 1 : prev - 1
         );
         return;
       }
       if (key.downArrow) {
         setSelectedCommandIndex(
-          (prev) => (prev + 1) % commandSuggestions.length
+          (prev) => (prev + 1) % filteredSuggestions.length
         );
         return;
       }
       if (key.tab || key.return) {
-        const selectedCommand = commandSuggestions[selectedCommandIndex];
+
+        const safeIndex = Math.min(selectedCommandIndex, filteredSuggestions.length - 1);
+        const selectedCommand = filteredSuggestions[safeIndex];
         setInput(selectedCommand.command + " ");
         setShowCommandSuggestions(false);
         setSelectedCommandIndex(0);
@@ -669,19 +681,14 @@ Respond with ONLY the commit message, no additional text.`;
       setInput(newInput);
 
       if (
-        newInput === "/" ||
+        newInput.startsWith("/") ||
         ["ls", "pwd", "cd", "cat", "mkdir", "touch"].some((cmd) =>
           cmd.startsWith(newInput)
         )
       ) {
         setShowCommandSuggestions(true);
         setSelectedCommandIndex(0);
-      } else if (
-        !newInput.startsWith("/") &&
-        !["ls", "pwd", "cd", "cat", "mkdir", "touch"].some((cmd) =>
-          cmd.startsWith(newInput)
-        )
-      ) {
+      } else {
         setShowCommandSuggestions(false);
         setSelectedCommandIndex(0);
       }
