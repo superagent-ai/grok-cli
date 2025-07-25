@@ -10,6 +10,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { ConfirmationService } from "./utils/confirmation-service";
+import { createMCPCommand } from "./commands/mcp";
 
 // Load environment variables
 dotenv.config();
@@ -373,5 +374,8 @@ gitCommand
       process.exit(1);
     }
   });
+
+// MCP command
+program.addCommand(createMCPCommand());
 
 program.parse();

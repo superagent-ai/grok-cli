@@ -81,6 +81,16 @@ const MemoizedChatEntry = React.memo(
       case "tool_call":
       case "tool_result":
         const getToolActionName = (toolName: string) => {
+          // Handle MCP tools with mcp__servername__toolname format
+          if (toolName.startsWith("mcp__")) {
+            const parts = toolName.split("__");
+            if (parts.length >= 3) {
+              const serverName = parts[1];
+              const actualToolName = parts.slice(2).join("__");
+              return `${serverName.charAt(0).toUpperCase() + serverName.slice(1)}(${actualToolName.replace(/_/g, " ")})`;
+            }
+          }
+
           switch (toolName) {
             case "view_file":
               return "Read";
@@ -121,6 +131,27 @@ const MemoizedChatEntry = React.memo(
 
         const filePath = getFilePath(entry.toolCall);
         const isExecuting = entry.type === "tool_call" || !entry.toolResult;
+        
+        // Format JSON content for better readability
+        const formatToolContent = (content: string, toolName: string) => {
+          if (toolName.startsWith("mcp__")) {
+            try {
+              // Try to parse as JSON and format it
+              const parsed = JSON.parse(content);
+              if (Array.isArray(parsed)) {
+                // For arrays, show a summary instead of full JSON
+                return `Found ${parsed.length} items`;
+              } else if (typeof parsed === 'object') {
+                // For objects, show a formatted version
+                return JSON.stringify(parsed, null, 2);
+              }
+            } catch {
+              // If not JSON, return as is
+              return content;
+            }
+          }
+          return content;
+        };
         const shouldShowDiff =
           entry.toolCall?.function?.name === "str_replace_editor" &&
           entry.toolResult?.success &&
@@ -157,7 +188,7 @@ const MemoizedChatEntry = React.memo(
                 // For diff results, show only the summary line, not the raw content
                 <Text color="gray">⎿ {entry.content.split("\n")[0]}</Text>
               ) : (
-                <Text color="gray">⎿ {entry.content}</Text>
+                <Text color="gray">⎿ {formatToolContent(entry.content, toolName)}</Text>
               )}
             </Box>
             {shouldShowDiff && !isExecuting && (

@@ -1,5 +1,5 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
-import { GROK_TOOLS } from "../grok/tools";
+import { GROK_TOOLS, addMCPToolsToGrokTools, getAllGrokTools, getMCPManager, initializeMCPServers } from "../grok/tools";
 import {
   TextEditorTool,
   BashTool,
@@ -56,6 +56,11 @@ export class GrokAgent extends EventEmitter {
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter(modelToUse);
+
+    // Initialize MCP servers asynchronously
+    initializeMCPServers().catch(error => {
+      console.warn('Failed to initialize MCP servers:', error);
+    });
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -143,7 +148,7 @@ Current working directory: ${process.cwd()}`,
     try {
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        GROK_TOOLS,
+        getAllGrokTools(),
         undefined,
         { search_parameters: { mode: "auto" } }
       );
@@ -237,7 +242,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            GROK_TOOLS,
+            getAllGrokTools(),
             undefined,
             { search_parameters: { mode: "auto" } }
           );
@@ -357,7 +362,7 @@ Current working directory: ${process.cwd()}`,
         // Stream response and accumulate
         const stream = this.grokClient.chatStream(
           this.messages,
-          GROK_TOOLS,
+          getAllGrokTools(),
           undefined,
           { search_parameters: { mode: "auto" } }
         );
@@ -584,6 +589,11 @@ Current working directory: ${process.cwd()}`,
           });
 
         default:
+          // Check if this is an MCP tool
+          if (toolCall.function.name.startsWith('mcp__')) {
+            return await this.executeMCPTool(toolCall);
+          }
+          
           return {
             success: false,
             error: `Unknown tool: ${toolCall.function.name}`,
@@ -593,6 +603,44 @@ Current working directory: ${process.cwd()}`,
       return {
         success: false,
         error: `Tool execution error: ${error.message}`,
+      };
+    }
+  }
+
+  private async executeMCPTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const mcpManager = getMCPManager();
+      
+      const result = await mcpManager.callTool(toolCall.function.name, args);
+      
+      if (result.isError) {
+        return {
+          success: false,
+          error: (result.content[0] as any)?.text || 'MCP tool error'
+        };
+      }
+      
+      // Extract content from result
+      const output = result.content
+        .map(item => {
+          if (item.type === 'text') {
+            return item.text;
+          } else if (item.type === 'resource') {
+            return `Resource: ${item.resource?.uri || 'Unknown'}`;
+          }
+          return String(item);
+        })
+        .join('\n');
+      
+      return {
+        success: true,
+        output: output || 'Success'
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `MCP tool execution error: ${error.message}`
       };
     }
   }

@@ -23,6 +23,7 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
     "axios": "^1.6.0",
     "cfonts": "^3.3.0",
     "chalk": "^4.1.2",

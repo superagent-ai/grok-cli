@@ -1,4 +1,6 @@
 import { GrokTool } from "./client";
+import { MCPManager, MCPTool } from "../mcp/client";
+import { loadMCPConfig } from "../mcp/config";
 
 export const GROK_TOOLS: GrokTool[] = [
   {
@@ -239,3 +241,87 @@ export const GROK_TOOLS: GrokTool[] = [
     },
   },
 ];
+
+// Global MCP manager instance
+let mcpManager: MCPManager | null = null;
+
+export function getMCPManager(): MCPManager {
+  if (!mcpManager) {
+    mcpManager = new MCPManager();
+  }
+  return mcpManager;
+}
+
+export async function initializeMCPServers(): Promise<void> {
+  const manager = getMCPManager();
+  const config = loadMCPConfig();
+  
+  // Store original stderr.write
+  const originalStderrWrite = process.stderr.write;
+  
+  // Temporarily suppress stderr to hide verbose MCP connection logs
+  process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+    // Filter out mcp-remote verbose logs
+    const chunkStr = chunk.toString();
+    if (chunkStr.includes('[') && (
+        chunkStr.includes('Using existing client port') ||
+        chunkStr.includes('Connecting to remote server') ||
+        chunkStr.includes('Using transport strategy') ||
+        chunkStr.includes('Connected to remote server') ||
+        chunkStr.includes('Local STDIO server running') ||
+        chunkStr.includes('Proxy established successfully') ||
+        chunkStr.includes('Local→Remote') ||
+        chunkStr.includes('Remote→Local')
+      )) {
+      // Suppress these verbose logs
+      if (callback) callback();
+      return true;
+    }
+    
+    // Allow other stderr output
+    return originalStderrWrite.call(this, chunk, encoding, callback);
+  };
+  
+  try {
+    for (const serverConfig of config.servers) {
+      try {
+        await manager.addServer(serverConfig);
+      } catch (error) {
+        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+      }
+    }
+  } finally {
+    // Restore original stderr.write
+    process.stderr.write = originalStderrWrite;
+  }
+}
+
+export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
+  return {
+    type: "function",
+    function: {
+      name: mcpTool.name,
+      description: mcpTool.description,
+      parameters: mcpTool.inputSchema || {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  };
+}
+
+export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
+  if (!mcpManager) {
+    return baseTools;
+  }
+  
+  const mcpTools = mcpManager.getTools();
+  const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
+  
+  return [...baseTools, ...grokMCPTools];
+}
+
+export function getAllGrokTools(): GrokTool[] {
+  return addMCPToolsToGrokTools(GROK_TOOLS);
+}
