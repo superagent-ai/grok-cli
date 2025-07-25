@@ -1,5 +1,6 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
 import { GROK_TOOLS, addMCPToolsToGrokTools, getAllGrokTools, getMCPManager, initializeMCPServers } from "../grok/tools";
+import { loadMCPConfig } from "../mcp/config";
 import {
   TextEditorTool,
   BashTool,
@@ -43,6 +44,7 @@ export class GrokAgent extends EventEmitter {
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  private mcpInitialized: boolean = false;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
@@ -57,10 +59,8 @@ export class GrokAgent extends EventEmitter {
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter(modelToUse);
 
-    // Initialize MCP servers asynchronously
-    initializeMCPServers().catch(error => {
-      console.warn('Failed to initialize MCP servers:', error);
-    });
+    // Initialize MCP servers if configured
+    this.initializeMCP();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -131,7 +131,31 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
+  private async initializeMCP(): Promise<void> {
+    try {
+      const config = loadMCPConfig();
+      if (config.servers.length > 0) {
+        console.log(`Found ${config.servers.length} MCP server(s) - connecting now...`);
+        await initializeMCPServers();
+        console.log(`Successfully connected to MCP servers`);
+      }
+      this.mcpInitialized = true;
+    } catch (error) {
+      console.warn('Failed to initialize MCP servers:', error);
+      this.mcpInitialized = true; // Don't block if MCP fails
+    }
+  }
+
+  private async waitForMCPInitialization(): Promise<void> {
+    while (!this.mcpInitialized) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   async processUserMessage(message: string): Promise<ChatEntry[]> {
+    // Wait for MCP initialization before processing
+    await this.waitForMCPInitialization();
+    
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -146,9 +170,10 @@ Current working directory: ${process.cwd()}`,
     let toolRounds = 0;
 
     try {
+      const tools = await getAllGrokTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        getAllGrokTools(),
+        tools,
         undefined,
         { search_parameters: { mode: "auto" } }
       );
@@ -242,7 +267,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            getAllGrokTools(),
+            tools,
             undefined,
             { search_parameters: { mode: "auto" } }
           );
@@ -360,9 +385,10 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
+        const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          getAllGrokTools(),
+          tools,
           undefined,
           { search_parameters: { mode: "auto" } }
         );

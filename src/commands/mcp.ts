@@ -12,7 +12,7 @@ export function createMCPCommand(): Command {
   mcpCommand
     .command('add <name>')
     .description('Add an MCP server')
-    .option('-t, --transport <type>', 'Transport type (stdio, http, sse)', 'stdio')
+    .option('-t, --transport <type>', 'Transport type (stdio, http, sse, streamable_http)', 'stdio')
     .option('-c, --command <command>', 'Command to run the server (for stdio transport)')
     .option('-a, --args [args...]', 'Arguments for the server command (for stdio transport)', [])
     .option('-u, --url <url>', 'URL for HTTP/SSE transport')
@@ -45,13 +45,13 @@ export function createMCPCommand(): Command {
             console.error(chalk.red('Error: --command is required for stdio transport'));
             process.exit(1);
           }
-        } else if (transportType === 'http' || transportType === 'sse') {
+        } else if (transportType === 'http' || transportType === 'sse' || transportType === 'streamable_http') {
           if (!options.url) {
             console.error(chalk.red(`Error: --url is required for ${transportType} transport`));
             process.exit(1);
           }
         } else {
-          console.error(chalk.red('Error: Transport type must be stdio, http, or sse'));
+          console.error(chalk.red('Error: Transport type must be stdio, http, sse, or streamable_http'));
           process.exit(1);
         }
 
@@ -76,7 +76,7 @@ export function createMCPCommand(): Command {
         const config = {
           name,
           transport: {
-            type: transportType as 'stdio' | 'http' | 'sse',
+            type: transportType as 'stdio' | 'http' | 'sse' | 'streamable_http',
             command: options.command,
             args: options.args || [],
             url: options.url,

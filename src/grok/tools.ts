@@ -322,6 +322,8 @@ export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
   return [...baseTools, ...grokMCPTools];
 }
 
-export function getAllGrokTools(): GrokTool[] {
+export async function getAllGrokTools(): Promise<GrokTool[]> {
+  const manager = getMCPManager();
+  await manager.ensureServersInitialized();
   return addMCPToolsToGrokTools(GROK_TOOLS);
 }

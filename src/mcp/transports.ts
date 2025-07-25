@@ -4,7 +4,7 @@ import { ChildProcess, spawn } from "child_process";
 import { EventEmitter } from "events";
 import axios, { AxiosInstance } from "axios";
 
-export type TransportType = 'stdio' | 'http' | 'sse';
+export type TransportType = 'stdio' | 'http' | 'sse' | 'streamable_http';
 
 export interface TransportConfig {
   type: TransportType;
@@ -195,6 +195,60 @@ class SSEClientTransport extends EventEmitter implements Transport {
   }
 }
 
+export class StreamableHttpTransport extends EventEmitter implements MCPTransport {
+  private connected = false;
+
+  constructor(private config: TransportConfig) {
+    super();
+    if (!config.url) {
+      throw new Error('URL is required for streamable_http transport');
+    }
+  }
+
+  async connect(): Promise<Transport> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.connected = true;
+        resolve(new StreamableHttpClientTransport(this.config.url!, this.config.headers));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async disconnect(): Promise<void> {
+    this.connected = false;
+  }
+
+  getType(): TransportType {
+    return 'streamable_http';
+  }
+}
+
+// Custom Streamable HTTP Transport implementation for GitHub Copilot MCP
+class StreamableHttpClientTransport extends EventEmitter implements Transport {
+  constructor(private url: string, private headers?: Record<string, string>) {
+    super();
+  }
+
+  async start(): Promise<void> {
+    // Streamable HTTP transport is connection-less, so we're always "started"
+  }
+
+  async close(): Promise<void> {
+    // Nothing to close for streamable HTTP transport
+  }
+
+  async send(message: any): Promise<any> {
+    console.log('StreamableHttpTransport: SSE endpoints require persistent connections, not suitable for MCP request-response pattern');
+    console.log('StreamableHttpTransport: Message that would be sent:', JSON.stringify(message));
+    
+    // For now, return a mock response to indicate the transport type is not compatible
+    // with the MCP protocol's request-response pattern
+    throw new Error('StreamableHttpTransport: SSE endpoints are not compatible with MCP request-response pattern. GitHub Copilot MCP may require a different integration approach.');
+  }
+}
+
 export function createTransport(config: TransportConfig): MCPTransport {
   switch (config.type) {
     case 'stdio':
@@ -203,6 +257,8 @@ export function createTransport(config: TransportConfig): MCPTransport {
       return new HttpTransport(config);
     case 'sse':
       return new SSETransport(config);
+    case 'streamable_http':
+      return new StreamableHttpTransport(config);
     default:
       throw new Error(`Unsupported transport type: ${config.type}`);
   }

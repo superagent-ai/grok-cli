@@ -7,6 +7,7 @@ import { CommandSuggestions } from "./command-suggestions";
 import { ModelSelection } from "./model-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
+import { MCPStatus } from "./mcp-status";
 import ConfirmationDialog from "./confirmation-dialog";
 import {
   ConfirmationService,
@@ -224,6 +225,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             <Box marginLeft={2}>
               <Text color="yellow">⚡{agent.getCurrentModel()}</Text>
             </Box>
+            <MCPStatus />
           </Box>
 
           <CommandSuggestions

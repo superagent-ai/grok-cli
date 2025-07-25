@@ -10,6 +10,7 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 - **📝 Smart File Operations**: AI automatically uses tools to view, create, and edit files
 - **⚡ Bash Integration**: Execute shell commands through natural conversation
 - **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
+- **🔌 MCP Tools**: Extend capabilities with Model Context Protocol servers (Linear, GitHub, etc.)
 - **💬 Interactive UI**: Beautiful terminal interface built with Ink
 - **🌍 Global Installation**: Install and use anywhere with `npm i -g @vibe-kit/grok-cli`
 
@@ -166,18 +167,62 @@ Follow the existing code style and patterns in this project.
 
 Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
 
-## Example Conversations
+## MCP Tools
 
-Instead of typing commands, just tell Grok what you want to do:
+Grok CLI supports MCP (Model Context Protocol) servers, allowing you to extend the AI assistant with additional tools and capabilities.
 
+### Adding MCP Tools
+
+#### Add a custom MCP server:
+```bash
+# Add an stdio-based MCP server
+grok mcp add my-server --transport stdio --command "node" --args server.js
+
+# Add an HTTP-based MCP server
+grok mcp add my-server --transport http --url "http://localhost:3000"
+
+# Add with environment variables
+grok mcp add my-server --transport stdio --command "python" --args "-m" "my_mcp_server" --env "API_KEY=your_key"
 ```
-💬 "Show me the contents of package.json"
-💬 "Create a new file called hello.js with a simple console.log"
-💬 "Find all TypeScript files in the src directory"
-💬 "Replace 'oldFunction' with 'newFunction' in all JS files"
-💬 "Run the tests and show me the results"
-💬 "What's the current directory structure?"
+
+#### Add from JSON configuration:
+```bash
+grok mcp add-json my-server '{"command": "node", "args": ["server.js"], "env": {"API_KEY": "your_key"}}'
 ```
+
+### Linear Integration Example
+
+To add Linear MCP tools for project management:
+
+```bash
+# Add Linear MCP server
+grok mcp add linear --transport sse --url "https://mcp.linear.app/sse"
+```
+
+This enables Linear tools like:
+- Create and manage Linear issues
+- Search and filter issues
+- Update issue status and assignees
+- Access team and project information
+
+### Managing MCP Servers
+
+```bash
+# List all configured servers
+grok mcp list
+
+# Test server connection
+grok mcp test server-name
+
+# Remove a server
+grok mcp remove server-name
+```
+
+### Available Transport Types
+
+- **stdio**: Run MCP server as a subprocess (most common)
+- **http**: Connect to HTTP-based MCP server
+- **sse**: Connect via Server-Sent Events
 
 ## Development
 

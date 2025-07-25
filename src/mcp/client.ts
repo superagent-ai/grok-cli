@@ -147,4 +147,21 @@ export class MCPManager extends EventEmitter {
     const transport = this.transports.get(serverName);
     return transport?.getType();
   }
+
+  async ensureServersInitialized(): Promise<void> {
+    if (this.clients.size > 0) {
+      return; // Already initialized
+    }
+
+    const { loadMCPConfig } = await import('../mcp/config');
+    const config = loadMCPConfig();
+    
+    for (const serverConfig of config.servers) {
+      try {
+        await this.addServer(serverConfig);
+      } catch (error) {
+        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
+      }
+    }
+  }
 }
