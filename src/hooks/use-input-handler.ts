@@ -132,6 +132,11 @@ Examples:
       return true;
     }
 
+    if (trimmedInput === "/exit") {
+      process.exit(0);
+      return true;
+    }
+
     if (trimmedInput === "/models") {
       setShowModelSelection(true);
       setSelectedModelIndex(0);
@@ -145,7 +150,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
-        updateSetting('selectedModel', modelArg);
+        updateSetting("selectedModel", modelArg);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -180,9 +185,14 @@ Available models: ${modelNames.join(", ")}`,
 
       try {
         // First check if there are any changes at all
-        const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
+        const initialStatusResult = await agent.executeBashCommand(
+          "git status --porcelain"
+        );
 
-        if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
+        if (
+          !initialStatusResult.success ||
+          !initialStatusResult.output?.trim()
+        ) {
           const noChangesEntry: ChatEntry = {
             type: "assistant",
             content: "No changes to commit. Working directory is clean.",
@@ -201,7 +211,9 @@ Available models: ${modelNames.join(", ")}`,
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
             type: "assistant",
-            content: `Failed to stage changes: ${addResult.error || 'Unknown error'}`,
+            content: `Failed to stage changes: ${
+              addResult.error || "Unknown error"
+            }`,
             timestamp: new Date(),
           };
           setChatHistory((prev) => [...prev, addErrorEntry]);
@@ -246,7 +258,9 @@ Respond with ONLY the commit message, no additional text.`;
         let commitMessage = "";
         let streamingEntry: ChatEntry | null = null;
 
-        for await (const chunk of agent.processUserMessageStream(commitPrompt)) {
+        for await (const chunk of agent.processUserMessageStream(
+          commitPrompt
+        )) {
           if (chunk.type === "content" && chunk.content) {
             if (!streamingEntry) {
               const newEntry = {
@@ -263,7 +277,10 @@ Respond with ONLY the commit message, no additional text.`;
               setChatHistory((prev) =>
                 prev.map((entry, idx) =>
                   idx === prev.length - 1 && entry.isStreaming
-                    ? { ...entry, content: `Generating commit message...\n\n${commitMessage}` }
+                    ? {
+                        ...entry,
+                        content: `Generating commit message...\n\n${commitMessage}`,
+                      }
                     : entry
                 )
               );
@@ -273,7 +290,11 @@ Respond with ONLY the commit message, no additional text.`;
               setChatHistory((prev) =>
                 prev.map((entry) =>
                   entry.isStreaming
-                    ? { ...entry, content: `Generated commit message: "${commitMessage.trim()}"`, isStreaming: false }
+                    ? {
+                        ...entry,
+                        content: `Generated commit message: "${commitMessage.trim()}"`,
+                        isStreaming: false,
+                      }
                     : entry
                 )
               );
@@ -283,7 +304,9 @@ Respond with ONLY the commit message, no additional text.`;
         }
 
         // Execute the commit
-        const cleanCommitMessage = commitMessage.trim().replace(/^["']|["']$/g, '');
+        const cleanCommitMessage = commitMessage
+          .trim()
+          .replace(/^["']|["']$/g, "");
         const commitCommand = `git commit -m "${cleanCommitMessage}"`;
         const commitResult = await agent.executeBashCommand(commitCommand);
 
@@ -311,7 +334,10 @@ Respond with ONLY the commit message, no additional text.`;
           let pushResult = await agent.executeBashCommand("git push");
           let pushCommand = "git push";
 
-          if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
+          if (
+            !pushResult.success &&
+            pushResult.error?.includes("no upstream branch")
+          ) {
             pushCommand = "git push -u origin HEAD";
             pushResult = await agent.executeBashCommand(pushCommand);
           }
@@ -334,7 +360,6 @@ Respond with ONLY the commit message, no additional text.`;
           };
           setChatHistory((prev) => [...prev, pushEntry]);
         }
-
       } catch (error: any) {
         const errorEntry: ChatEntry = {
           type: "assistant",
@@ -463,10 +488,10 @@ Respond with ONLY the commit message, no additional text.`;
                 prev.map((entry) =>
                   entry.isStreaming
                     ? {
-                      ...entry,
-                      isStreaming: false,
-                      toolCalls: chunk.toolCalls,
-                    }
+                        ...entry,
+                        isStreaming: false,
+                        toolCalls: chunk.toolCalls,
+                      }
                     : entry
                 )
               );
@@ -612,8 +637,10 @@ Respond with ONLY the commit message, no additional text.`;
         return;
       }
       if (key.tab || key.return) {
-
-        const safeIndex = Math.min(selectedCommandIndex, filteredSuggestions.length - 1);
+        const safeIndex = Math.min(
+          selectedCommandIndex,
+          filteredSuggestions.length - 1
+        );
         const selectedCommand = filteredSuggestions[safeIndex];
         setInput(selectedCommand.command + " ");
         setShowCommandSuggestions(false);
@@ -636,7 +663,7 @@ Respond with ONLY the commit message, no additional text.`;
       if (key.tab || key.return) {
         const selectedModel = availableModels[selectedModelIndex];
         agent.setModel(selectedModel.model);
-        updateSetting('selectedModel', selectedModel.model);
+        updateSetting("selectedModel", selectedModel.model);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${selectedModel.model}`,
