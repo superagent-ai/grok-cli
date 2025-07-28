@@ -223,7 +223,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
               <Text dimColor>(shift + tab)</Text>
             </Box>
             <Box marginLeft={2}>
-              <Text color="yellow">⚡{agent.getCurrentModel()}</Text>
+              <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
             </Box>
             <MCPStatus />
           </Box>

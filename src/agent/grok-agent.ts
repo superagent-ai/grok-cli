@@ -1,5 +1,11 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
-import { GROK_TOOLS, addMCPToolsToGrokTools, getAllGrokTools, getMCPManager, initializeMCPServers } from "../grok/tools";
+import {
+  GROK_TOOLS,
+  addMCPToolsToGrokTools,
+  getAllGrokTools,
+  getMCPManager,
+  initializeMCPServers,
+} from "../grok/tools";
 import { loadMCPConfig } from "../mcp/config";
 import {
   TextEditorTool,
@@ -49,8 +55,8 @@ export class GrokAgent extends EventEmitter {
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
     // Use saved model if no model is explicitly provided
-    const savedModel = getSetting('selectedModel');
-    const modelToUse = model || savedModel || 'grok-4-latest';
+    const savedModel = getSetting("selectedModel");
+    const modelToUse = model || savedModel || "grok-4-latest";
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
@@ -135,27 +141,34 @@ Current working directory: ${process.cwd()}`,
     try {
       const config = loadMCPConfig();
       if (config.servers.length > 0) {
-        console.log(`Found ${config.servers.length} MCP server(s) - connecting now...`);
+        console.log(
+          `Found ${config.servers.length} MCP server(s) - connecting now...`
+        );
         await initializeMCPServers();
         console.log(`Successfully connected to MCP servers`);
       }
       this.mcpInitialized = true;
     } catch (error) {
-      console.warn('Failed to initialize MCP servers:', error);
+      console.warn("Failed to initialize MCP servers:", error);
       this.mcpInitialized = true; // Don't block if MCP fails
     }
   }
 
   private async waitForMCPInitialization(): Promise<void> {
     while (!this.mcpInitialized) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
+  }
+
+  private isGrokModel(): boolean {
+    const currentModel = this.grokClient.getCurrentModel();
+    return currentModel.toLowerCase().includes("grok");
   }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Wait for MCP initialization before processing
     await this.waitForMCPInitialization();
-    
+
     // Add user message to conversation
     const userEntry: ChatEntry = {
       type: "user",
@@ -175,7 +188,7 @@ Current working directory: ${process.cwd()}`,
         this.messages,
         tools,
         undefined,
-        { search_parameters: { mode: "auto" } }
+        this.isGrokModel() ? { search_parameters: { mode: "auto" } } : undefined
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -269,7 +282,9 @@ Current working directory: ${process.cwd()}`,
             this.messages,
             tools,
             undefined,
-            { search_parameters: { mode: "auto" } }
+            this.isGrokModel()
+              ? { search_parameters: { mode: "auto" } }
+              : undefined
           );
         } else {
           // No more tool calls, add final response
@@ -390,7 +405,9 @@ Current working directory: ${process.cwd()}`,
           this.messages,
           tools,
           undefined,
-          { search_parameters: { mode: "auto" } }
+          this.isGrokModel()
+            ? { search_parameters: { mode: "auto" } }
+            : undefined
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
@@ -432,8 +449,13 @@ Current working directory: ${process.cwd()}`,
             accumulatedContent += chunk.choices[0].delta.content;
 
             // Update token count in real-time including accumulated content and any tool calls
-            const currentOutputTokens = this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
-              (accumulatedMessage.tool_calls ? this.tokenCounter.countTokens(JSON.stringify(accumulatedMessage.tool_calls)) : 0);
+            const currentOutputTokens =
+              this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
+              (accumulatedMessage.tool_calls
+                ? this.tokenCounter.countTokens(
+                    JSON.stringify(accumulatedMessage.tool_calls)
+                  )
+                : 0);
             totalOutputTokens = currentOutputTokens;
 
             yield {
@@ -519,7 +541,9 @@ Current working directory: ${process.cwd()}`,
           }
 
           // Update token count after processing all tool calls to include tool results
-          inputTokens = this.tokenCounter.countMessageTokens(this.messages as any);
+          inputTokens = this.tokenCounter.countMessageTokens(
+            this.messages as any
+          );
           yield {
             type: "token_count",
             tokenCount: inputTokens + totalOutputTokens,
@@ -616,10 +640,10 @@ Current working directory: ${process.cwd()}`,
 
         default:
           // Check if this is an MCP tool
-          if (toolCall.function.name.startsWith('mcp__')) {
+          if (toolCall.function.name.startsWith("mcp__")) {
             return await this.executeMCPTool(toolCall);
           }
-          
+
           return {
             success: false,
             error: `Unknown tool: ${toolCall.function.name}`,
@@ -637,36 +661,36 @@ Current working directory: ${process.cwd()}`,
     try {
       const args = JSON.parse(toolCall.function.arguments);
       const mcpManager = getMCPManager();
-      
+
       const result = await mcpManager.callTool(toolCall.function.name, args);
-      
+
       if (result.isError) {
         return {
           success: false,
-          error: (result.content[0] as any)?.text || 'MCP tool error'
+          error: (result.content[0] as any)?.text || "MCP tool error",
         };
       }
-      
+
       // Extract content from result
       const output = result.content
-        .map(item => {
-          if (item.type === 'text') {
+        .map((item) => {
+          if (item.type === "text") {
             return item.text;
-          } else if (item.type === 'resource') {
-            return `Resource: ${item.resource?.uri || 'Unknown'}`;
+          } else if (item.type === "resource") {
+            return `Resource: ${item.resource?.uri || "Unknown"}`;
           }
           return String(item);
         })
-        .join('\n');
-      
+        .join("\n");
+
       return {
         success: true,
-        output: output || 'Success'
+        output: output || "Success",
       };
     } catch (error: any) {
       return {
         success: false,
-        error: `MCP tool execution error: ${error.message}`
+        error: `MCP tool execution error: ${error.message}`,
       };
     }
   }
