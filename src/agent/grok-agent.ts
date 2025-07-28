@@ -54,8 +54,7 @@ export class GrokAgent extends EventEmitter {
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
-    // Use saved model if no model is explicitly provided
-    const savedModel = getSetting("selectedModel");
+    const savedModel = getSetting("model");
     const modelToUse = model || savedModel || "grok-4-latest";
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();

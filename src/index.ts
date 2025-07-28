@@ -6,6 +6,7 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
+import { getSetting, loadSettings } from "./utils/settings";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -16,32 +17,32 @@ import { createMCPCommand } from "./commands/mcp";
 dotenv.config();
 
 // Add proper signal handling for terminal cleanup
-process.on('SIGINT', () => {
+process.on("SIGINT", () => {
   // Restore terminal to normal mode before exit
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
-  console.log('\nGracefully shutting down...');
+  console.log("\nGracefully shutting down...");
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on("SIGTERM", () => {
   // Restore terminal to normal mode before exit
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
-  console.log('\nGracefully shutting down...');
+  console.log("\nGracefully shutting down...");
   process.exit(0);
 });
 
 // Handle uncaught exceptions to prevent hanging
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled rejection at:", promise, "reason:", reason);
   process.exit(1);
 });
 
@@ -62,7 +63,7 @@ function ensureUserSettingsDirectory(): void {
       const defaultSettings = {
         apiKey: "",
         baseURL: "",
-        defaultModel: "grok-4-latest"
+        defaultModel: "grok-4-latest",
       };
       fs.writeFileSync(settingsFile, JSON.stringify(defaultSettings, null, 2));
     }
@@ -119,6 +120,24 @@ function loadBaseURL(): string | undefined {
   return baseURL;
 }
 
+// Load model from user settings if not in environment
+function loadModel(): string | undefined {
+  // First check environment variables
+  let model = process.env.GROK_MODEL;
+
+  if (!model) {
+    // Try to load from local settings file
+    try {
+      const settings = loadSettings();
+      model = settings.model;
+    } catch (error) {
+      // Ignore errors, model will remain undefined
+    }
+  }
+
+  return model;
+}
+
 // Handle commit-and-push command in headless mode
 async function handleCommitAndPushHeadless(
   apiKey: string,
@@ -136,8 +155,10 @@ async function handleCommitAndPushHeadless(
     console.log("> /commit-and-push\n");
 
     // First check if there are any changes at all
-    const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
-    
+    const initialStatusResult = await agent.executeBashCommand(
+      "git status --porcelain"
+    );
+
     if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
       console.log("❌ No changes to commit. Working directory is clean.");
       process.exit(1);
@@ -147,9 +168,11 @@ async function handleCommitAndPushHeadless(
 
     // Add all changes
     const addResult = await agent.executeBashCommand("git add .");
-    
+
     if (!addResult.success) {
-      console.log(`❌ git add: ${addResult.error || 'Failed to stage changes'}`);
+      console.log(
+        `❌ git add: ${addResult.error || "Failed to stage changes"}`
+      );
       process.exit(1);
     }
 
@@ -171,10 +194,10 @@ Follow conventional commit format (feat:, fix:, docs:, etc.) and keep it under 7
 Respond with ONLY the commit message, no additional text.`;
 
     console.log("🤖 Generating commit message...");
-    
+
     const commitMessageEntries = await agent.processUserMessage(commitPrompt);
     let commitMessage = "";
-    
+
     // Extract the commit message from the AI response
     for (const entry of commitMessageEntries) {
       if (entry.type === "assistant" && entry.content.trim()) {
@@ -189,7 +212,7 @@ Respond with ONLY the commit message, no additional text.`;
     }
 
     // Clean the commit message
-    const cleanCommitMessage = commitMessage.replace(/^["']|["']$/g, '');
+    const cleanCommitMessage = commitMessage.replace(/^["']|["']$/g, "");
     console.log(`✅ Generated commit message: "${cleanCommitMessage}"`);
 
     // Execute the commit
@@ -197,28 +220,38 @@ Respond with ONLY the commit message, no additional text.`;
     const commitResult = await agent.executeBashCommand(commitCommand);
 
     if (commitResult.success) {
-      console.log(`✅ git commit: ${commitResult.output?.split('\n')[0] || 'Commit successful'}`);
-      
+      console.log(
+        `✅ git commit: ${
+          commitResult.output?.split("\n")[0] || "Commit successful"
+        }`
+      );
+
       // If commit was successful, push to remote
       // First try regular push, if it fails try with upstream setup
       let pushResult = await agent.executeBashCommand("git push");
-      
-      if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
+
+      if (
+        !pushResult.success &&
+        pushResult.error?.includes("no upstream branch")
+      ) {
         console.log("🔄 Setting upstream and pushing...");
         pushResult = await agent.executeBashCommand("git push -u origin HEAD");
       }
-      
+
       if (pushResult.success) {
-        console.log(`✅ git push: ${pushResult.output?.split('\n')[0] || 'Push successful'}`);
+        console.log(
+          `✅ git push: ${
+            pushResult.output?.split("\n")[0] || "Push successful"
+          }`
+        );
       } else {
-        console.log(`❌ git push: ${pushResult.error || 'Push failed'}`);
+        console.log(`❌ git push: ${pushResult.error || "Push failed"}`);
         process.exit(1);
       }
     } else {
-      console.log(`❌ git commit: ${commitResult.error || 'Commit failed'}`);
+      console.log(`❌ git commit: ${commitResult.error || "Commit failed"}`);
       process.exit(1);
     }
-
   } catch (error: any) {
     console.error("❌ Error during commit and push:", error.message);
     process.exit(1);
@@ -306,7 +339,7 @@ program
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)"
+    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
     "-p, --prompt <prompt>",
@@ -329,7 +362,7 @@ program
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      const model = options.model || loadModel();
 
       if (!apiKey) {
         console.error(
@@ -370,7 +403,7 @@ gitCommand
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)"
+    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .action(async (options) => {
     if (options.directory) {
@@ -389,7 +422,7 @@ gitCommand
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      const model = options.model || loadModel();
 
       if (!apiKey) {
         console.error(

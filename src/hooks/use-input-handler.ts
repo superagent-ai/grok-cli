@@ -150,7 +150,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
-        updateSetting("selectedModel", modelArg);
+        updateSetting("model", modelArg);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -663,7 +663,7 @@ Respond with ONLY the commit message, no additional text.`;
       if (key.tab || key.return) {
         const selectedModel = availableModels[selectedModelIndex];
         agent.setModel(selectedModel.model);
-        updateSetting("selectedModel", selectedModel.model);
+        updateSetting("model", selectedModel.model);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${selectedModel.model}`,
