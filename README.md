@@ -118,8 +118,9 @@ This mode is particularly useful for:
 
 ### Model Selection
 
-You can specify which AI model to use with the `--model` parameter:
+You can specify which AI model to use with the `--model` parameter or `GROK_MODEL` environment variable:
 
+**Method 1: Command Line Flag**
 ```bash
 # Use Grok models
 grok --model grok-4-latest
@@ -131,6 +132,23 @@ grok --model gemini-2.5-pro --base-url https://api-endpoint.com/v1
 grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
 ```
 
+**Method 2: Environment Variable**
+```bash
+export GROK_MODEL=grok-4-latest
+grok
+```
+
+**Method 3: User Settings File**
+Add to `~/.grok/user-settings.json`:
+```json
+{
+  "apiKey": "your_api_key_here",
+  "model": "grok-4-latest"
+}
+```
+
+Priority order: `--model` flag > `GROK_MODEL` environment variable > user settings > default (grok-4-latest)
+
 ### Command Line Options
 
 ```bash
@@ -141,7 +159,7 @@ Options:
   -d, --directory <dir>  set working directory
   -k, --api-key <key>    Grok API key (or set GROK_API_KEY env var)
   -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
-  -m, --model <model>    AI model to use (e.g., grok-4-latest, grok-3-latest)
+  -m, --model <model>    AI model to use (e.g., grok-4-latest, grok-3-latest) (or set GROK_MODEL env var)
   -p, --prompt <prompt>  process a single prompt and exit (headless mode)
   -h, --help             display help for command
 ```

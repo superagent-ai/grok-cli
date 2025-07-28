@@ -6,6 +6,7 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
+import { getSetting, loadSettings } from "./utils/settings";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -118,6 +119,24 @@ function loadBaseURL(): string | undefined {
   }
 
   return baseURL;
+}
+
+// Load model from user settings if not in environment
+function loadModel(): string | undefined {
+  // First check environment variables
+  let model = process.env.GROK_MODEL;
+
+  if (!model) {
+    // Try to load from local settings file
+    try {
+      const settings = loadSettings();
+      model = settings.model;
+    } catch (error) {
+      // Ignore errors, model will remain undefined
+    }
+  }
+
+  return model;
 }
 
 // Handle commit-and-push command in headless mode
@@ -332,7 +351,7 @@ program
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)"
+    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
     "-p, --prompt <prompt>",
@@ -355,7 +374,7 @@ program
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      const model = options.model || loadModel();
 
       if (!apiKey) {
         console.error(
@@ -396,7 +415,7 @@ gitCommand
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest)"
+    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .action(async (options) => {
     if (options.directory) {
@@ -415,7 +434,7 @@ gitCommand
       // Get API key from options, environment, or user settings
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      const model = options.model || loadModel();
 
       if (!apiKey) {
         console.error(

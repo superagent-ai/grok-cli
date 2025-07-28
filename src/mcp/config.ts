@@ -7,7 +7,7 @@ const CONFIG_DIR = path.join(process.cwd(), ".grok");
 const SETTINGS_FILE = path.join(CONFIG_DIR, "settings.json");
 
 export interface Settings {
-  selectedModel?: string;
+  model?: string;
   mcpServers?: Record<string, MCPServerConfig>;
 }
 
@@ -52,12 +52,12 @@ export function loadMCPConfig(): MCPConfig {
 export function saveMCPConfig(config: MCPConfig): void {
   const settings = loadSettings();
   settings.mcpServers = {};
-  
+
   // Convert servers array to object keyed by name
   for (const server of config.servers) {
     settings.mcpServers[server.name] = server;
   }
-  
+
   saveSettings(settings);
 }
 
@@ -66,7 +66,7 @@ export function addMCPServer(config: MCPServerConfig): void {
   if (!settings.mcpServers) {
     settings.mcpServers = {};
   }
-  
+
   settings.mcpServers[config.name] = config;
   saveSettings(settings);
 }
