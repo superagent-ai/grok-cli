@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/superagent-ai-grok-cli-badge.png)](https://mseep.ai/app/superagent-ai-grok-cli)
+
 # Grok CLI
 
 A conversational AI CLI tool powered by Grok with intelligent text editor capabilities and tool usage.
