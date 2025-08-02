@@ -10,6 +10,7 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 - **📝 Smart File Operations**: AI automatically uses tools to view, create, and edit files
 - **⚡ Bash Integration**: Execute shell commands through natural conversation
 - **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
+- **🚀 Morph Fast Apply**: Optional high-speed code editing at 4,500+ tokens/sec with 98% accuracy
 - **🔌 MCP Tools**: Extend capabilities with Model Context Protocol servers (Linear, GitHub, etc.)
 - **💬 Interactive UI**: Beautiful terminal interface built with Ink
 - **🌍 Global Installation**: Install and use anywhere with `npm i -g @vibe-kit/grok-cli`
@@ -19,6 +20,7 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 ### Prerequisites
 - Node.js 16+ 
 - Grok API key from X.AI
+- (Optional, Recommended) Morph API key for Fast Apply editing
 
 ### Global Installation (Recommended)
 ```bash
@@ -62,6 +64,21 @@ Create `~/.grok/user-settings.json`:
 {
   "apiKey": "your_api_key_here"
 }
+```
+
+3. (Optional, Recommended) Get your Morph API key from [Morph Dashboard](https://morphllm.com/dashboard/api-keys)
+
+4. Set up your Morph API key for Fast Apply editing (choose one method):
+
+**Method 1: Environment Variable**
+```bash
+export MORPH_API_KEY=your_morph_api_key_here
+```
+
+**Method 2: .env File**
+```bash
+# Add to your .env file
+MORPH_API_KEY=your_morph_api_key_here
 ```
 
 ### Custom Base URL (Optional)
@@ -267,6 +284,35 @@ Follow the existing code style and patterns in this project.
 ```
 
 Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
+
+## Morph Fast Apply (Optional)
+
+Grok CLI supports Morph's Fast Apply model for high-speed code editing at **4,500+ tokens/sec with 98% accuracy**. This is an optional feature that provides lightning-fast file editing capabilities.
+
+**Setup**: Configure your Morph API key following the [setup instructions](#setup) above.
+
+### How It Works
+
+When `MORPH_API_KEY` is configured:
+- **`edit_file` tool becomes available** alongside the standard `str_replace_editor`
+- **Optimized for complex edits**: Use for multi-line changes, refactoring, and large modifications
+- **Intelligent editing**: Uses abbreviated edit format with `// ... existing code ...` comments
+- **Fallback support**: Standard tools remain available if Morph is unavailable
+
+**When to use each tool:**
+- **`edit_file`** (Morph): Complex edits, refactoring, multi-line changes
+- **`str_replace_editor`**: Simple text replacements, single-line edits
+
+### Example Usage
+
+With Morph Fast Apply configured, you can request complex code changes:
+
+```bash
+grok --prompt "refactor this function to use async/await and add error handling"
+grok -p "convert this class to TypeScript and add proper type annotations"
+```
+
+The AI will automatically choose between `edit_file` (Morph) for complex changes or `str_replace_editor` for simple replacements.
 
 ## MCP Tools
 

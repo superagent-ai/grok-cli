@@ -9,6 +9,7 @@ import {
 import { loadMCPConfig } from "../mcp/config";
 import {
   TextEditorTool,
+  MorphEditorTool,
   BashTool,
   TodoTool,
   ConfirmationTool,
@@ -42,6 +43,7 @@ export interface StreamingChunk {
 export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
+  private morphEditor: MorphEditorTool | null;
   private bash: BashTool;
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
@@ -59,6 +61,7 @@ export class GrokAgent extends EventEmitter {
     const modelToUse = model || savedModel || "grok-4-latest";
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
+    this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
@@ -82,7 +85,7 @@ export class GrokAgent extends EventEmitter {
 You have access to these tools:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
-- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)
+- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${this.morphEditor ? '\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)' : ''}
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
@@ -614,6 +617,19 @@ Current working directory: ${process.cwd()}`,
             args.old_str,
             args.new_str,
             args.replace_all
+          );
+
+        case "edit_file":
+          if (!this.morphEditor) {
+            return {
+              success: false,
+              error: "Morph Fast Apply not available. Please set MORPH_API_KEY environment variable to use this feature.",
+            };
+          }
+          return await this.morphEditor.editFile(
+            args.target_file,
+            args.instructions,
+            args.code_edit
           );
 
         case "bash":
