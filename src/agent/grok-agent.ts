@@ -51,12 +51,14 @@ export class GrokAgent extends EventEmitter {
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
   private mcpInitialized: boolean = false;
+  private maxToolRounds: number;
 
-  constructor(apiKey: string, baseURL?: string, model?: string) {
+  constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
     super();
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-4-latest";
+    this.maxToolRounds = maxToolRounds || 400;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
     this.bash = new BashTool();
@@ -179,7 +181,7 @@ Current working directory: ${process.cwd()}`,
     this.messages.push({ role: "user", content: message });
 
     const newEntries: ChatEntry[] = [userEntry];
-    const maxToolRounds = 10; // Prevent infinite loops
+    const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
 
     try {
@@ -382,7 +384,7 @@ Current working directory: ${process.cwd()}`,
       tokenCount: inputTokens,
     };
 
-    const maxToolRounds = 30; // Prevent infinite loops
+    const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
     let totalOutputTokens = 0;
 

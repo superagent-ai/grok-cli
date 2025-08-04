@@ -108,10 +108,11 @@ function loadModel(): string | undefined {
 async function handleCommitAndPushHeadless(
   apiKey: string,
   baseURL?: string,
-  model?: string
+  model?: string,
+  maxToolRounds?: number
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model);
+    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -229,10 +230,11 @@ async function processPromptHeadless(
   prompt: string,
   apiKey: string,
   baseURL?: string,
-  model?: string
+  model?: string,
+  maxToolRounds?: number
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model);
+    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -322,6 +324,11 @@ program
     "-p, --prompt <prompt>",
     "process a single prompt and exit (headless mode)"
   )
+  .option(
+    "--max-tool-rounds <rounds>",
+    "maximum number of tool execution rounds (default: 400)",
+    "400"
+  )
   .action(async (options) => {
     if (options.directory) {
       try {
@@ -340,6 +347,7 @@ program
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
+      const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       if (!apiKey) {
         console.error(
@@ -355,12 +363,12 @@ program
 
       // Headless mode: process prompt and exit
       if (options.prompt) {
-        await processPromptHeadless(options.prompt, apiKey, baseURL, model);
+        await processPromptHeadless(options.prompt, apiKey, baseURL, model, maxToolRounds);
         return;
       }
 
       // Interactive mode: launch UI
-      const agent = new GrokAgent(apiKey, baseURL, model);
+      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
       ensureUserSettingsDirectory();
@@ -390,6 +398,11 @@ gitCommand
     "-m, --model <model>",
     "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
   )
+  .option(
+    "--max-tool-rounds <rounds>",
+    "maximum number of tool execution rounds (default: 400)",
+    "400"
+  )
   .action(async (options) => {
     if (options.directory) {
       try {
@@ -408,6 +421,7 @@ gitCommand
       const apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
+      const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       if (!apiKey) {
         console.error(
@@ -421,7 +435,7 @@ gitCommand
         await saveCommandLineSettings(options.apiKey, options.baseUrl);
       }
 
-      await handleCommitAndPushHeadless(apiKey, baseURL, model);
+      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
     } catch (error: any) {
       console.error("❌ Error during git commit-and-push:", error.message);
       process.exit(1);

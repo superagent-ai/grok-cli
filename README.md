@@ -191,6 +191,7 @@ Process a single prompt and exit (useful for scripting and automation):
 grok --prompt "show me the package.json file"
 grok -p "create a new file called example.js with a hello world function"
 grok --prompt "run npm test and show me the results" --directory /path/to/project
+grok --prompt "complex task" --max-tool-rounds 50  # Limit tool usage for faster execution
 ```
 
 This mode is particularly useful for:
@@ -198,6 +199,27 @@ This mode is particularly useful for:
 - **Scripting**: Integrate AI assistance into shell scripts
 - **Terminal benchmarks**: Perfect for tools like Terminal Bench that need non-interactive execution
 - **Batch processing**: Process multiple prompts programmatically
+
+### Tool Execution Control
+
+By default, Grok CLI allows up to 400 tool execution rounds to handle complex multi-step tasks. You can control this behavior:
+
+```bash
+# Limit tool rounds for faster execution on simple tasks
+grok --max-tool-rounds 10 --prompt "show me the current directory"
+
+# Increase limit for very complex tasks (use with caution)
+grok --max-tool-rounds 1000 --prompt "comprehensive code refactoring"
+
+# Works with all modes
+grok --max-tool-rounds 20  # Interactive mode
+grok git commit-and-push --max-tool-rounds 30  # Git commands
+```
+
+**Use Cases**:
+- **Fast responses**: Lower limits (10-50) for simple queries
+- **Complex automation**: Higher limits (500+) for comprehensive tasks
+- **Resource control**: Prevent runaway executions in automated environments
 
 ### Model Selection
 
@@ -244,6 +266,7 @@ Options:
   -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
   -m, --model <model>    AI model to use (e.g., grok-4-latest, grok-3-latest) (or set GROK_MODEL env var)
   -p, --prompt <prompt>  process a single prompt and exit (headless mode)
+  --max-tool-rounds <rounds>  maximum number of tool execution rounds (default: 400)
   -h, --help             display help for command
 ```
 
