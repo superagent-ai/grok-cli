@@ -43,6 +43,7 @@ export function useInputHandler({
   isConfirmationActive = false,
 }: UseInputHandlerProps) {
   const [input, setInput] = useState("");
+  const [cursorPosition, setCursorPosition] = useState(0);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
@@ -86,6 +87,7 @@ export function useInputHandler({
       confirmationService.resetSession();
 
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -127,6 +129,7 @@ Examples:
       };
       setChatHistory((prev) => [...prev, helpEntry]);
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -139,6 +142,7 @@ Examples:
       setShowModelSelection(true);
       setSelectedModelIndex(0);
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -167,6 +171,7 @@ Available models: ${modelNames.join(", ")}`,
       }
 
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -371,6 +376,7 @@ Respond with ONLY the commit message, no additional text.`;
       setIsProcessing(false);
       setIsStreaming(false);
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -428,6 +434,7 @@ Respond with ONLY the commit message, no additional text.`;
       }
 
       setInput("");
+      setCursorPosition(0);
       return true;
     }
 
@@ -444,6 +451,7 @@ Respond with ONLY the commit message, no additional text.`;
 
     setIsProcessing(true);
     setInput("");
+    setCursorPosition(0);
 
     try {
       setIsStreaming(true);
@@ -642,7 +650,9 @@ Respond with ONLY the commit message, no additional text.`;
             filteredSuggestions.length - 1
           );
           const selectedCommand = filteredSuggestions[safeIndex];
-          setInput(selectedCommand.command + " ");
+          const newInput = selectedCommand.command + " ";
+          setInput(newInput);
+          setCursorPosition(newInput.length);
           setShowCommandSuggestions(false);
           setSelectedCommandIndex(0);
           return;
@@ -693,20 +703,35 @@ Respond with ONLY the commit message, no additional text.`;
       return;
     }
 
-    if (key.backspace || key.delete) {
-      const newInput = input.slice(0, -1);
-      setInput(newInput);
+    // Handle left and right arrow keys for cursor movement
+    if (key.leftArrow && !showCommandSuggestions && !showModelSelection) {
+      setCursorPosition(prev => Math.max(0, prev - 1));
+      return;
+    }
 
-      if (!newInput.startsWith("/")) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
+    if (key.rightArrow && !showCommandSuggestions && !showModelSelection) {
+      setCursorPosition(prev => Math.min(input.length, prev + 1));
+      return;
+    }
+
+    if (key.backspace || key.delete) {
+      if (cursorPosition > 0) {
+        const newInput = input.slice(0, cursorPosition - 1) + input.slice(cursorPosition);
+        setInput(newInput);
+        setCursorPosition(prev => prev - 1);
+
+        if (!newInput.startsWith("/")) {
+          setShowCommandSuggestions(false);
+          setSelectedCommandIndex(0);
+        }
       }
       return;
     }
 
     if (inputChar && !key.ctrl && !key.meta) {
-      const newInput = input + inputChar;
+      const newInput = input.slice(0, cursorPosition) + inputChar + input.slice(cursorPosition);
       setInput(newInput);
+      setCursorPosition(prev => prev + 1);
 
       if (newInput.startsWith("/")) {
         setShowCommandSuggestions(true);
@@ -720,6 +745,7 @@ Respond with ONLY the commit message, no additional text.`;
 
   return {
     input,
+    cursorPosition,
     showCommandSuggestions,
     selectedCommandIndex,
     showModelSelection,

@@ -36,6 +36,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
   const {
     input,
+    cursorPosition,
     showCommandSuggestions,
     selectedCommandIndex,
     showModelSelection,
@@ -210,6 +211,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
           <ChatInput
             input={input}
+            cursorPosition={cursorPosition}
             isProcessing={isProcessing}
             isStreaming={isStreaming}
           />
