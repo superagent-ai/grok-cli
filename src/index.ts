@@ -4,7 +4,7 @@ import React from "react";
 import { render } from "ink";
 import { program } from "commander";
 import * as dotenv from "dotenv";
-import { GrokAgent } from "./agent/grok-agent";
+import { QuietEnableAgent } from "./agent/quietenable-agent";
 import ChatInterface from "./ui/components/chat-interface";
 import { getSettingsManager } from "./utils/settings-manager";
 import { ConfirmationService } from "./utils/confirmation-service";
@@ -22,7 +22,7 @@ process.on("SIGTERM", () => {
   if (process.stdin.isTTY && process.stdin.setRawMode) {
     try {
       process.stdin.setRawMode(false);
-    } catch (e) {
+    } catch {
       // Ignore errors when setting raw mode
     }
   }
@@ -47,7 +47,7 @@ function ensureUserSettingsDirectory(): void {
     const manager = getSettingsManager();
     // This will create default settings if they don't exist
     manager.loadUserSettings();
-  } catch (error) {
+  } catch {
     // Silently ignore errors during setup
   }
 }
@@ -72,11 +72,11 @@ async function saveCommandLineSettings(apiKey?: string, baseURL?: string): Promi
     // Update with command line values
     if (apiKey) {
       manager.updateUserSetting('apiKey', apiKey);
-      console.log("✅ API key saved to ~/.grok/user-settings.json");
+      console.log("✅ API key saved to ~/.quietenable/user-settings.json");
     }
     if (baseURL) {
       manager.updateUserSetting('baseURL', baseURL);
-      console.log("✅ Base URL saved to ~/.grok/user-settings.json");
+      console.log("✅ Base URL saved to ~/.quietenable/user-settings.json");
     }
   } catch (error) {
     console.warn("⚠️ Could not save settings to file:", error instanceof Error ? error.message : "Unknown error");
@@ -86,14 +86,14 @@ async function saveCommandLineSettings(apiKey?: string, baseURL?: string): Promi
 // Load model from user settings if not in environment
 function loadModel(): string | undefined {
   // First check environment variables
-  let model = process.env.GROK_MODEL;
+  let model = process.env.QUIETENABLE_MODEL;
 
   if (!model) {
     // Use the unified model loading from settings manager
     try {
       const manager = getSettingsManager();
       model = manager.getCurrentModel();
-    } catch (error) {
+    } catch {
       // Ignore errors, model will remain undefined
     }
   }
@@ -106,10 +106,19 @@ async function handleCommitAndPushHeadless(
   apiKey: string,
   baseURL?: string,
   model?: string,
-  maxToolRounds?: number
+  maxToolRounds?: number,
+  verbosity?: string,
+  reasoningEffort?: string
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+    const agent = new QuietEnableAgent(
+      apiKey,
+      baseURL,
+      model,
+      maxToolRounds,
+      verbosity,
+      reasoningEffort
+    );
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -228,10 +237,19 @@ async function processPromptHeadless(
   apiKey: string,
   baseURL?: string,
   model?: string,
-  maxToolRounds?: number
+  maxToolRounds?: number,
+  verbosity?: string,
+  reasoningEffort?: string
 ): Promise<void> {
   try {
-    const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+    const agent = new QuietEnableAgent(
+      apiKey,
+      baseURL,
+      model,
+      maxToolRounds,
+      verbosity,
+      reasoningEffort
+    );
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -252,7 +270,7 @@ async function processPromptHeadless(
           });
           break;
 
-        case "assistant":
+        case "assistant": {
           const assistantMessage: ChatCompletionMessageParam = {
             role: "assistant",
             content: entry.content,
@@ -272,6 +290,7 @@ async function processPromptHeadless(
 
           messages.push(assistantMessage);
           break;
+        }
 
         case "tool_result":
           if (entry.toolCall) {
@@ -302,20 +321,20 @@ async function processPromptHeadless(
 }
 
 program
-  .name("grok")
+  .name("quietenable")
   .description(
-    "A conversational AI CLI tool powered by Grok with text editor capabilities"
+    "A conversational AI CLI tool powered by GPT-5 with text editor capabilities"
   )
   .version("1.0.1")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
-  .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
+  .option("-k, --api-key <key>", "QuietEnable API key (or set QUIETENABLE_API_KEY env var)")
   .option(
     "-u, --base-url <url>",
-    "Grok API base URL (or set GROK_BASE_URL env var)"
+    "QuietEnable API base URL (or set QUIETENABLE_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
+    "AI model to use (e.g., gpt-5, grok-4-latest) (or set QUIETENABLE_MODEL env var)"
   )
   .option(
     "-p, --prompt <prompt>",
@@ -325,6 +344,14 @@ program
     "--max-tool-rounds <rounds>",
     "maximum number of tool execution rounds (default: 400)",
     "400"
+  )
+  .option(
+    "--verbosity <level>",
+    "response verbosity (low, medium, or high)"
+  )
+  .option(
+    "--reasoning-effort <level>",
+    "reasoning effort (minimal, low, medium, or high)"
   )
   .action(async (options) => {
     if (options.directory) {
@@ -345,10 +372,12 @@ program
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
+      const verbosity = options.verbosity;
+      const reasoningEffort = options.reasoningEffort;
 
       if (!apiKey) {
         console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
+          "❌ Error: API key required. Set QUIETENABLE_API_KEY environment variable, use --api-key flag, or save to ~/.quietenable/user-settings.json"
         );
         process.exit(1);
       }
@@ -360,19 +389,34 @@ program
 
       // Headless mode: process prompt and exit
       if (options.prompt) {
-        await processPromptHeadless(options.prompt, apiKey, baseURL, model, maxToolRounds);
+        await processPromptHeadless(
+          options.prompt,
+          apiKey,
+          baseURL,
+          model,
+          maxToolRounds,
+          verbosity,
+          reasoningEffort
+        );
         return;
       }
 
       // Interactive mode: launch UI
-      const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
-      console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
+      const agent = new QuietEnableAgent(
+        apiKey,
+        baseURL,
+        model,
+        maxToolRounds,
+        verbosity,
+        reasoningEffort
+      );
+      console.log("🤖 Starting QuietEnable CLI Conversational Assistant...\n");
 
       ensureUserSettingsDirectory();
 
       render(React.createElement(ChatInterface, { agent }));
     } catch (error: any) {
-      console.error("❌ Error initializing Grok CLI:", error.message);
+      console.error("❌ Error initializing QuietEnable CLI:", error.message);
       process.exit(1);
     }
   });
@@ -386,19 +430,27 @@ gitCommand
   .command("commit-and-push")
   .description("Generate AI commit message and push to remote")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
-  .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
+  .option("-k, --api-key <key>", "QuietEnable API key (or set QUIETENABLE_API_KEY env var)")
   .option(
     "-u, --base-url <url>",
-    "Grok API base URL (or set GROK_BASE_URL env var)"
+    "QuietEnable API base URL (or set QUIETENABLE_BASE_URL env var)"
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
+    "AI model to use (e.g., gpt-5, grok-4-latest) (or set QUIETENABLE_MODEL env var)"
   )
   .option(
     "--max-tool-rounds <rounds>",
     "maximum number of tool execution rounds (default: 400)",
     "400"
+  )
+  .option(
+    "--verbosity <level>",
+    "response verbosity (low, medium, or high)"
+  )
+  .option(
+    "--reasoning-effort <level>",
+    "reasoning effort (minimal, low, medium, or high)"
   )
   .action(async (options) => {
     if (options.directory) {
@@ -419,10 +471,12 @@ gitCommand
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
+      const verbosity = options.verbosity;
+      const reasoningEffort = options.reasoningEffort;
 
       if (!apiKey) {
         console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
+          "❌ Error: API key required. Set QUIETENABLE_API_KEY environment variable, use --api-key flag, or save to ~/.quietenable/user-settings.json"
         );
         process.exit(1);
       }
@@ -432,7 +486,14 @@ gitCommand
         await saveCommandLineSettings(options.apiKey, options.baseUrl);
       }
 
-      await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
+      await handleCommitAndPushHeadless(
+        apiKey,
+        baseURL,
+        model,
+        maxToolRounds,
+        verbosity,
+        reasoningEffort
+      );
     } catch (error: any) {
       console.error("❌ Error during git commit-and-push:", error.message);
       process.exit(1);

@@ -1,8 +1,8 @@
-import { GrokTool } from "./client";
+import { QETool } from "./client";
 import { MCPManager, MCPTool } from "../mcp/client";
 import { loadMCPConfig } from "../mcp/config";
 
-const BASE_GROK_TOOLS: GrokTool[] = [
+const BASE_QE_TOOLS: QETool[] = [
   {
     type: "function",
     function: {
@@ -244,7 +244,7 @@ const BASE_GROK_TOOLS: GrokTool[] = [
 ];
 
 // Morph Fast Apply tool (conditional)
-const MORPH_EDIT_TOOL: GrokTool = {
+const MORPH_EDIT_TOOL: QETool = {
   type: "function",
   function: {
     name: "edit_file",
@@ -271,8 +271,8 @@ const MORPH_EDIT_TOOL: GrokTool = {
 };
 
 // Function to build tools array conditionally
-function buildGrokTools(): GrokTool[] {
-  const tools = [...BASE_GROK_TOOLS];
+function buildQETools(): QETool[] {
+  const tools = [...BASE_QE_TOOLS];
   
   // Add Morph Fast Apply tool if API key is available
   if (process.env.MORPH_API_KEY) {
@@ -283,7 +283,7 @@ function buildGrokTools(): GrokTool[] {
 }
 
 // Export dynamic tools array
-export const GROK_TOOLS: GrokTool[] = buildGrokTools();
+export const QUIETENABLE_TOOLS: QETool[] = buildQETools();
 
 // Global MCP manager instance
 let mcpManager: MCPManager | null = null;
@@ -339,7 +339,7 @@ export async function initializeMCPServers(): Promise<void> {
   }
 }
 
-export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
+export function convertMCPToolToQETool(mcpTool: MCPTool): QETool {
   return {
     type: "function",
     function: {
@@ -354,22 +354,22 @@ export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
   };
 }
 
-export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
+export function addMCPToolsToQETools(baseTools: QETool[]): QETool[] {
   if (!mcpManager) {
     return baseTools;
   }
   
   const mcpTools = mcpManager.getTools();
-  const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
-  
-  return [...baseTools, ...grokMCPTools];
+  const qeMCPTools = mcpTools.map(convertMCPToolToQETool);
+
+  return [...baseTools, ...qeMCPTools];
 }
 
-export async function getAllGrokTools(): Promise<GrokTool[]> {
+export async function getAllQETools(): Promise<QETool[]> {
   const manager = getMCPManager();
   // Try to initialize servers if not already done, but don't block
   manager.ensureServersInitialized().catch(() => {
     // Ignore initialization errors to avoid blocking
   });
-  return addMCPToolsToGrokTools(GROK_TOOLS);
+  return addMCPToolsToQETools(QUIETENABLE_TOOLS);
 }

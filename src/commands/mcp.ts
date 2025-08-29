@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { addMCPServer, removeMCPServer, loadMCPConfig, PREDEFINED_SERVERS } from '../mcp/config';
-import { getMCPManager } from '../grok/tools';
+import { getMCPManager } from '../ai/tools';
 import { MCPServerConfig } from '../mcp/client';
 import chalk from 'chalk';
 
@@ -111,7 +111,7 @@ export function createMCPCommand(): Command {
         let config;
         try {
           config = JSON.parse(jsonConfig);
-        } catch (error) {
+        } catch {
           console.error(chalk.red('Error: Invalid JSON configuration'));
           process.exit(1);
         }

@@ -221,8 +221,8 @@ export class MorphEditorTool {
     for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
       const change = changes[changeIdx];
       
-      let contextStart = Math.max(0, change.oldStart - CONTEXT_LINES);
-      let contextEnd = Math.min(oldLines.length, change.oldEnd + CONTEXT_LINES);
+      const contextStart = Math.max(0, change.oldStart - CONTEXT_LINES);
+      const contextEnd = Math.min(oldLines.length, change.oldEnd + CONTEXT_LINES);
       
       if (hunks.length > 0) {
         const lastHunk = hunks[hunks.length - 1];

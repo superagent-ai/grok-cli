@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useInput } from "ink";
-import { GrokAgent, ChatEntry } from "../agent/grok-agent";
+import { QuietEnableAgent, ChatEntry } from "../agent/quietenable-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { useEnhancedInput, Key } from "./use-enhanced-input";
 
@@ -8,8 +8,7 @@ import { filterCommandSuggestions } from "../ui/components/command-suggestions";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
 
 interface UseInputHandlerProps {
-  agent: GrokAgent;
-  chatHistory: ChatEntry[];
+  agent: QuietEnableAgent;
   setChatHistory: React.Dispatch<React.SetStateAction<ChatEntry[]>>;
   setIsProcessing: (processing: boolean) => void;
   setIsStreaming: (streaming: boolean) => void;
@@ -32,7 +31,6 @@ interface ModelOption {
 
 export function useInputHandler({
   agent,
-  chatHistory,
   setChatHistory,
   setIsProcessing,
   setIsStreaming,
@@ -222,7 +220,7 @@ export function useInputHandler({
   const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
-    { command: "/models", description: "Switch Grok Model" },
+    { command: "/models", description: "Switch QuietEnable Model" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
     { command: "/exit", description: "Exit the application" },
   ];
@@ -258,7 +256,7 @@ export function useInputHandler({
     if (trimmedInput === "/help") {
       const helpEntry: ChatEntry = {
         type: "assistant",
-        content: `Grok CLI Help:
+        content: `QuietEnable CLI Help:
 
 Built-in Commands:
   /clear      - Clear chat history
@@ -289,7 +287,7 @@ Direct Commands (executed immediately):
   touch <file>- Create empty file
 
 Model Configuration:
-  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
+  Edit ~/.quietenable/models.json to add custom models (Claude, GPT, Gemini, etc.)
 
 For complex operations, just describe what you want in natural language.
 Examples:

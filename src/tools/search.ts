@@ -88,11 +88,7 @@ export class SearchTool {
         };
       }
 
-      const formattedOutput = this.formatUnifiedResults(
-        results,
-        query,
-        searchType
-      );
+      const formattedOutput = this.formatUnifiedResults(results, query);
 
       return {
         success: true,
@@ -244,7 +240,7 @@ export class SearchTool {
             match: data.submatches[0]?.match?.text || "",
           });
         }
-      } catch (e) {
+      } catch {
         // Skip invalid JSON lines
         continue;
       }
@@ -327,7 +323,7 @@ export class SearchTool {
             await walkDir(fullPath, depth + 1);
           }
         }
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     };
@@ -381,8 +377,7 @@ export class SearchTool {
    */
   private formatUnifiedResults(
     results: UnifiedSearchResult[],
-    query: string,
-    searchType: string
+    query: string
   ): string {
     if (results.length === 0) {
       return `No results found for "${query}"`;

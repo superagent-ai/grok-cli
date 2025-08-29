@@ -4,7 +4,6 @@ import { Agent } from '../agent';
 import { ToolResult } from '../types';
 import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service';
 import ConfirmationDialog from './components/confirmation-dialog';
-import chalk from 'chalk';
 
 interface Props {
   agent: Agent;
@@ -124,7 +123,7 @@ export default function App({ agent }: Props) {
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          🔧 Grok CLI - Text Editor Agent
+          🔧 QuietEnable CLI - Text Editor Agent
         </Text>
       </Box>
       

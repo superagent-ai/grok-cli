@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
-import { GrokAgent } from "../../agent/grok-agent";
+import { QuietEnableAgent } from "../../agent/quietenable-agent";
 import { getSettingsManager } from "../../utils/settings-manager";
 
 interface ApiKeyInputProps {
-  onApiKeySet: (agent: GrokAgent) => void;
+  onApiKeySet: (agent: QuietEnableAgent) => void;
 }
 
 export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
@@ -49,23 +49,23 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
     setIsSubmitting(true);
     try {
       const apiKey = input.trim();
-      const agent = new GrokAgent(apiKey);
+      const agent = new QuietEnableAgent(apiKey);
       
       // Set environment variable for current process
-      process.env.GROK_API_KEY = apiKey;
+      process.env.QUIETENABLE_API_KEY = apiKey;
       
       // Save to user settings
       try {
         const manager = getSettingsManager();
         manager.updateUserSetting('apiKey', apiKey);
-        console.log(`\n✅ API key saved to ~/.grok/user-settings.json`);
-      } catch (error) {
+        console.log(`\n✅ API key saved to ~/.quietenable/user-settings.json`);
+      } catch {
         console.log('\n⚠️ Could not save API key to settings file');
         console.log('API key set for current session only');
       }
       
       onApiKeySet(agent);
-    } catch (error: any) {
+    } catch {
       setError("Invalid API key format");
       setIsSubmitting(false);
     }
@@ -77,9 +77,9 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Text color="yellow">🔑 Grok API Key Required</Text>
+      <Text color="yellow">🔑 OpenAI API Key Required</Text>
       <Box marginBottom={1}>
-        <Text color="gray">Please enter your Grok API key to continue:</Text>
+        <Text color="gray">Please enter your OpenAI API key to continue:</Text>
       </Box>
       
       <Box borderStyle="round" borderColor="blue" paddingX={1} marginBottom={1}>
@@ -96,7 +96,7 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
       <Box flexDirection="column" marginTop={1}>
         <Text color="gray" dimColor>• Press Enter to submit</Text>
         <Text color="gray" dimColor>• Press Ctrl+C to exit</Text>
-        <Text color="gray" dimColor>Note: API key will be saved to ~/.grok/user-settings.json</Text>
+        <Text color="gray" dimColor>Note: API key will be saved to ~/.quietenable/user-settings.json</Text>
       </Box>
 
       {isSubmitting ? (

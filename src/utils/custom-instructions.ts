@@ -3,7 +3,7 @@ import * as path from 'path';
 
 export function loadCustomInstructions(workingDirectory: string = process.cwd()): string | null {
   try {
-    const instructionsPath = path.join(workingDirectory, '.grok', 'GROK.md');
+    const instructionsPath = path.join(workingDirectory, '.quietenable', 'QUIETENABLE.md');
     
     if (!fs.existsSync(instructionsPath)) {
       return null;

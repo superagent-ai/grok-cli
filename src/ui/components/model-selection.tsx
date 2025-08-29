@@ -23,7 +23,7 @@ export function ModelSelection({
   return (
     <Box marginTop={1} flexDirection="column">
       <Box marginBottom={1}>
-        <Text color="cyan">Select Grok Model (current: {currentModel}):</Text>
+        <Text color="cyan">Select QuietEnable Model (current: {currentModel}):</Text>
       </Box>
       {models.map((modelOption, index) => (
         <Box key={index} paddingLeft={1}>

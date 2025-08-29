@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { ChatEntry } from "../../agent/grok-agent";
+import { ChatEntry } from "../../agent/quietenable-agent";
 import { DiffRenderer } from "./diff-renderer";
 import { MarkdownRenderer } from "../utils/markdown-renderer";
 
@@ -79,7 +79,7 @@ const MemoizedChatEntry = React.memo(
         );
 
       case "tool_call":
-      case "tool_result":
+      case "tool_result": {
         const getToolActionName = (toolName: string) => {
           // Handle MCP tools with mcp__servername__toolname format
           if (toolName.startsWith("mcp__")) {
@@ -131,7 +131,7 @@ const MemoizedChatEntry = React.memo(
 
         const filePath = getFilePath(entry.toolCall);
         const isExecuting = entry.type === "tool_call" || !entry.toolResult;
-        
+
         // Format JSON content for better readability
         const formatToolContent = (content: string, toolName: string) => {
           if (toolName.startsWith("mcp__")) {
@@ -198,6 +198,7 @@ const MemoizedChatEntry = React.memo(
             )}
           </Box>
         );
+      }
 
       default:
         return null;

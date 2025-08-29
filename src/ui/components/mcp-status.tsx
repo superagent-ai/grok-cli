@@ -1,27 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { getMCPManager } from "../../grok/tools";
-import { MCPTool } from "../../mcp/client";
+import { getMCPManager } from "../../ai/tools";
 
-interface MCPStatusProps {}
-
-export function MCPStatus({}: MCPStatusProps) {
+export function MCPStatus() {
   const [connectedServers, setConnectedServers] = useState<string[]>([]);
-  const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
 
   useEffect(() => {
     const updateStatus = () => {
       try {
         const manager = getMCPManager();
         const servers = manager.getServers();
-        const tools = manager.getTools();
-
         setConnectedServers(servers);
-        setAvailableTools(tools);
-      } catch (error) {
+      } catch {
         // MCP manager not initialized yet
         setConnectedServers([]);
-        setAvailableTools([]);
       }
     };
 

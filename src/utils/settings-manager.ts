@@ -3,22 +3,26 @@ import * as path from 'path';
 import * as os from 'os';
 
 /**
- * User-level settings stored in ~/.grok/user-settings.json
+ * User-level settings stored in ~/.quietenable/user-settings.json
  * These are global settings that apply across all projects
  */
 export interface UserSettings {
-  apiKey?: string;           // Grok API key
+  apiKey?: string;           // OpenAI API key
   baseURL?: string;          // API base URL
   defaultModel?: string;     // User's preferred default model
   models?: string[];         // Available models list
+  verbosity?: "low" | "medium" | "high"; // Response verbosity
+  reasoningEffort?: "minimal" | "low" | "medium" | "high"; // Reasoning effort level
 }
 
 /**
- * Project-level settings stored in .grok/settings.json
+ * Project-level settings stored in .quietenable/settings.json
  * These are project-specific settings
  */
 export interface ProjectSettings {
   model?: string;            // Current model for this project
+  verbosity?: "low" | "medium" | "high"; // Response verbosity for project
+  reasoningEffort?: "minimal" | "low" | "medium" | "high"; // Reasoning effort for project
   mcpServers?: Record<string, any>; // MCP server configurations
 }
 
@@ -26,21 +30,26 @@ export interface ProjectSettings {
  * Default values for user settings
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
-  baseURL: "https://api.x.ai/v1",
-  defaultModel: "grok-4-latest",
+  baseURL: "https://api.openai.com/v1",
+  defaultModel: "gpt-5",
   models: [
+    "gpt-5",
     "grok-4-latest",
-    "grok-3-latest", 
+    "grok-3-latest",
     "grok-3-fast",
     "grok-3-mini-fast"
-  ]
+  ],
+  verbosity: "medium",
+  reasoningEffort: "medium"
 };
 
 /**
  * Default values for project settings
  */
 const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
-  model: "grok-4-latest"
+  model: "gpt-5",
+  verbosity: "medium",
+  reasoningEffort: "medium"
 };
 
 /**
@@ -53,11 +62,11 @@ export class SettingsManager {
   private projectSettingsPath: string;
   
   private constructor() {
-    // User settings path: ~/.grok/user-settings.json
-    this.userSettingsPath = path.join(os.homedir(), '.grok', 'user-settings.json');
-    
-    // Project settings path: .grok/settings.json (in current working directory)
-    this.projectSettingsPath = path.join(process.cwd(), '.grok', 'settings.json');
+    // User settings path: ~/.quietenable/user-settings.json
+    this.userSettingsPath = path.join(os.homedir(), '.quietenable', 'user-settings.json');
+
+    // Project settings path: .quietenable/settings.json (in current working directory)
+    this.projectSettingsPath = path.join(process.cwd(), '.quietenable', 'settings.json');
   }
   
   /**
@@ -81,7 +90,7 @@ export class SettingsManager {
   }
   
   /**
-   * Load user settings from ~/.grok/user-settings.json
+   * Load user settings from ~/.quietenable/user-settings.json
    */
   public loadUserSettings(): UserSettings {
     try {
@@ -103,7 +112,7 @@ export class SettingsManager {
   }
   
   /**
-   * Save user settings to ~/.grok/user-settings.json
+   * Save user settings to ~/.quietenable/user-settings.json
    */
   public saveUserSettings(settings: Partial<UserSettings>): void {
     try {
@@ -116,7 +125,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.userSettingsPath, 'utf-8');
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn('Corrupted user settings file, using defaults');
         }
@@ -152,7 +161,7 @@ export class SettingsManager {
   }
   
   /**
-   * Load project settings from .grok/settings.json
+   * Load project settings from .quietenable/settings.json
    */
   public loadProjectSettings(): ProjectSettings {
     try {
@@ -174,7 +183,7 @@ export class SettingsManager {
   }
   
   /**
-   * Save project settings to .grok/settings.json
+   * Save project settings to .quietenable/settings.json
    */
   public saveProjectSettings(settings: Partial<ProjectSettings>): void {
     try {
@@ -187,7 +196,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.projectSettingsPath, 'utf-8');
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn('Corrupted project settings file, using defaults');
         }
@@ -238,7 +247,7 @@ export class SettingsManager {
       return userDefaultModel;
     }
     
-    return DEFAULT_PROJECT_SETTINGS.model || 'grok-4-latest';
+    return DEFAULT_PROJECT_SETTINGS.model || 'gpt-5';
   }
   
   /**
@@ -255,13 +264,57 @@ export class SettingsManager {
     const models = this.getUserSetting('models');
     return models || DEFAULT_USER_SETTINGS.models || [];
   }
+
+  /**
+   * Get verbosity setting with precedence: env > project > user > default
+   */
+  public getVerbosity(): string {
+    const envVerbosity = process.env.QUIETENABLE_VERBOSITY;
+    if (envVerbosity) {
+      return envVerbosity;
+    }
+
+    const projectVerbosity = this.getProjectSetting('verbosity');
+    if (projectVerbosity) {
+      return projectVerbosity;
+    }
+
+    const userVerbosity = this.getUserSetting('verbosity');
+    return (
+      userVerbosity ||
+      DEFAULT_PROJECT_SETTINGS.verbosity ||
+      'medium'
+    );
+  }
+
+  /**
+   * Get reasoning effort setting with precedence: env > project > user > default
+   */
+  public getReasoningEffort(): string {
+    const envReasoning = process.env.QUIETENABLE_REASONING_EFFORT;
+    if (envReasoning) {
+      return envReasoning;
+    }
+
+    const projectReasoning = this.getProjectSetting('reasoningEffort');
+    if (projectReasoning) {
+      return projectReasoning;
+    }
+
+    const userReasoning = this.getUserSetting('reasoningEffort');
+    return (
+      userReasoning ||
+      DEFAULT_PROJECT_SETTINGS.reasoningEffort ||
+      'medium'
+    );
+  }
   
   /**
    * Get API key from user settings or environment
    */
   public getApiKey(): string | undefined {
     // First check environment variable
-    const envApiKey = process.env.GROK_API_KEY;
+    const envApiKey = process.env.QUIETENABLE_API_KEY;
     if (envApiKey) {
       return envApiKey;
     }
@@ -275,14 +328,14 @@ export class SettingsManager {
    */
   public getBaseURL(): string {
     // First check environment variable
-    const envBaseURL = process.env.GROK_BASE_URL;
+    const envBaseURL = process.env.QUIETENABLE_BASE_URL;
     if (envBaseURL) {
       return envBaseURL;
     }
     
     // Then check user settings
     const userBaseURL = this.getUserSetting('baseURL');
-    return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || 'https://api.x.ai/v1';
+    return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || 'https://api.openai.com/v1';
   }
 }
 
