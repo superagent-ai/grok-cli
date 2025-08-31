@@ -11,7 +11,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:binary": "npm run build && pkg . --targets node18-linux-x64 --output grok-linux"
   },
   "keywords": [
     "cli",
@@ -51,5 +52,17 @@
   "engines": {
     "node": ">=16.0.0"
   },
-  "preferGlobal": true
+  "preferGlobal": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "pkg": {
+    "scripts": ["dist/**/*.js"],
+    "targets": ["node18-linux-x64"],
+    "outputPath": "bin",
+    "options": [
+      "--no-bytecode",
+      "--public-packages=*"
+    ]
+  }
 }
