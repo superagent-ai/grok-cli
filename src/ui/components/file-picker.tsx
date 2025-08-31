@@ -39,7 +39,7 @@ export function FilePicker({
     >
       <Box marginBottom={1}>
         <Text color="cyan" bold>
-          📁 File Selection {query && `(${query})`}
+          File Selection {query && `(${query})`}
         </Text>
         {suggestions.length > maxVisible && (
           <Text color="gray" dimColor>
@@ -58,7 +58,7 @@ export function FilePicker({
       
       {visibleSuggestions.map((suggestion, index) => {
         const isSelected = index === adjustedSelectedIndex;
-        const icon = suggestion.isDirectory ? "📂" : "📄";
+        const displayPath = suggestion.isDirectory ? `${suggestion.relativePath}/` : suggestion.relativePath;
         
         return (
           <Box key={suggestion.relativePath}>
@@ -68,7 +68,7 @@ export function FilePicker({
               bold={isSelected}
             >
               {isSelected ? "❯ " : "  "}
-              {icon} {suggestion.relativePath}
+              {displayPath}
             </Text>
           </Box>
         );
