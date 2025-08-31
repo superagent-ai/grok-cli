@@ -6,6 +6,7 @@ import { useEnhancedInput, Key } from "./use-enhanced-input";
 
 import { filterCommandSuggestions } from "../ui/components/command-suggestions";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
+import { FileFinder, FileSuggestion } from "../utils/file-finder";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -30,6 +31,12 @@ interface ModelOption {
   model: string;
 }
 
+
+interface AttachedFile {
+  path: string;
+  content: string;
+}
+
 export function useInputHandler({
   agent,
   chatHistory,
@@ -52,6 +59,13 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
+  
+  // File selection state
+  const [showFilePicker, setShowFilePicker] = useState(false);
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [fileQuery, setFileQuery] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [fileFinder] = useState(() => new FileFinder());
 
   const handleSpecialKey = (key: Key): boolean => {
     // Don't handle input if confirmation dialog is active
@@ -85,6 +99,12 @@ export function useInputHandler({
       if (showModelSelection) {
         setShowModelSelection(false);
         setSelectedModelIndex(0);
+        return true;
+      }
+      if (showFilePicker) {
+        setShowFilePicker(false);
+        setSelectedFileIndex(0);
+        setFileQuery("");
         return true;
       }
       if (isProcessing || isStreaming) {
@@ -166,6 +186,40 @@ export function useInputHandler({
         return true;
       }
     }
+    
+    // Handle file picker navigation
+    if (showFilePicker) {
+      const fileSuggestions = fileFinder.getFileSuggestions(fileQuery);
+      
+      if (fileSuggestions.length === 0) {
+        setShowFilePicker(false);
+        setSelectedFileIndex(0);
+        setFileQuery("");
+        return false;
+      }
+      
+      if (key.upArrow) {
+        setSelectedFileIndex((prev) =>
+          prev === 0 ? fileSuggestions.length - 1 : prev - 1
+        );
+        return true;
+      }
+      if (key.downArrow) {
+        setSelectedFileIndex((prev) => (prev + 1) % fileSuggestions.length);
+        return true;
+      }
+      if (key.tab || key.return) {
+        const selectedFile = fileSuggestions[selectedFileIndex];
+        if (!selectedFile.isDirectory) {
+          // Attach file to prompt
+          attachFileToPrompt(selectedFile.relativePath);
+        }
+        setShowFilePicker(false);
+        setSelectedFileIndex(0);
+        setFileQuery("");
+        return true;
+      }
+    }
 
     return false; // Let default handling proceed
   };
@@ -189,10 +243,68 @@ export function useInputHandler({
     if (newInput.startsWith("/")) {
       setShowCommandSuggestions(true);
       setSelectedCommandIndex(0);
+      setShowFilePicker(false);
+      setFileQuery("");
     } else {
       setShowCommandSuggestions(false);
       setSelectedCommandIndex(0);
     }
+    
+    // Handle @ file selection
+    const atIndex = newInput.lastIndexOf("@");
+    if (atIndex !== -1) {
+      const afterAt = newInput.slice(atIndex + 1);
+      // Check if we're at the end or followed by whitespace
+      const isEndOfInput = atIndex + afterAt.length + 1 === newInput.length;
+      const isFollowedBySpace = !isEndOfInput && /\s/.test(newInput[atIndex + afterAt.length + 1]);
+      
+      if (isEndOfInput || isFollowedBySpace) {
+        setShowFilePicker(true);
+        setFileQuery(afterAt);
+        setSelectedFileIndex(0);
+        setShowCommandSuggestions(false);
+      } else {
+        setShowFilePicker(false);
+        setFileQuery("");
+      }
+    } else {
+      setShowFilePicker(false);
+      setFileQuery("");
+    }
+  };
+  
+  const attachFileToPrompt = async (relativePath: string) => {
+    try {
+      const content = await fileFinder.readFileContent(relativePath);
+      if (content) {
+        const newAttachedFile: AttachedFile = {
+          path: relativePath,
+          content
+        };
+        setAttachedFiles(prev => [...prev, newAttachedFile]);
+        
+        // Replace @query with @filename in input and position cursor at end
+        const atIndex = input.lastIndexOf("@");
+        if (atIndex !== -1) {
+          const beforeAt = input.slice(0, atIndex);
+          // Find any content after the current @query
+          const afterAtPart = input.slice(atIndex);
+          const spaceIndex = afterAtPart.search(/\s/);
+          const afterQuery = spaceIndex !== -1 ? afterAtPart.slice(spaceIndex) : "";
+          
+          // Build new input with @filename and ensure space after
+          const newInput = beforeAt + `@${relativePath} ` + afterQuery;
+          // Set input and cursor position atomically
+          setInputWithCursor(newInput, newInput.length);
+        }
+      }
+    } catch (error) {
+      console.error("Error attaching file:", error);
+    }
+  };
+  
+  const removeAttachedFile = (pathToRemove: string) => {
+    setAttachedFiles(prev => prev.filter(file => file.path !== pathToRemove));
   };
 
   const {
@@ -200,6 +312,7 @@ export function useInputHandler({
     cursorPosition,
     setInput,
     setCursorPosition,
+    setInputWithCursor,
     clearInput,
     resetHistory,
     handleInput,
@@ -608,12 +721,26 @@ Respond with ONLY the commit message, no additional text.`;
   };
 
   const processUserMessage = async (userInput: string) => {
+    // Display user input without file content in chat history
     const userEntry: ChatEntry = {
       type: "user",
       content: userInput,
       timestamp: new Date(),
     };
     setChatHistory((prev) => [...prev, userEntry]);
+    
+    // Prepare the actual message content with attached files for AI processing
+    let messageContent = userInput;
+    
+    if (attachedFiles.length > 0) {
+      messageContent += "\n\n--- Attached Files ---\n";
+      for (const file of attachedFiles) {
+        messageContent += `\n**File: ${file.path}**\n\`\`\`\n${file.content}\n\`\`\`\n`;
+      }
+    }
+    
+    // Clear attached files after processing
+    setAttachedFiles([]);
 
     setIsProcessing(true);
     clearInput();
@@ -622,7 +749,7 @@ Respond with ONLY the commit message, no additional text.`;
       setIsStreaming(true);
       let streamingEntry: ChatEntry | null = null;
 
-      for await (const chunk of agent.processUserMessageStream(userInput)) {
+      for await (const chunk of agent.processUserMessageStream(messageContent)) {
         switch (chunk.type) {
           case "content":
             if (chunk.content) {
@@ -748,5 +875,12 @@ Respond with ONLY the commit message, no additional text.`;
     availableModels,
     agent,
     autoEditEnabled,
+    // File picker state
+    showFilePicker,
+    selectedFileIndex,
+    fileQuery,
+    attachedFiles,
+    fileSuggestions: fileFinder.getFileSuggestions(fileQuery),
+    removeAttachedFile,
   };
 }

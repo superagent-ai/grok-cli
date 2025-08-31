@@ -7,6 +7,7 @@ import { CommandSuggestions } from "./command-suggestions";
 import { ModelSelection } from "./model-selection";
 import { ChatHistory } from "./chat-history";
 import { ChatInput } from "./chat-input";
+import { FilePicker } from "./file-picker";
 import { MCPStatus } from "./mcp-status";
 import ConfirmationDialog from "./confirmation-dialog";
 import {
@@ -44,6 +45,13 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     commandSuggestions,
     availableModels,
     autoEditEnabled,
+    // File picker state
+    showFilePicker,
+    selectedFileIndex,
+    fileQuery,
+    attachedFiles,
+    fileSuggestions,
+    removeAttachedFile,
   } = useInputHandler({
     agent,
     chatHistory,
@@ -166,12 +174,15 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             </Text>
             <Text color="gray">2. Be specific for the best results.</Text>
             <Text color="gray">
-              3. Create GROK.md files to customize your interactions with Grok.
+              3. Use @ to attach files to your prompt (e.g., "@package.json").
             </Text>
             <Text color="gray">
-              4. Press Shift+Tab to toggle auto-edit mode.
+              4. Create GROK.md files to customize your interactions with Grok.
             </Text>
-            <Text color="gray">5. /help for more information.</Text>
+            <Text color="gray">
+              5. Press Shift+Tab to toggle auto-edit mode.
+            </Text>
+            <Text color="gray">6. /help for more information.</Text>
           </Box>
         </Box>
       )}
@@ -242,6 +253,13 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             selectedIndex={selectedModelIndex}
             isVisible={showModelSelection}
             currentModel={agent.getCurrentModel()}
+          />
+
+          <FilePicker
+            suggestions={fileSuggestions}
+            selectedIndex={selectedFileIndex}
+            query={fileQuery}
+            isVisible={showFilePicker}
           />
         </>
       )}
