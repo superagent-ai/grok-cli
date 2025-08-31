@@ -250,27 +250,23 @@ export function useInputHandler({
       setSelectedCommandIndex(0);
     }
     
-    // Handle @ file selection
-    const atIndex = newInput.lastIndexOf("@");
+    // Handle @ file selection (only the current @-token up to whitespace)
+    const searchPos = Math.max(0, cursorPosition - 1);
+    const atIndex = newInput.lastIndexOf("@", searchPos);
     if (atIndex !== -1) {
-      const afterAt = newInput.slice(atIndex + 1);
-      // Check if we're at the end or followed by whitespace
-      const isEndOfInput = atIndex + afterAt.length + 1 === newInput.length;
-      const isFollowedBySpace = !isEndOfInput && /\s/.test(newInput[atIndex + afterAt.length + 1]);
-      
-      if (isEndOfInput || isFollowedBySpace) {
+      const segment = newInput.slice(atIndex + 1, cursorPosition);
+      const containsWhitespace = /\s/.test(segment);
+
+      if (!containsWhitespace) {
         setShowFilePicker(true);
-        setFileQuery(afterAt);
+        setFileQuery(segment);
         setSelectedFileIndex(0);
         setShowCommandSuggestions(false);
-      } else {
-        setShowFilePicker(false);
-        setFileQuery("");
+        return;
       }
-    } else {
-      setShowFilePicker(false);
-      setFileQuery("");
     }
+    setShowFilePicker(false);
+    setFileQuery("");
   };
   
   const attachFileToPrompt = async (relativePath: string) => {
@@ -284,18 +280,20 @@ export function useInputHandler({
         setAttachedFiles(prev => [...prev, newAttachedFile]);
         
         // Replace @query with @filename in input and position cursor at end
-        const atIndex = input.lastIndexOf("@");
+        const searchPos = Math.max(0, cursorPosition - 1);
+        const atIndex = input.lastIndexOf("@", searchPos);
         if (atIndex !== -1) {
           const beforeAt = input.slice(0, atIndex);
-          // Find any content after the current @query
-          const afterAtPart = input.slice(atIndex);
-          const spaceIndex = afterAtPart.search(/\s/);
-          const afterQuery = spaceIndex !== -1 ? afterAtPart.slice(spaceIndex) : "";
-          
-          // Build new input with @filename and ensure space after
-          const newInput = beforeAt + `@${relativePath} ` + afterQuery;
-          // Set input and cursor position atomically
-          setInputWithCursor(newInput, newInput.length);
+          // Find end of current token (first whitespace after '@')
+          const rest = input.slice(atIndex + 1);
+          const whitespaceRel = rest.search(/\s/);
+          const tokenEnd = whitespaceRel === -1 ? input.length : atIndex + 1 + whitespaceRel;
+
+          const afterQuery = input.slice(tokenEnd);
+          const insertion = `@${relativePath} `;
+          const newInput = beforeAt + insertion + afterQuery;
+          const newCursor = beforeAt.length + insertion.length;
+          setInputWithCursor(newInput, newCursor);
         }
       }
     } catch (error) {

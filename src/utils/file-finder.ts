@@ -9,10 +9,19 @@ export interface FileSuggestion {
 
 export class FileFinder {
   private fileCache: Map<string, FileSuggestion[]> = new Map();
-  private maxDepth: number = 3;
-  private maxFiles: number = 200;
+  private maxDepth: number = 4;
+  private maxFiles: number = 5000;
+  private includeDotfiles: boolean = false;
 
-  constructor(private workingDirectory: string = process.cwd()) {}
+  constructor(private workingDirectory: string = process.cwd()) {
+    const depthEnv = parseInt(process.env.GROK_FILEPICKER_MAX_DEPTH || "", 10);
+    const filesEnv = parseInt(process.env.GROK_FILEPICKER_MAX_FILES || "", 10);
+    const includeDotsEnv = (process.env.GROK_FILEPICKER_INCLUDE_DOTFILES || "").toLowerCase();
+
+    if (!Number.isNaN(depthEnv) && depthEnv > 0) this.maxDepth = depthEnv;
+    if (!Number.isNaN(filesEnv) && filesEnv > 0) this.maxFiles = filesEnv;
+    this.includeDotfiles = includeDotsEnv === "1" || includeDotsEnv === "true";
+  }
 
   /**
    * Get file suggestions based on query
@@ -72,7 +81,8 @@ export class FileFinder {
     const shouldIgnore = (filePath: string): boolean => {
       const basename = path.basename(filePath);
       const ignoredPatterns = [
-        /^\./, // Hidden files
+        // Hidden files (optional)
+        ...(this.includeDotfiles ? [] : [/^\./]),
         /node_modules/,
         /\.git$/,
         /dist$/,
@@ -87,8 +97,10 @@ export class FileFinder {
         /\.DS_Store$/,
         /Thumbs\.db$/,
       ];
-      
-      return ignoredPatterns.some(pattern => pattern.test(basename) || pattern.test(filePath));
+
+      return ignoredPatterns.some(
+        (pattern) => pattern.test(basename) || pattern.test(filePath)
+      );
     };
 
     const scanDirectory = (dir: string, depth: number = 0): void => {
