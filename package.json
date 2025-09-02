@@ -31,9 +31,10 @@
     "dotenv": "^16.3.0",
     "enquirer": "^2.4.1",
     "fs-extra": "^11.1.1",
+    "https-proxy-agent": "^7.0.6",
     "ink": "^3.2.0",
     "ink-markdown": "^1.0.4",
-    "openai": "^5.10.1",
+    "openai": ">=4.28.4 <5.0.0",
     "react": "^17.0.2",
     "ripgrep-node": "^1.0.0",
     "tiktoken": "^1.0.21"
