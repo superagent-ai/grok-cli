@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import { HttpsProxyAgent } from "https-proxy-agent";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
@@ -50,11 +51,24 @@ export class GrokClient {
   private currentModel: string = "grok-3-latest";
 
   constructor(apiKey: string, model?: string, baseURL?: string) {
-    this.client = new OpenAI({
+    const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+    const proxyUrl = httpsProxy || httpProxy;
+    
+    const clientConfig: any = {
       apiKey,
       baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-      timeout: 360000,
-    });
+      timeout: 120000,
+      maxRetries: 3,
+    };
+    
+    if (proxyUrl) {
+      console.log('Using proxy:', proxyUrl);
+      clientConfig.httpAgent = new HttpsProxyAgent(proxyUrl);
+      clientConfig.httpsAgent = new HttpsProxyAgent(proxyUrl);
+    }
+    
+    this.client = new OpenAI(clientConfig);
     if (model) {
       this.currentModel = model;
     }
@@ -95,6 +109,7 @@ export class GrokClient {
 
       return response as GrokResponse;
     } catch (error: any) {
+      console.error('OpenAI client error details:', error);
       throw new Error(`Grok API error: ${error.message}`);
     }
   }
