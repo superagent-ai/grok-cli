@@ -1,16 +1,16 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 /**
  * User-level settings stored in ~/.grok/user-settings.json
  * These are global settings that apply across all projects
  */
 export interface UserSettings {
-  apiKey?: string;           // Grok API key
-  baseURL?: string;          // API base URL
-  defaultModel?: string;     // User's preferred default model
-  models?: string[];         // Available models list
+  apiKey?: string; // Grok API key
+  baseURL?: string; // API base URL
+  defaultModel?: string; // User's preferred default model
+  models?: string[]; // Available models list
 }
 
 /**
@@ -18,7 +18,7 @@ export interface UserSettings {
  * These are project-specific settings
  */
 export interface ProjectSettings {
-  model?: string;            // Current model for this project
+  model?: string; // Current model for this project
   mcpServers?: Record<string, any>; // MCP server configurations
 }
 
@@ -27,20 +27,21 @@ export interface ProjectSettings {
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
   baseURL: "https://api.x.ai/v1",
-  defaultModel: "grok-4-latest",
+  defaultModel: "grok-code-fast-1",
   models: [
+    "grok-code-fast-1",
     "grok-4-latest",
-    "grok-3-latest", 
+    "grok-3-latest",
     "grok-3-fast",
-    "grok-3-mini-fast"
-  ]
+    "grok-3-mini-fast",
+  ],
 };
 
 /**
  * Default values for project settings
  */
 const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
-  model: "grok-4-latest"
+  model: "grok-code-fast-1",
 };
 
 /**
@@ -48,18 +49,26 @@ const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
  */
 export class SettingsManager {
   private static instance: SettingsManager;
-  
+
   private userSettingsPath: string;
   private projectSettingsPath: string;
-  
+
   private constructor() {
     // User settings path: ~/.grok/user-settings.json
-    this.userSettingsPath = path.join(os.homedir(), '.grok', 'user-settings.json');
-    
+    this.userSettingsPath = path.join(
+      os.homedir(),
+      ".grok",
+      "user-settings.json"
+    );
+
     // Project settings path: .grok/settings.json (in current working directory)
-    this.projectSettingsPath = path.join(process.cwd(), '.grok', 'settings.json');
+    this.projectSettingsPath = path.join(
+      process.cwd(),
+      ".grok",
+      "settings.json"
+    );
   }
-  
+
   /**
    * Get singleton instance
    */
@@ -69,7 +78,7 @@ export class SettingsManager {
     }
     return SettingsManager.instance;
   }
-  
+
   /**
    * Ensure directory exists for a given file path
    */
@@ -79,7 +88,7 @@ export class SettingsManager {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
   }
-  
+
   /**
    * Load user settings from ~/.grok/user-settings.json
    */
@@ -90,18 +99,21 @@ export class SettingsManager {
         this.saveUserSettings(DEFAULT_USER_SETTINGS);
         return { ...DEFAULT_USER_SETTINGS };
       }
-      
-      const content = fs.readFileSync(this.userSettingsPath, 'utf-8');
+
+      const content = fs.readFileSync(this.userSettingsPath, "utf-8");
       const settings = JSON.parse(content);
-      
+
       // Merge with defaults to ensure all required fields exist
       return { ...DEFAULT_USER_SETTINGS, ...settings };
     } catch (error) {
-      console.warn('Failed to load user settings:', error instanceof Error ? error.message : 'Unknown error');
+      console.warn(
+        "Failed to load user settings:",
+        error instanceof Error ? error.message : "Unknown error"
+      );
       return { ...DEFAULT_USER_SETTINGS };
     }
   }
-  
+
   /**
    * Save user settings to ~/.grok/user-settings.json
    */
@@ -113,12 +125,12 @@ export class SettingsManager {
       let existingSettings: UserSettings = { ...DEFAULT_USER_SETTINGS };
       if (fs.existsSync(this.userSettingsPath)) {
         try {
-          const content = fs.readFileSync(this.userSettingsPath, 'utf-8');
+          const content = fs.readFileSync(this.userSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
         } catch (error) {
           // If file is corrupted, use defaults
-          console.warn('Corrupted user settings file, using defaults');
+          console.warn("Corrupted user settings file, using defaults");
         }
       }
 
@@ -130,19 +142,25 @@ export class SettingsManager {
         { mode: 0o600 } // Secure permissions for API key
       );
     } catch (error) {
-      console.error('Failed to save user settings:', error instanceof Error ? error.message : 'Unknown error');
+      console.error(
+        "Failed to save user settings:",
+        error instanceof Error ? error.message : "Unknown error"
+      );
       throw error;
     }
   }
-  
+
   /**
    * Update a specific user setting
    */
-  public updateUserSetting<K extends keyof UserSettings>(key: K, value: UserSettings[K]): void {
+  public updateUserSetting<K extends keyof UserSettings>(
+    key: K,
+    value: UserSettings[K]
+  ): void {
     const settings = { [key]: value } as Partial<UserSettings>;
     this.saveUserSettings(settings);
   }
-  
+
   /**
    * Get a specific user setting
    */
@@ -150,7 +168,7 @@ export class SettingsManager {
     const settings = this.loadUserSettings();
     return settings[key];
   }
-  
+
   /**
    * Load project settings from .grok/settings.json
    */
@@ -161,18 +179,21 @@ export class SettingsManager {
         this.saveProjectSettings(DEFAULT_PROJECT_SETTINGS);
         return { ...DEFAULT_PROJECT_SETTINGS };
       }
-      
-      const content = fs.readFileSync(this.projectSettingsPath, 'utf-8');
+
+      const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
       const settings = JSON.parse(content);
-      
+
       // Merge with defaults
       return { ...DEFAULT_PROJECT_SETTINGS, ...settings };
     } catch (error) {
-      console.warn('Failed to load project settings:', error instanceof Error ? error.message : 'Unknown error');
+      console.warn(
+        "Failed to load project settings:",
+        error instanceof Error ? error.message : "Unknown error"
+      );
       return { ...DEFAULT_PROJECT_SETTINGS };
     }
   }
-  
+
   /**
    * Save project settings to .grok/settings.json
    */
@@ -184,12 +205,12 @@ export class SettingsManager {
       let existingSettings: ProjectSettings = { ...DEFAULT_PROJECT_SETTINGS };
       if (fs.existsSync(this.projectSettingsPath)) {
         try {
-          const content = fs.readFileSync(this.projectSettingsPath, 'utf-8');
+          const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
         } catch (error) {
           // If file is corrupted, use defaults
-          console.warn('Corrupted project settings file, using defaults');
+          console.warn("Corrupted project settings file, using defaults");
         }
       }
 
@@ -200,27 +221,35 @@ export class SettingsManager {
         JSON.stringify(mergedSettings, null, 2)
       );
     } catch (error) {
-      console.error('Failed to save project settings:', error instanceof Error ? error.message : 'Unknown error');
+      console.error(
+        "Failed to save project settings:",
+        error instanceof Error ? error.message : "Unknown error"
+      );
       throw error;
     }
   }
-  
+
   /**
    * Update a specific project setting
    */
-  public updateProjectSetting<K extends keyof ProjectSettings>(key: K, value: ProjectSettings[K]): void {
+  public updateProjectSetting<K extends keyof ProjectSettings>(
+    key: K,
+    value: ProjectSettings[K]
+  ): void {
     const settings = { [key]: value } as Partial<ProjectSettings>;
     this.saveProjectSettings(settings);
   }
-  
+
   /**
    * Get a specific project setting
    */
-  public getProjectSetting<K extends keyof ProjectSettings>(key: K): ProjectSettings[K] {
+  public getProjectSetting<K extends keyof ProjectSettings>(
+    key: K
+  ): ProjectSettings[K] {
     const settings = this.loadProjectSettings();
     return settings[key];
   }
-  
+
   /**
    * Get the current model with proper fallback logic:
    * 1. Project-specific model setting
@@ -228,34 +257,34 @@ export class SettingsManager {
    * 3. System default
    */
   public getCurrentModel(): string {
-    const projectModel = this.getProjectSetting('model');
+    const projectModel = this.getProjectSetting("model");
     if (projectModel) {
       return projectModel;
     }
-    
-    const userDefaultModel = this.getUserSetting('defaultModel');
+
+    const userDefaultModel = this.getUserSetting("defaultModel");
     if (userDefaultModel) {
       return userDefaultModel;
     }
-    
-    return DEFAULT_PROJECT_SETTINGS.model || 'grok-4-latest';
+
+    return DEFAULT_PROJECT_SETTINGS.model || "grok-code-fast-1";
   }
-  
+
   /**
    * Set the current model for the project
    */
   public setCurrentModel(model: string): void {
-    this.updateProjectSetting('model', model);
+    this.updateProjectSetting("model", model);
   }
-  
+
   /**
    * Get available models list from user settings
    */
   public getAvailableModels(): string[] {
-    const models = this.getUserSetting('models');
+    const models = this.getUserSetting("models");
     return models || DEFAULT_USER_SETTINGS.models || [];
   }
-  
+
   /**
    * Get API key from user settings or environment
    */
@@ -265,11 +294,11 @@ export class SettingsManager {
     if (envApiKey) {
       return envApiKey;
     }
-    
+
     // Then check user settings
-    return this.getUserSetting('apiKey');
+    return this.getUserSetting("apiKey");
   }
-  
+
   /**
    * Get base URL from user settings or environment
    */
@@ -279,10 +308,12 @@ export class SettingsManager {
     if (envBaseURL) {
       return envBaseURL;
     }
-    
+
     // Then check user settings
-    const userBaseURL = this.getUserSetting('baseURL');
-    return userBaseURL || DEFAULT_USER_SETTINGS.baseURL || 'https://api.x.ai/v1';
+    const userBaseURL = this.getUserSetting("baseURL");
+    return (
+      userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1"
+    );
   }
 }
 

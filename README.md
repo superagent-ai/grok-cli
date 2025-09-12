@@ -114,7 +114,7 @@ This file stores **global settings** that apply across all projects. These setti
 
 - **API Key**: Your Grok API key
 - **Base URL**: Custom API endpoint (if needed)
-- **Default Model**: Your preferred model (e.g., `grok-4-latest`)
+- **Default Model**: Your preferred model (e.g., `grok-code-fast-1`)
 - **Available Models**: List of models you can use
 
 **Example:**
@@ -122,8 +122,9 @@ This file stores **global settings** that apply across all projects. These setti
 {
   "apiKey": "your_api_key_here",
   "baseURL": "https://api.x.ai/v1",
-  "defaultModel": "grok-4-latest",
+  "defaultModel": "grok-code-fast-1",
   "models": [
+    "grok-code-fast-1",
     "grok-4-latest",
     "grok-3-latest",
     "grok-3-fast",
@@ -159,7 +160,7 @@ This file stores **project-specific settings** in your current working directory
 1. **Global Defaults**: User-level settings provide your default preferences
 2. **Project Override**: Project-level settings override defaults for specific projects
 3. **Directory-Specific**: When you change directories, project settings are loaded automatically
-4. **Fallback Logic**: Project model → User default model → System default (`grok-4-latest`)
+4. **Fallback Logic**: Project model → User default model → System default (`grok-code-fast-1`)
 
 This means you can have different models for different projects while maintaining consistent global settings like your API key.
 
@@ -245,6 +246,7 @@ You can specify which AI model to use with the `--model` parameter or `GROK_MODE
 **Method 1: Command Line Flag**
 ```bash
 # Use Grok models
+grok --model grok-code-fast-1
 grok --model grok-4-latest
 grok --model grok-3-latest
 grok --model grok-3-fast
@@ -256,7 +258,7 @@ grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
 
 **Method 2: Environment Variable**
 ```bash
-export GROK_MODEL=grok-4-latest
+export GROK_MODEL=grok-code-fast-1
 grok
 ```
 
@@ -265,11 +267,11 @@ Add to `~/.grok/user-settings.json`:
 ```json
 {
   "apiKey": "your_api_key_here",
-  "defaultModel": "grok-4-latest"
+  "defaultModel": "grok-code-fast-1"
 }
 ```
 
-**Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-4-latest)
+**Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-code-fast-1)
 
 ### Command Line Options
 
@@ -281,7 +283,7 @@ Options:
   -d, --directory <dir>  set working directory
   -k, --api-key <key>    Grok API key (or set GROK_API_KEY env var)
   -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
-  -m, --model <model>    AI model to use (e.g., grok-4-latest, grok-3-latest) (or set GROK_MODEL env var)
+  -m, --model <model>    AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)
   -p, --prompt <prompt>  process a single prompt and exit (headless mode)
   --max-tool-rounds <rounds>  maximum number of tool execution rounds (default: 400)
   -h, --help             display help for command

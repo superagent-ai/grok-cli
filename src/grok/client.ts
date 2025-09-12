@@ -47,7 +47,7 @@ export interface GrokResponse {
 
 export class GrokClient {
   private client: OpenAI;
-  private currentModel: string = "grok-3-latest";
+  private currentModel: string = "grok-code-fast-1";
 
   constructor(apiKey: string, model?: string, baseURL?: string) {
     this.client = new OpenAI({
@@ -89,9 +89,8 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
-      const response = await this.client.chat.completions.create(
-        requestPayload
-      );
+      const response =
+        await this.client.chat.completions.create(requestPayload);
 
       return response as GrokResponse;
     } catch (error: any) {

@@ -18,10 +18,17 @@ import cfonts from "cfonts";
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;
+  initialMessage?: string;
 }
 
 // Main chat component that handles input when agent is available
-function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
+function ChatInterfaceWithAgent({
+  agent,
+  initialMessage,
+}: {
+  agent: GrokAgent;
+  initialMessage?: string;
+}) {
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
@@ -101,6 +108,29 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     setChatHistory([]);
   }, []);
 
+  // Process initial message if provided
+  useEffect(() => {
+    if (initialMessage && agent) {
+      // First, immediately add the user message to chat history
+      const userEntry: ChatEntry = {
+        type: "user",
+        content: initialMessage,
+        timestamp: new Date(),
+      };
+      setChatHistory([userEntry]);
+
+      // Then process the message asynchronously
+      const processInitialMessage = async () => {
+        setIsProcessing(true);
+        const entries = await agent.processUserMessage(initialMessage);
+        setChatHistory(entries);
+        setIsProcessing(false);
+      };
+
+      processInitialMessage();
+    }
+  }, [initialMessage, agent]);
+
   useEffect(() => {
     const handleConfirmationRequest = (options: ConfirmationOptions) => {
       setConfirmationOptions(options);
@@ -178,7 +208,8 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
       <Box flexDirection="column" marginBottom={1}>
         <Text color="gray">
-          Type your request in natural language. Ctrl+C to clear, 'exit' to quit.
+          Type your request in natural language. Ctrl+C to clear, 'exit' to
+          quit.
         </Text>
       </Box>
 
@@ -222,7 +253,10 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
                 {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
                 {autoEditEnabled ? "on" : "off"}
               </Text>
-              <Text color="gray" dimColor> (shift + tab)</Text>
+              <Text color="gray" dimColor>
+                {" "}
+                (shift + tab)
+              </Text>
             </Box>
             <Box marginRight={2}>
               <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
@@ -250,7 +284,10 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 }
 
 // Main component that handles API key input or chat interface
-export default function ChatInterface({ agent }: ChatInterfaceProps) {
+export default function ChatInterface({
+  agent,
+  initialMessage,
+}: ChatInterfaceProps) {
   const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
     agent || null
   );
@@ -263,5 +300,10 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
     return <ApiKeyInput onApiKeySet={handleApiKeySet} />;
   }
 
-  return <ChatInterfaceWithAgent agent={currentAgent} />;
+  return (
+    <ChatInterfaceWithAgent
+      agent={currentAgent}
+      initialMessage={initialMessage}
+    />
+  );
 }
