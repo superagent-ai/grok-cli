@@ -65,21 +65,27 @@ function loadBaseURL(): string {
 }
 
 // Save command line settings to user settings file
-async function saveCommandLineSettings(apiKey?: string, baseURL?: string): Promise<void> {
+async function saveCommandLineSettings(
+  apiKey?: string,
+  baseURL?: string
+): Promise<void> {
   try {
     const manager = getSettingsManager();
 
     // Update with command line values
     if (apiKey) {
-      manager.updateUserSetting('apiKey', apiKey);
+      manager.updateUserSetting("apiKey", apiKey);
       console.log("✅ API key saved to ~/.grok/user-settings.json");
     }
     if (baseURL) {
-      manager.updateUserSetting('baseURL', baseURL);
+      manager.updateUserSetting("baseURL", baseURL);
       console.log("✅ Base URL saved to ~/.grok/user-settings.json");
     }
   } catch (error) {
-    console.warn("⚠️ Could not save settings to file:", error instanceof Error ? error.message : "Unknown error");
+    console.warn(
+      "⚠️ Could not save settings to file:",
+      error instanceof Error ? error.message : "Unknown error"
+    );
   }
 }
 
@@ -307,6 +313,7 @@ program
     "A conversational AI CLI tool powered by Grok with text editor capabilities"
   )
   .version("1.0.1")
+  .argument("[message...]", "Initial message to send to Grok")
   .option("-d, --directory <dir>", "set working directory", process.cwd())
   .option("-k, --api-key <key>", "Grok API key (or set GROK_API_KEY env var)")
   .option(
@@ -315,7 +322,7 @@ program
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
+    "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
     "-p, --prompt <prompt>",
@@ -326,7 +333,7 @@ program
     "maximum number of tool execution rounds (default: 400)",
     "400"
   )
-  .action(async (options) => {
+  .action(async (message, options) => {
     if (options.directory) {
       try {
         process.chdir(options.directory);
@@ -360,7 +367,13 @@ program
 
       // Headless mode: process prompt and exit
       if (options.prompt) {
-        await processPromptHeadless(options.prompt, apiKey, baseURL, model, maxToolRounds);
+        await processPromptHeadless(
+          options.prompt,
+          apiKey,
+          baseURL,
+          model,
+          maxToolRounds
+        );
         return;
       }
 
@@ -370,7 +383,12 @@ program
 
       ensureUserSettingsDirectory();
 
-      render(React.createElement(ChatInterface, { agent }));
+      // Support variadic positional arguments for multi-word initial message
+      const initialMessage = Array.isArray(message)
+        ? message.join(" ")
+        : message;
+
+      render(React.createElement(ChatInterface, { agent, initialMessage }));
     } catch (error: any) {
       console.error("❌ Error initializing Grok CLI:", error.message);
       process.exit(1);
@@ -393,7 +411,7 @@ gitCommand
   )
   .option(
     "-m, --model <model>",
-    "AI model to use (e.g., gemini-2.5-pro, grok-4-latest) (or set GROK_MODEL env var)"
+    "AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)"
   )
   .option(
     "--max-tool-rounds <rounds>",

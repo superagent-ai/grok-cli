@@ -64,7 +64,7 @@ export class GrokAgent extends EventEmitter {
     super();
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
-    const modelToUse = model || savedModel || "grok-4-latest";
+    const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
@@ -160,7 +160,7 @@ Current working directory: ${process.cwd()}`,
           await initializeMCPServers();
         }
       } catch (error) {
-        console.warn('MCP initialization failed:', error);
+        console.warn("MCP initialization failed:", error);
       } finally {
         this.mcpInitialized = true;
       }
