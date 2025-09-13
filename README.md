@@ -13,16 +13,21 @@ A conversational AI CLI tool powered by Grok with intelligent text editor capabi
 - **🚀 Morph Fast Apply**: Optional high-speed code editing at 4,500+ tokens/sec with 98% accuracy
 - **🔌 MCP Tools**: Extend capabilities with Model Context Protocol servers (Linear, GitHub, etc.)
 - **💬 Interactive UI**: Beautiful terminal interface built with Ink
-- **🌍 Global Installation**: Install and use anywhere with `npm i -g @vibe-kit/grok-cli`
+- **🌍 Global Installation**: Install and use anywhere with `bun add -g @vibe-kit/grok-cli`
 
 ## Installation
 
 ### Prerequisites
-- Node.js 16+ 
+- Bun 1.0+ (or Node.js 18+ as fallback)
 - Grok API key from X.AI
 - (Optional, Recommended) Morph API key for Fast Apply editing
 
 ### Global Installation (Recommended)
+```bash
+bun add -g @vibe-kit/grok-cli
+```
+
+Or with npm (fallback):
 ```bash
 npm install -g @vibe-kit/grok-cli
 ```
@@ -31,9 +36,9 @@ npm install -g @vibe-kit/grok-cli
 ```bash
 git clone <repository>
 cd grok-cli
-npm install
-npm run build
-npm link
+bun install
+bun run build
+bun link
 ```
 
 ## Setup
@@ -208,7 +213,7 @@ Process a single prompt and exit (useful for scripting and automation):
 ```bash
 grok --prompt "show me the package.json file"
 grok -p "create a new file called example.js with a hello world function"
-grok --prompt "run npm test and show me the results" --directory /path/to/project
+grok --prompt "run bun test and show me the results" --directory /path/to/project
 grok --prompt "complex task" --max-tool-rounds 50  # Limit tool usage for faster execution
 ```
 
@@ -348,7 +353,7 @@ Grok CLI supports MCP (Model Context Protocol) servers, allowing you to extend t
 #### Add a custom MCP server:
 ```bash
 # Add an stdio-based MCP server
-grok mcp add my-server --transport stdio --command "node" --args server.js
+grok mcp add my-server --transport stdio --command "bun" --args server.js
 
 # Add an HTTP-based MCP server
 grok mcp add my-server --transport http --url "http://localhost:3000"
@@ -359,7 +364,7 @@ grok mcp add my-server --transport stdio --command "python" --args "-m" "my_mcp_
 
 #### Add from JSON configuration:
 ```bash
-grok mcp add-json my-server '{"command": "node", "args": ["server.js"], "env": {"API_KEY": "your_key"}}'
+grok mcp add-json my-server '{"command": "bun", "args": ["server.js"], "env": {"API_KEY": "your_key"}}'
 ```
 
 ### Linear Integration Example
@@ -400,19 +405,19 @@ grok mcp remove server-name
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Development mode
-npm run dev
+bun run dev
 
 # Build project
-npm run build
+bun run build
 
 # Run linter
-npm run lint
+bun run lint
 
 # Type check
-npm run typecheck
+bun run typecheck
 ```
 
 ## Architecture
