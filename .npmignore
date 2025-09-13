@@ -3,7 +3,6 @@ src/
 tsconfig.json
 
 # Lock files from other package managers
-package-lock.json
 yarn.lock
 
 # Development and build tools

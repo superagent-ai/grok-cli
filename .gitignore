@@ -3,8 +3,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-# Ignore npm/yarn lockfiles as we're using Bun
-package-lock.json
+# Ignore yarn lockfiles as we support both npm and Bun
 yarn.lock
 # Keep Bun lockfiles (both binary and text format)
 # bun.lockb
