@@ -9,8 +9,8 @@ import {
   moveToLineEnd,
   moveToPreviousWord,
   moveToNextWord,
-} from "../utils/text-utils";
-import { useInputHistory } from "./use-input-history";
+} from "../utils/text-utils.js";
+import { useInputHistory } from "./use-input-history.js";
 
 export interface Key {
   name?: string;

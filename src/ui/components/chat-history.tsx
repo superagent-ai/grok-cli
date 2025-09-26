@@ -1,8 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { ChatEntry } from "../../agent/grok-agent";
-import { DiffRenderer } from "./diff-renderer";
-import { MarkdownRenderer } from "../utils/markdown-renderer";
+import { ChatEntry } from "../../agent/grok-agent.js";
+import { DiffRenderer } from "./diff-renderer.js";
+import { MarkdownRenderer } from "../utils/markdown-renderer.js";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];

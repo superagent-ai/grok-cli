@@ -1,5 +1,5 @@
-import { TextEditorTool, BashTool } from '../tools';
-import { ToolResult, AgentState } from '../types';
+import { TextEditorTool, BashTool } from '../tools/index.js';
+import { ToolResult, AgentState } from '../types/index.js';
 
 export class Agent {
   private textEditor: TextEditorTool;

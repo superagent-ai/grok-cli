@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
 import { useInput } from "ink";
-import { GrokAgent, ChatEntry } from "../agent/grok-agent";
-import { ConfirmationService } from "../utils/confirmation-service";
-import { useEnhancedInput, Key } from "./use-enhanced-input";
+import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
+import { useEnhancedInput, Key } from "./use-enhanced-input.js";
 
-import { filterCommandSuggestions } from "../ui/components/command-suggestions";
-import { loadModelConfig, updateCurrentModel } from "../utils/model-config";
+import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
+import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;

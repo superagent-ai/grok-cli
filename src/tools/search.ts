@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
-import { ToolResult } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
+import { ToolResult } from "../types/index.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
 import * as fs from "fs-extra";
 import * as path from "path";
 

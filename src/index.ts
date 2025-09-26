@@ -4,11 +4,11 @@ import React from "react";
 import { render } from "ink";
 import { program } from "commander";
 import * as dotenv from "dotenv";
-import { GrokAgent } from "./agent/grok-agent";
-import ChatInterface from "./ui/components/chat-interface";
-import { getSettingsManager } from "./utils/settings-manager";
-import { ConfirmationService } from "./utils/confirmation-service";
-import { createMCPCommand } from "./commands/mcp";
+import { GrokAgent } from "./agent/grok-agent.js";
+import ChatInterface from "./ui/components/chat-interface.js";
+import { getSettingsManager } from "./utils/settings-manager.js";
+import { ConfirmationService } from "./utils/confirmation-service.js";
+import { createMCPCommand } from "./commands/mcp.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables

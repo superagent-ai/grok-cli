@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Agent } from '../agent';
-import { ToolResult } from '../types';
-import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service';
-import ConfirmationDialog from './components/confirmation-dialog';
+import { Agent } from '../agent/index.js';
+import { ToolResult } from '../types/index.js';
+import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service.js';
+import ConfirmationDialog from './components/confirmation-dialog.js';
 import chalk from 'chalk';
 
 interface Props {

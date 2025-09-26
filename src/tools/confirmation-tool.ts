@@ -1,5 +1,5 @@
-import { ToolResult } from '../types';
-import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service';
+import { ToolResult } from '../types/index.js';
+import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service.js';
 
 export interface ConfirmationRequest {
   operation: string;

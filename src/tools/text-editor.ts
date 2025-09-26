@@ -1,7 +1,7 @@
 import * as fs from "fs-extra";
 import * as path from "path";
-import { ToolResult, EditorCommand } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
+import { ToolResult, EditorCommand } from "../types/index.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
 
 export class TextEditorTool {
   private editHistory: EditorCommand[] = [];

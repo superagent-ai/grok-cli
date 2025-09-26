@@ -1,6 +1,6 @@
-export { BashTool } from "./bash";
-export { TextEditorTool } from "./text-editor";
-export { MorphEditorTool } from "./morph-editor";
-export { TodoTool } from "./todo-tool";
-export { ConfirmationTool } from "./confirmation-tool";
-export { SearchTool } from "./search";
+export { BashTool } from "./bash.js";
+export { TextEditorTool } from "./text-editor.js";
+export { MorphEditorTool } from "./morph-editor.js";
+export { TodoTool } from "./todo-tool.js";
+export { ConfirmationTool } from "./confirmation-tool.js";
+export { SearchTool } from "./search.js";

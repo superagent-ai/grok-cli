@@ -1,6 +1,6 @@
-import { GrokTool } from "./client";
-import { MCPManager, MCPTool } from "../mcp/client";
-import { loadMCPConfig } from "../mcp/config";
+import { GrokTool } from "./client.js";
+import { MCPManager, MCPTool } from "../mcp/client.js";
+import { loadMCPConfig } from "../mcp/config.js";
 
 const BASE_GROK_TOOLS: GrokTool[] = [
   {

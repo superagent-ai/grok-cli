@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { addMCPServer, removeMCPServer, loadMCPConfig, PREDEFINED_SERVERS } from '../mcp/config';
-import { getMCPManager } from '../grok/tools';
-import { MCPServerConfig } from '../mcp/client';
+import { addMCPServer, removeMCPServer, loadMCPConfig, PREDEFINED_SERVERS } from '../mcp/config.js';
+import { getMCPManager } from '../grok/tools.js';
+import { MCPServerConfig } from '../mcp/client.js';
 import chalk from 'chalk';
 
 export function createMCPCommand(): Command {

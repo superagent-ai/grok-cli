@@ -1,12 +1,12 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
+import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
   GROK_TOOLS,
   addMCPToolsToGrokTools,
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
-} from "../grok/tools";
-import { loadMCPConfig } from "../mcp/config";
+} from "../grok/tools.js";
+import { loadMCPConfig } from "../mcp/config.js";
 import {
   TextEditorTool,
   MorphEditorTool,
@@ -14,12 +14,12 @@ import {
   TodoTool,
   ConfirmationTool,
   SearchTool,
-} from "../tools";
-import { ToolResult } from "../types";
+} from "../tools/index.js";
+import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
-import { createTokenCounter, TokenCounter } from "../utils/token-counter";
-import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSettingsManager } from "../utils/settings-manager";
+import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
+import { loadCustomInstructions } from "../utils/custom-instructions.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";

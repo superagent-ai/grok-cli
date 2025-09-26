@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
-import { GrokAgent, ChatEntry } from "../../agent/grok-agent";
-import { useInputHandler } from "../../hooks/use-input-handler";
-import { LoadingSpinner } from "./loading-spinner";
-import { CommandSuggestions } from "./command-suggestions";
-import { ModelSelection } from "./model-selection";
-import { ChatHistory } from "./chat-history";
-import { ChatInput } from "./chat-input";
-import { MCPStatus } from "./mcp-status";
-import ConfirmationDialog from "./confirmation-dialog";
+import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
+import { useInputHandler } from "../../hooks/use-input-handler.js";
+import { LoadingSpinner } from "./loading-spinner.js";
+import { CommandSuggestions } from "./command-suggestions.js";
+import { ModelSelection } from "./model-selection.js";
+import { ChatHistory } from "./chat-history.js";
+import { ChatInput } from "./chat-input.js";
+import { MCPStatus } from "./mcp-status.js";
+import ConfirmationDialog from "./confirmation-dialog.js";
 import {
   ConfirmationService,
   ConfirmationOptions,
-} from "../../utils/confirmation-service";
-import ApiKeyInput from "./api-key-input";
+} from "../../utils/confirmation-service.js";
+import ApiKeyInput from "./api-key-input.js";
 import cfonts from "cfonts";
 
 interface ChatInterfaceProps {

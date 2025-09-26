@@ -1,8 +1,8 @@
 import * as fs from "fs-extra";
 import * as path from "path";
 import axios from "axios";
-import { ToolResult } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
+import { ToolResult } from "../types/index.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
 
 export class MorphEditorTool {
   private confirmationService = ConfirmationService.getInstance();
