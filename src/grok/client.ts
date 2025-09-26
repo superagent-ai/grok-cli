@@ -116,6 +116,7 @@ export class GrokClient {
         temperature: 0.7,
         max_tokens: this.defaultMaxTokens,
         stream: true,
+        stream_options: { include_usage: true },
       };
 
       // Add search parameters if specified
