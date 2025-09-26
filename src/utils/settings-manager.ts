@@ -11,6 +11,7 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  mgmtKey?: string; // Management key for auto-generating API keys
 }
 
 /**

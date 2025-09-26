@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import React from "react";
 import { render } from "ink";
 import { program } from "commander";
@@ -7,6 +9,7 @@ import ChatInterface from "./ui/components/chat-interface.js";
 import { getSettingsManager } from "./utils/settings-manager.js";
 import { ConfirmationService } from "./utils/confirmation-service.js";
 import { createMCPCommand } from "./commands/mcp.js";
+import { createAuthCommand } from "./commands/auth.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables
@@ -450,12 +453,15 @@ gitCommand
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
     } catch (error: any) {
-      console.error("❌ Error during git commit-and-push:", error.message);
+      console.error("❌ Error during commit and push:", error.message);
       process.exit(1);
     }
   });
 
 // MCP command
 program.addCommand(createMCPCommand());
+
+// Auth command
+program.addCommand(createAuthCommand());
 
 program.parse();
