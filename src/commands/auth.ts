@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import open from 'open';
 import readline from 'readline';
+import puppeteer from 'puppeteer';
 import { getSettingsManager } from '../utils/settings-manager.js';
 
 export function createAuthCommand(): Command {
@@ -33,51 +34,61 @@ export function createAuthCommand(): Command {
   return authCommand;
 }
 
-async function performConsoleLogin(): Promise<void> {
-  console.log('🔐 Grok CLI Authentication Setup');
-  console.log('================================');
-  console.log('To use Grok CLI with full features, you need an API key from xAI.');
-  console.log('');
-  console.log('STEPS:');
-  console.log('1. Free users: Upgrade to a paid plan at https://console.x.ai for API access');
-  console.log('2. Login to https://console.x.ai');
-  console.log('3. Navigate to API Keys section');
-  console.log('4. Create a new API key (starts with "xai-...")');
-  console.log('5. Copy the key and paste it below');
-  console.log('');
-  console.log('💡 Pro tip: Paid plans include team limits and higher usage quotas!');
-  console.log('');
+export async function performConsoleLogin(): Promise<void> {
+  console.log('🔐 Grok CLI OAuth-Style Setup');
+  console.log('============================');
+  console.log('Automating login to xAI console for key generation...');
+  console.log('1. Browser will launch (headless=false for you to login)');
+  console.log('2. Enter your xAI creds when prompted');
+  console.log('3. CLI will auto-generate & save your API key');
+  console.log('\n💡 Paid plans? Higher quotas await! Upgrade at console.x.ai');
 
-  // Open xAI console
-  const loginUrl = 'https://console.x.ai';
-  console.log('🚀 Opening xAI console in your browser...');
-  await open(loginUrl).catch(() => console.log('Manual open:', loginUrl));
-
-  console.log('');
-  console.log('⏳ After logging in and creating your API key, come back here...');
-  console.log('(This window will wait for you)');
-  console.log('');
-
-  // Wait for user to complete steps
-  await new Promise(resolve => setTimeout(resolve, 10000)); // Give time to read and act
-
-  // Check if management key is set for auto-gen (may not work for free users)
-  const manager = getSettingsManager();
-  const mgmtKey = manager.getUserSetting('mgmtKey');
-  if (mgmtKey) {
-    console.log('🔧 Management key detected - attempting automatic API key generation...');
-    try {
-      await autoGenerateApiKey(mgmtKey);
-    } catch (err: any) {
-      console.error('❌ Auto-gen failed:', err.message);
-      console.log('Falling back to manual key entry...');
-      await manualKeyEntry();
+  const browser = await puppeteer.launch({ headless: false, defaultViewport: null }); // Visible for user login
+  const page = await browser.newPage();
+  
+  try {
+    // Navigate to console & wait for login
+    await page.goto('https://console.x.ai', { waitUntil: 'networkidle0' });
+    console.log('⏳ Browser open—login to xAI console now. CLI waiting...');
+    
+    // Poll for successful login (detect dashboard load) - ADJUST SELECTOR BASED ON REAL UI
+    await page.waitForSelector('[data-testid="api-keys-tab"]', { timeout: 300000 }); // 5min timeout for user login
+    console.log('✅ Login detected! Generating API key...');
+    
+    // Click "Create New Key" (adapt selector if UI changes—scrape from console) - PLACEHOLDER
+    await page.click('button:has-text("Create API Key")'); // Pseudo-selector; inspect real DOM
+    await page.waitForSelector('input[placeholder*="Key Name"]');
+    await page.type('input[placeholder*="Key Name"]', 'Grok CLI Key');
+    await page.click('button:has-text("Generate")');
+    
+    // Extract the new key (it flashes or copies to clipboard—handle both) - PLACEHOLDER
+    const keyHandle = await page.waitForSelector('.api-key-value'); // Adjust to real class
+    const apiKey = await page.evaluate((el: any) => el.textContent, keyHandle);
+    
+    if (apiKey?.startsWith('xai-')) {
+      saveApiKey(apiKey.trim());
+      console.log('🎉 Key auto-saved! Ready to rock.');
+      
+      // Mgmt key fallback if set
+      const manager = getSettingsManager();
+      const mgmtKey = manager.getUserSetting('mgmtKey');
+      if (mgmtKey) {
+        console.log('🔧 Mgmt key active—future logins will auto-renew.');
+      }
+    } else {
+      throw new Error('Key extraction failed—check console UI changes');
     }
-  } else {
-    console.log('📝 Ready for manual key entry...');
-    // Prompt for the key
+  } catch (err: any) {
+    console.error('❌ Automation hit a snag:', err.message);
+    console.log('Falling back to manual...');
     await manualKeyEntry();
+  } finally {
+    await browser.close();
   }
+  
+  // Future: If xAI adds OAuth, swap to:
+  // await requestDeviceCode(); // Prints code/URL
+  // await pollForToken(code);  // Background poll
 }
 
 async function manualKeyEntry(): Promise<void> {

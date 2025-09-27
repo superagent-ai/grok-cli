@@ -349,16 +349,22 @@ program
 
     try {
       // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
+      let apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       if (!apiKey) {
-        console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
-        );
-        process.exit(1);
+        console.log('🔑 No API key found—running setup...');
+        const { performConsoleLogin } = await import('./commands/auth.js');
+        await performConsoleLogin();
+        // Reload key post-setup
+        const reloadedKey = loadApiKey();
+        if (!reloadedKey) {
+          console.error("❌ Setup failed. Please run 'grok auth login' manually.");
+          process.exit(1);
+        }
+        apiKey = reloadedKey;
       }
 
       // Save API key and base URL to user settings if provided via command line
@@ -434,16 +440,22 @@ gitCommand
 
     try {
       // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
+      let apiKey = options.apiKey || loadApiKey();
       const baseURL = options.baseUrl || loadBaseURL();
       const model = options.model || loadModel();
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       if (!apiKey) {
-        console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
-        );
-        process.exit(1);
+        console.log('🔑 No API key found—running setup...');
+        const { performConsoleLogin } = await import('./commands/auth.js');
+        await performConsoleLogin();
+        // Reload key post-setup
+        const reloadedKey = loadApiKey();
+        if (!reloadedKey) {
+          console.error("❌ Setup failed. Please run 'grok auth login' manually.");
+          process.exit(1);
+        }
+        apiKey = reloadedKey;
       }
 
       // Save API key and base URL to user settings if provided via command line
