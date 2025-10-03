@@ -38,6 +38,8 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
     "grok-3-latest",
     "grok-3-fast",
     "grok-3-mini-fast",
+    "grok-4-fast-reasoning",
+    "grok-4-fast-non-reasoning",
   ],
 };
 
