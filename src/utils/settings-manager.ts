@@ -11,6 +11,10 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  mgmtKey?: string; // Management key for auto-generating API keys
+  accessToken?: string; // Short-lived OAuth token (future-proof)
+  refreshToken?: string; // For silent renewals
+  expiresAt?: number; // Token expiry timestamp
 }
 
 /**
@@ -34,6 +38,8 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
     "grok-3-latest",
     "grok-3-fast",
     "grok-3-mini-fast",
+    "grok-4-fast-reasoning",
+    "grok-4-fast-non-reasoning",
   ],
 };
 
@@ -314,6 +320,34 @@ export class SettingsManager {
     return (
       userBaseURL || DEFAULT_USER_SETTINGS.baseURL || "https://api.x.ai/v1"
     );
+  }
+
+  /**
+   * Get access token from user settings, checking expiry
+   */
+  public getAccessToken(): string | undefined {
+    const token = this.getUserSetting("accessToken");
+    const expiresAt = this.getUserSetting("expiresAt");
+    if (token && expiresAt && Date.now() > expiresAt) {
+      // TODO: Implement refresh logic here when xAI supports
+      console.warn("Token expired—re-auth needed");
+      return undefined;
+    }
+    return token;
+  }
+
+  /**
+   * Save access and refresh tokens, with expiry handling
+   */
+  public saveTokens(
+    accessToken: string,
+    refreshToken?: string,
+    expiresIn?: number
+  ): void {
+    const settings: Partial<UserSettings> = { accessToken };
+    if (refreshToken) settings.refreshToken = refreshToken;
+    if (expiresIn) settings.expiresAt = Date.now() + expiresIn * 1000;
+    this.saveUserSettings(settings);
   }
 }
 
