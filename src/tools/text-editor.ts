@@ -468,17 +468,108 @@ export class TextEditorTool {
       const tokens = str.match(/\b(function|console\.log|return|if|else|for|while)\b/g) || [];
       return tokens;
     };
-    
+
     const searchTokens = extractTokens(search);
     const actualTokens = extractTokens(actual);
-    
+
     if (searchTokens.length !== actualTokens.length) return false;
-    
+
     for (let i = 0; i < searchTokens.length; i++) {
       if (searchTokens[i] !== actualTokens[i]) return false;
     }
-    
+
     return true;
+  }
+
+  /**
+   * Compute Longest Common Subsequence using dynamic programming
+   * Returns array of indices in oldLines that are part of LCS
+   */
+  private computeLCS(oldLines: string[], newLines: string[]): number[][] {
+    const m = oldLines.length;
+    const n = newLines.length;
+    const dp: number[][] = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+
+    // Build LCS length table
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (oldLines[i - 1] === newLines[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+
+    return dp;
+  }
+
+  /**
+   * Extract changes from LCS table
+   * Returns array of change regions
+   */
+  private extractChanges(
+    oldLines: string[],
+    newLines: string[],
+    lcs: number[][]
+  ): Array<{ oldStart: number; oldEnd: number; newStart: number; newEnd: number }> {
+    const changes: Array<{
+      oldStart: number;
+      oldEnd: number;
+      newStart: number;
+      newEnd: number;
+    }> = [];
+
+    let i = oldLines.length;
+    let j = newLines.length;
+    let oldEnd = i;
+    let newEnd = j;
+    let inChange = false;
+
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+        // Lines match - if we were in a change, close it
+        if (inChange) {
+          changes.unshift({
+            oldStart: i,
+            oldEnd: oldEnd,
+            newStart: j,
+            newEnd: newEnd
+          });
+          inChange = false;
+        }
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+        // Insertion in new file
+        if (!inChange) {
+          oldEnd = i;
+          newEnd = j;
+          inChange = true;
+        }
+        j--;
+      } else if (i > 0) {
+        // Deletion from old file
+        if (!inChange) {
+          oldEnd = i;
+          newEnd = j;
+          inChange = true;
+        }
+        i--;
+      }
+    }
+
+    // Close any remaining change
+    if (inChange) {
+      changes.unshift({
+        oldStart: 0,
+        oldEnd: oldEnd,
+        newStart: 0,
+        newEnd: newEnd
+      });
+    }
+
+    return changes;
   }
 
   private generateDiff(
@@ -487,65 +578,10 @@ export class TextEditorTool {
     filePath: string
   ): string {
     const CONTEXT_LINES = 3;
-    
-    const changes: Array<{
-      oldStart: number;
-      oldEnd: number;
-      newStart: number;
-      newEnd: number;
-    }> = [];
-    
-    let i = 0, j = 0;
-    
-    while (i < oldLines.length || j < newLines.length) {
-      while (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
-        i++;
-        j++;
-      }
-      
-      if (i < oldLines.length || j < newLines.length) {
-        const changeStart = { old: i, new: j };
-        
-        let oldEnd = i;
-        let newEnd = j;
-        
-        while (oldEnd < oldLines.length || newEnd < newLines.length) {
-          let matchFound = false;
-          let matchLength = 0;
-          
-          for (let k = 0; k < Math.min(2, oldLines.length - oldEnd, newLines.length - newEnd); k++) {
-            if (oldEnd + k < oldLines.length && 
-                newEnd + k < newLines.length && 
-                oldLines[oldEnd + k] === newLines[newEnd + k]) {
-              matchLength++;
-            } else {
-              break;
-            }
-          }
-          
-          if (matchLength >= 2 || (oldEnd >= oldLines.length && newEnd >= newLines.length)) {
-            matchFound = true;
-          }
-          
-          if (matchFound) {
-            break;
-          }
-          
-          if (oldEnd < oldLines.length) oldEnd++;
-          if (newEnd < newLines.length) newEnd++;
-        }
-        
-        changes.push({
-          oldStart: changeStart.old,
-          oldEnd: oldEnd,
-          newStart: changeStart.new,
-          newEnd: newEnd
-        });
-        
-        i = oldEnd;
-        j = newEnd;
-      }
-    }
+
+    // Use LCS-based diff algorithm to find actual changes
+    const lcs = this.computeLCS(oldLines, newLines);
+    const changes = this.extractChanges(oldLines, newLines, lcs);
     
     const hunks: Array<{
       oldStart: number;
