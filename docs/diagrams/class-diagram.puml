@@ -1,0 +1,165 @@
+@startuml SuperGrok-CLI v2.0 Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam backgroundColor #FEFEFE
+skinparam class {
+    BackgroundColor #E8F4F8
+    BorderColor #2C5F7F
+    ArrowColor #2C5F7F
+}
+
+package "Core Agent System" {
+    class GrokAgent {
+        -modeManager: ModeManager
+        -workspace: WorkspaceManager
+        -contextManager: ContextManager
+        -modelRouter: ModelRouter
+        +processUserMessage(message: string): Promise<ChatEntry>
+        +switchMode(mode: AgentMode): Promise<boolean>
+        +executeToolCall(toolCall: ToolCall): Promise<ToolResult>
+    }
+
+    class ModeManager {
+        -currentMode: AgentMode
+        -modeHistory: ModeTransition[]
+        +switchMode(to: AgentMode, reason?: string): Promise<boolean>
+        +getModeConfig(mode: AgentMode): ModeConfig
+        +getCurrentMode(): AgentMode
+        -requiresApproval(from: AgentMode, to: AgentMode): boolean
+    }
+
+    enum AgentMode {
+        PLAN
+        ACT
+        ARCHITECT
+        REVIEW
+        CHAT
+    }
+
+    class ModeConfig {
+        +mode: AgentMode
+        +allowedTools: string[]
+        +systemPrompt: string
+        +modelOverride?: string
+        +requiresApproval: boolean
+    }
+}
+
+package "Git Integration" {
+    class GitAgent {
+        -git: SimpleGit
+        -repoPath: string
+        +indexRepository(): Promise<RepoIndex>
+        +beginTransaction(): Promise<GitTransaction>
+        +createAtomicCommit(changes: FileChange[]): Promise<Commit>
+    }
+
+    class GitTransaction {
+        -changes: FileChange[]
+        -branchName: string
+        +begin(): Promise<void>
+        +addChange(change: FileChange): Promise<void>
+        +commit(message: string): Promise<void>
+        +rollback(): Promise<void>
+    }
+
+    class RepoIndexer {
+        -repoPath: string
+        +buildIndex(): Promise<RepoIndex>
+        +indexFile(filePath: string): Promise<FileEntry>
+        +detectLanguage(filePath: string): string
+    }
+}
+
+package "Plugin System" {
+    interface GrokPlugin {
+        +name: string
+        +version: string
+        +description: string
+        +type: PluginType
+        +onLoad(ctx: PluginContext): Promise<void>
+        +onUnload(): Promise<void>
+    }
+
+    interface ToolPlugin {
+        +tools: GrokTool[]
+        +execute(toolName: string, args: any): Promise<ToolResult>
+    }
+
+    interface ContextPlugin {
+        +getContext(query: string): Promise<ContextChunk[]>
+    }
+
+    class PluginManager {
+        -plugins: Map<string, GrokPlugin>
+        -context: PluginContext
+        +loadPlugin(pluginPath: string): Promise<void>
+        +unloadPlugin(name: string): Promise<void>
+        -registerToolPlugin(plugin: ToolPlugin): void
+    }
+}
+
+package "Model Management" {
+    class ModelRouter {
+        -executionMode: ExecutionMode
+        +selectModel(task: Task, mode: AgentMode): Promise<ModelConfig>
+        +optimizeForCost(task: Task): Promise<ModelConfig>
+        +optimizeForQuality(task: Task): Promise<ModelConfig>
+    }
+
+    enum ExecutionMode {
+        CLOUD_ONLY
+        LOCAL_ONLY
+        HYBRID
+        AIR_GAP
+    }
+
+    class LocalModelManager {
+        +listAvailableModels(): Promise<LocalModel[]>
+        +downloadModel(name: string): Promise<void>
+        +loadModel(name: string): Promise<ModelInstance>
+    }
+}
+
+package "Enterprise Governance" {
+    class PolicyEngine {
+        -policies: EnterprisePolicy
+        +checkPolicy(operation: string, context: any): Promise<PolicyResult>
+        +enforceRBAC(user: User, operation: string): Promise<boolean>
+    }
+
+    class AuditLogger {
+        +logEvent(event: AuditEvent): Promise<void>
+        +generateComplianceReport(period: DateRange): Promise<Report>
+    }
+
+    class RBACManager {
+        -roles: Map<string, Role>
+        +checkPermission(user: User, operation: string): boolean
+        +assignRole(user: User, role: Role): void
+    }
+}
+
+' Relationships
+GrokAgent --> ModeManager
+GrokAgent --> GitAgent
+GrokAgent --> PluginManager
+GrokAgent --> ModelRouter
+
+ModeManager --> AgentMode
+ModeManager --> ModeConfig
+
+GitAgent --> GitTransaction
+GitAgent --> RepoIndexer
+
+PluginManager --> GrokPlugin
+GrokPlugin <|.. ToolPlugin
+GrokPlugin <|.. ContextPlugin
+
+ModelRouter --> ExecutionMode
+ModelRouter --> LocalModelManager
+
+PolicyEngine --> RBACManager
+PolicyEngine --> AuditLogger
+
+@enduml

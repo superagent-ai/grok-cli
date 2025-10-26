@@ -1,0 +1,47 @@
+%% Mode Transition State Machine
+%% Shows how users can switch between different agent modes
+
+stateDiagram-v2
+    [*] --> CHAT: Default Start
+
+    CHAT --> PLAN: /plan command
+    CHAT --> ACT: /act command<br/>(requires approval)
+    CHAT --> ARCHITECT: /architect command
+    CHAT --> REVIEW: /review command
+
+    PLAN --> ACT: Ready to execute<br/>(requires approval)
+    PLAN --> ARCHITECT: Design needed
+    PLAN --> CHAT: General question
+
+    ACT --> REVIEW: Check changes
+    ACT --> CHAT: Task complete
+
+    ARCHITECT --> PLAN: Design complete
+    ARCHITECT --> CHAT: Discussion end
+
+    REVIEW --> ACT: Fix issues<br/>(requires approval)
+    REVIEW --> CHAT: Review complete
+
+    note right of PLAN
+        Read-only mode
+        Safe exploration
+        Strategic planning
+    end note
+
+    note right of ACT
+        Read-write mode
+        Code changes allowed
+        Requires explicit approval
+    end note
+
+    note right of ARCHITECT
+        High-level design
+        Architecture decisions
+        Technology selection
+    end note
+
+    note right of REVIEW
+        Code review
+        Quality analysis
+        Security scanning
+    end note

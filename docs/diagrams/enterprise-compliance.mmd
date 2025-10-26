@@ -1,0 +1,91 @@
+%% Enterprise Compliance and Governance
+%% Shows how enterprise features integrate
+
+graph TB
+    subgraph "Policy Configuration"
+        PolicyFile[.grok/enterprise-policy.json]
+        RBACRules[RBAC Rules]
+        ComplianceReqs[Compliance Requirements]
+        QuotaLimits[Usage Quotas]
+    end
+
+    subgraph "Request Pipeline"
+        UserRequest[User Request]
+        AuthN[Authentication<br/>SSO/SAML]
+        AuthZ[Authorization<br/>RBAC Check]
+        PolicyCheck[Policy Validation]
+    end
+
+    subgraph "Execution Controls"
+        PathCheck{Allowed<br/>Path?}
+        OperationCheck{Allowed<br/>Operation?}
+        QuotaCheck{Within<br/>Quota?}
+        PrivacyCheck{Privacy<br/>Level?}
+    end
+
+    subgraph "Execution"
+        CloudExec[Cloud Execution]
+        LocalExec[Local Execution]
+        HybridExec[Hybrid Execution]
+    end
+
+    subgraph "Audit Trail"
+        LogEvent[Log Audit Event]
+        StoreMetadata[Store Metadata]
+        UpdateQuota[Update Quota Usage]
+        ComplianceLog[Compliance Log]
+    end
+
+    subgraph "Reporting"
+        DailyReport[Daily Usage Report]
+        ComplianceReport[Compliance Report<br/>SOC2/GDPR/HIPAA]
+        CostReport[Cost Analysis]
+        SecurityReport[Security Audit]
+    end
+
+    PolicyFile --> RBACRules
+    PolicyFile --> ComplianceReqs
+    PolicyFile --> QuotaLimits
+
+    UserRequest --> AuthN
+    AuthN --> AuthZ
+    AuthZ --> PolicyCheck
+
+    PolicyCheck --> PathCheck
+    PathCheck -->|Allowed| OperationCheck
+    PathCheck -->|Denied| LogEvent
+
+    OperationCheck -->|Allowed| QuotaCheck
+    OperationCheck -->|Denied| LogEvent
+
+    QuotaCheck -->|Within| PrivacyCheck
+    QuotaCheck -->|Exceeded| LogEvent
+
+    PrivacyCheck -->|Public| CloudExec
+    PrivacyCheck -->|Confidential| LocalExec
+    PrivacyCheck -->|Mixed| HybridExec
+
+    CloudExec --> LogEvent
+    LocalExec --> LogEvent
+    HybridExec --> LogEvent
+
+    LogEvent --> StoreMetadata
+    StoreMetadata --> UpdateQuota
+    UpdateQuota --> ComplianceLog
+
+    ComplianceLog --> DailyReport
+    ComplianceLog --> ComplianceReport
+    ComplianceLog --> CostReport
+    ComplianceLog --> SecurityReport
+
+    style AuthN fill:#ff6b6b
+    style AuthZ fill:#ff6b6b
+    style PolicyCheck fill:#ff6b6b
+
+    style PathCheck fill:#ffd700
+    style OperationCheck fill:#ffd700
+    style QuotaCheck fill:#ffd700
+    style PrivacyCheck fill:#ffd700
+
+    style LogEvent fill:#4a90e2
+    style ComplianceLog fill:#4a90e2

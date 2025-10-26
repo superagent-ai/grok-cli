@@ -1,0 +1,71 @@
+%% Git-Native Workflow Diagram
+%% Shows how git operations work with transactions and atomic commits
+
+graph TB
+    subgraph "User Request"
+        Request[Multi-file Change Request]
+    end
+
+    subgraph "Repository Analysis"
+        RepoIndex[Build Repository Index]
+        ContextSelect[Select Relevant Files]
+        DependencyGraph[Analyze Dependencies]
+    end
+
+    subgraph "Transaction Management"
+        BeginTx[Begin Git Transaction]
+        CreateBranch[Create Transaction Branch]
+        ApplyChanges[Apply File Changes]
+        StageFiles[Stage Modified Files]
+    end
+
+    subgraph "Validation"
+        RunTests[Run Tests]
+        RunLints[Run Linters]
+        SecurityScan[Security Scan]
+    end
+
+    subgraph "Commit Process"
+        GenerateMsg[Generate Commit Message]
+        CreateCommit[Create Atomic Commit]
+        MergeBranch[Merge to Original Branch]
+        Cleanup[Delete Transaction Branch]
+    end
+
+    subgraph "Rollback Path"
+        ValidationFail{Validation<br/>Failed?}
+        Rollback[Rollback Transaction]
+        DeleteBranch[Delete Transaction Branch]
+        NotifyUser[Notify User of Failure]
+    end
+
+    Request --> RepoIndex
+    RepoIndex --> ContextSelect
+    ContextSelect --> DependencyGraph
+
+    DependencyGraph --> BeginTx
+    BeginTx --> CreateBranch
+    CreateBranch --> ApplyChanges
+    ApplyChanges --> StageFiles
+
+    StageFiles --> RunTests
+    RunTests --> RunLints
+    RunLints --> SecurityScan
+
+    SecurityScan --> ValidationFail
+
+    ValidationFail -->|Pass| GenerateMsg
+    ValidationFail -->|Fail| Rollback
+
+    GenerateMsg --> CreateCommit
+    CreateCommit --> MergeBranch
+    MergeBranch --> Cleanup
+
+    Rollback --> DeleteBranch
+    DeleteBranch --> NotifyUser
+
+    style Request fill:#e1f5ff
+    style BeginTx fill:#fff3e1
+    style CreateCommit fill:#e8ffe1
+    style Rollback fill:#ffe1e1
+    style ValidationFail fill:#ffd700
