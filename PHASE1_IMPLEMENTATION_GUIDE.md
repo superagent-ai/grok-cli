@@ -562,7 +562,7 @@ export class PluginManager {
 
 ```typescript
 // .grok/plugins/jira-integration/index.ts
-import { ToolPlugin, PluginContext, GrokTool, ToolResult } from '@vibe-kit/grok-cli/plugins'
+import { ToolPlugin, PluginContext, GrokTool, ToolResult } from '@manutej/supergrok-cli/plugins'
 
 export default class JiraPlugin implements ToolPlugin {
   name = 'jira-integration'
@@ -655,7 +655,7 @@ export default class JiraPlugin implements ToolPlugin {
 
 ```typescript
 // .grok/plugins/company-docs/index.ts
-import { ContextPlugin, PluginContext, ContextChunk } from '@vibe-kit/grok-cli/plugins'
+import { ContextPlugin, PluginContext, ContextChunk } from '@manutej/supergrok-cli/plugins'
 
 export default class CompanyDocsPlugin implements ContextPlugin {
   name = 'company-docs'
@@ -696,7 +696,7 @@ export default class CompanyDocsPlugin implements ContextPlugin {
 
 ```typescript
 // .grok/plugins/custom-linter/index.ts
-import { ToolPlugin, PluginContext, GrokTool, ToolResult } from '@vibe-kit/grok-cli/plugins'
+import { ToolPlugin, PluginContext, GrokTool, ToolResult } from '@manutej/supergrok-cli/plugins'
 
 export default class CustomLinterPlugin implements ToolPlugin {
   name = 'custom-linter'
