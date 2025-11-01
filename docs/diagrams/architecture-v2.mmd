@@ -1,0 +1,107 @@
+%% SuperGrok-CLI v2.0 Architecture Diagram
+%% This Mermaid diagram shows the complete system architecture
+
+graph TB
+    subgraph "User Interfaces"
+        CLI[CLI Terminal]
+        Desktop[Desktop Application]
+        VSCode[VS Code Extension]
+        API[REST API]
+    end
+
+    subgraph "Mode-Based Orchestrator"
+        ModeManager[Mode Manager]
+        PlanMode[PLAN Mode<br/>Read-only Analysis]
+        ActMode[ACT Mode<br/>Read-write Execution]
+        ArchitectMode[ARCHITECT Mode<br/>Design Discussion]
+        ReviewMode[REVIEW Mode<br/>Code Review]
+        ChatMode[CHAT Mode<br/>Q&A]
+    end
+
+    subgraph "Agent Intelligence"
+        MultiAgent[Multi-Agent<br/>Orchestration]
+        WorkspaceIntel[Workspace<br/>Intelligence]
+        ContextMgr[Context<br/>Management<br/>RAG/Memory]
+        ModelRouter[Model<br/>Router]
+    end
+
+    subgraph "Tool Ecosystem"
+        GitTools[Git Tools<br/>Aider Pattern]
+        FileTools[File Tools<br/>Morph Integration]
+        MCPTools[MCP Tools<br/>Continue Pattern]
+        CustomPlugins[Custom Plugins<br/>Plugin SDK]
+    end
+
+    subgraph "Execution Layer"
+        CloudModels[Cloud Models<br/>OpenAI/Anthropic/X.AI]
+        LocalModels[Local Models<br/>Ollama/llama.cpp]
+        HybridRouter[Hybrid Router<br/>Smart Routing]
+        AirGap[Air-Gap Mode<br/>Offline]
+    end
+
+    subgraph "Enterprise Layer"
+        RBAC[Role-Based<br/>Access Control]
+        AuditLogs[Audit<br/>Logging]
+        Compliance[Compliance<br/>SOC2/GDPR/HIPAA]
+        PolicyEngine[Policy<br/>Engine]
+        SSO[Single<br/>Sign-On]
+    end
+
+    %% Connections
+    CLI --> ModeManager
+    Desktop --> ModeManager
+    VSCode --> ModeManager
+    API --> ModeManager
+
+    ModeManager --> PlanMode
+    ModeManager --> ActMode
+    ModeManager --> ArchitectMode
+    ModeManager --> ReviewMode
+    ModeManager --> ChatMode
+
+    PlanMode --> MultiAgent
+    ActMode --> MultiAgent
+    ArchitectMode --> MultiAgent
+    ReviewMode --> MultiAgent
+    ChatMode --> MultiAgent
+
+    MultiAgent --> WorkspaceIntel
+    MultiAgent --> ContextMgr
+    MultiAgent --> ModelRouter
+
+    WorkspaceIntel --> GitTools
+    WorkspaceIntel --> FileTools
+    WorkspaceIntel --> MCPTools
+    WorkspaceIntel --> CustomPlugins
+
+    ModelRouter --> CloudModels
+    ModelRouter --> LocalModels
+    ModelRouter --> HybridRouter
+    ModelRouter --> AirGap
+
+    GitTools --> RBAC
+    FileTools --> RBAC
+    MCPTools --> RBAC
+    CustomPlugins --> RBAC
+
+    RBAC --> AuditLogs
+    RBAC --> Compliance
+    RBAC --> PolicyEngine
+    RBAC --> SSO
+
+    style PlanMode fill:#e1f5ff
+    style ActMode fill:#ffe1e1
+    style ArchitectMode fill:#fff3e1
+    style ReviewMode fill:#e8ffe1
+    style ChatMode fill:#f0e1ff
+
+    style MultiAgent fill:#ffd700
+    style WorkspaceIntel fill:#ffd700
+    style ContextMgr fill:#ffd700
+    style ModelRouter fill:#ffd700
+
+    style RBAC fill:#ff6b6b
+    style AuditLogs fill:#ff6b6b
+    style Compliance fill:#ff6b6b
+    style PolicyEngine fill:#ff6b6b
+    style SSO fill:#ff6b6b

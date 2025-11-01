@@ -1,0 +1,93 @@
+%% Multi-Model Routing Strategy
+%% Shows how different models are selected for different tasks
+
+graph TB
+    subgraph "Incoming Task"
+        UserTask[User Task]
+        TaskClassifier[Task Classifier]
+    end
+
+    subgraph "Task Categories"
+        SimpleEdit[Simple Edit<br/>Single file, minor changes]
+        ComplexRefactor[Complex Refactor<br/>Multi-file, architecture]
+        Planning[Strategic Planning<br/>High-level reasoning]
+        Documentation[Documentation<br/>Writing, explaining]
+        CodeReview[Code Review<br/>Analysis, suggestions]
+        Testing[Test Generation<br/>Unit/integration tests]
+    end
+
+    subgraph "Model Selection Strategy"
+        CostOptimizer[Cost Optimizer]
+        PerformanceTracker[Performance Tracker]
+        QualityScorer[Quality Scorer]
+        LatencyMonitor[Latency Monitor]
+    end
+
+    subgraph "Available Models"
+        FastCheap[Fast & Cheap<br/>grok-code-fast-1<br/>gpt-4o-mini]
+        Balanced[Balanced<br/>grok-3-fast<br/>claude-3.5-sonnet]
+        Premium[Premium<br/>grok-4<br/>claude-opus-4<br/>o3-mini]
+        Local[Local Models<br/>llama3.3:70b<br/>qwen2.5:72b]
+    end
+
+    subgraph "Execution"
+        Execute[Execute with Selected Model]
+        CacheResult[Cache Result]
+        TrackMetrics[Track Metrics]
+    end
+
+    subgraph "Feedback Loop"
+        CollectFeedback[Collect User Feedback]
+        UpdateScores[Update Quality Scores]
+        AdjustStrategy[Adjust Routing Strategy]
+    end
+
+    UserTask --> TaskClassifier
+
+    TaskClassifier --> SimpleEdit
+    TaskClassifier --> ComplexRefactor
+    TaskClassifier --> Planning
+    TaskClassifier --> Documentation
+    TaskClassifier --> CodeReview
+    TaskClassifier --> Testing
+
+    SimpleEdit --> CostOptimizer
+    ComplexRefactor --> CostOptimizer
+    Planning --> CostOptimizer
+    Documentation --> CostOptimizer
+    CodeReview --> CostOptimizer
+    Testing --> CostOptimizer
+
+    CostOptimizer --> PerformanceTracker
+    PerformanceTracker --> QualityScorer
+    QualityScorer --> LatencyMonitor
+
+    LatencyMonitor --> FastCheap
+    LatencyMonitor --> Balanced
+    LatencyMonitor --> Premium
+    LatencyMonitor --> Local
+
+    FastCheap --> Execute
+    Balanced --> Execute
+    Premium --> Execute
+    Local --> Execute
+
+    Execute --> CacheResult
+    CacheResult --> TrackMetrics
+    TrackMetrics --> CollectFeedback
+
+    CollectFeedback --> UpdateScores
+    UpdateScores --> AdjustStrategy
+    AdjustStrategy --> CostOptimizer
+
+    style SimpleEdit fill:#e8ffe1
+    style ComplexRefactor fill:#ffe1e1
+    style Planning fill:#e1f5ff
+    style Documentation fill:#fff3e1
+    style CodeReview fill:#f0e1ff
+    style Testing fill:#ffe1f5
+
+    style FastCheap fill:#90EE90
+    style Balanced fill:#FFD700
+    style Premium fill:#FF6B6B
+    style Local fill:#87CEEB

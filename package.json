@@ -1,7 +1,7 @@
 {
-  "name": "@vibe-kit/grok-cli",
-  "version": "0.0.33",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "name": "@manutej/supergrok-cli",
+  "version": "2.0.0-alpha.1",
+  "description": "SuperGrok-CLI: Enterprise-grade agentic coding platform synthesizing the best patterns from top open-source frameworks.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -11,6 +11,7 @@
     }
   },
   "bin": {
+    "supergrok": "dist/index.js",
     "grok": "dist/index.js"
   },
   "scripts": {
@@ -27,11 +28,16 @@
   "keywords": [
     "cli",
     "agent",
-    "text-editor",
+    "agentic-coding",
+    "supergrok",
     "grok",
-    "ai"
+    "ai",
+    "enterprise",
+    "coding-assistant",
+    "llm",
+    "multi-model"
   ],
-  "author": "Your Name",
+  "author": "manutej",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

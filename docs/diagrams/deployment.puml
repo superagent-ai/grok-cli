@@ -1,0 +1,96 @@
+@startuml SuperGrok-CLI v2.0 Deployment Diagram
+
+skinparam componentStyle rectangle
+skinparam backgroundColor #FEFEFE
+
+node "Developer Workstation" {
+    component [SuperGrok CLI] as CLI
+    component [Desktop App] as Desktop
+    database "Local SQLite\nCache & History" as LocalDB
+    folder ".grok/" {
+        file "settings.json" as Settings
+        file "GROK.md" as Instructions
+        folder "plugins/" as Plugins
+    }
+}
+
+cloud "Cloud Infrastructure" {
+    node "LLM Providers" {
+        component [X.AI\nGrok Models] as XAI
+        component [OpenAI\nGPT Models] as OpenAI
+        component [Anthropic\nClaude Models] as Anthropic
+        component [OpenRouter\nMulti-Provider] as OpenRouter
+    }
+
+    node "MCP Servers" {
+        component [Linear MCP] as LinearMCP
+        component [GitHub MCP] as GitHubMCP
+        component [Custom MCP] as CustomMCP
+    }
+}
+
+node "Local Infrastructure" {
+    component [Ollama] as Ollama
+    component [LM Studio] as LMStudio
+    database "Local Vector DB\nChroma/Qdrant" as VectorDB
+}
+
+node "Enterprise Services" {
+    component [SSO/SAML] as SSO
+    component [Policy Server] as PolicyServer
+    database "Audit Database" as AuditDB
+    component [Compliance Dashboard] as CompDash
+}
+
+node "Git Repository" {
+    component [GitHub] as GitHub
+    component [GitLab] as GitLab
+    component [Bitbucket] as Bitbucket
+}
+
+' Connections
+CLI --> LocalDB
+Desktop --> LocalDB
+CLI --> Settings
+CLI --> Instructions
+CLI --> Plugins
+
+CLI ..> XAI : Cloud Mode
+CLI ..> OpenAI : Cloud Mode
+CLI ..> Anthropic : Cloud Mode
+CLI ..> OpenRouter : Cloud Mode
+
+CLI --> Ollama : Local Mode
+CLI --> LMStudio : Local Mode
+CLI --> VectorDB : RAG Context
+
+CLI --> LinearMCP : MCP Protocol
+CLI --> GitHubMCP : MCP Protocol
+CLI --> CustomMCP : MCP Protocol
+
+CLI --> SSO : Authentication
+CLI --> PolicyServer : Authorization
+CLI --> AuditDB : Audit Logging
+CLI --> CompDash : Reporting
+
+CLI --> GitHub : Git Operations
+CLI --> GitLab : Git Operations
+CLI --> Bitbucket : Git Operations
+
+note right of CLI
+    **Execution Modes:**
+    - CLOUD_ONLY: All LLM calls to cloud
+    - LOCAL_ONLY: All LLM calls to local
+    - HYBRID: Smart routing by sensitivity
+    - AIR_GAP: Fully offline operation
+end note
+
+note right of PolicyServer
+    **Enterprise Features:**
+    - RBAC enforcement
+    - Path restrictions
+    - Operation allowlists
+    - Quota management
+end note
+
+@enduml

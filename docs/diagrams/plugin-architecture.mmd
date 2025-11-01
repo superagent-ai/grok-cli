@@ -1,0 +1,68 @@
+%% Plugin Architecture Diagram
+%% Shows the plugin system and how plugins integrate with the core
+
+graph TB
+    subgraph "Core System"
+        Core[SuperGrok Core]
+        PluginManager[Plugin Manager]
+        PluginSDK[Plugin SDK]
+        EventBus[Event Bus]
+    end
+
+    subgraph "Plugin Types"
+        ToolPlugin[Tool Plugins<br/>Add Capabilities]
+        ContextPlugin[Context Plugins<br/>Inject Knowledge]
+        ModelPlugin[Model Plugins<br/>LLM Providers]
+        UIPlugin[UI Plugins<br/>Custom Components]
+        WorkflowPlugin[Workflow Plugins<br/>Automation]
+    end
+
+    subgraph "Example Plugins"
+        JiraPlugin[Jira Integration<br/>Issue Management]
+        DocsPlugin[Company Docs<br/>Context Provider]
+        LinterPlugin[Custom Linter<br/>Code Quality]
+        LinearPlugin[Linear MCP<br/>Project Management]
+        SlackPlugin[Slack Notifier<br/>Team Updates]
+    end
+
+    subgraph "Plugin Registry"
+        LocalPlugins[Local Plugins<br/>.grok/plugins/]
+        NPMPlugins[NPM Plugins<br/>@company/grok-*]
+        Marketplace[Community Marketplace<br/>hub.supergrok.dev]
+    end
+
+    Core --> PluginManager
+    PluginManager --> PluginSDK
+    PluginSDK --> EventBus
+
+    PluginSDK --> ToolPlugin
+    PluginSDK --> ContextPlugin
+    PluginSDK --> ModelPlugin
+    PluginSDK --> UIPlugin
+    PluginSDK --> WorkflowPlugin
+
+    ToolPlugin --> JiraPlugin
+    ToolPlugin --> LinterPlugin
+    ContextPlugin --> DocsPlugin
+    ToolPlugin --> LinearPlugin
+    WorkflowPlugin --> SlackPlugin
+
+    LocalPlugins --> PluginManager
+    NPMPlugins --> PluginManager
+    Marketplace --> PluginManager
+
+    style Core fill:#4a90e2
+    style PluginManager fill:#4a90e2
+    style PluginSDK fill:#4a90e2
+
+    style ToolPlugin fill:#50e3c2
+    style ContextPlugin fill:#50e3c2
+    style ModelPlugin fill:#50e3c2
+    style UIPlugin fill:#50e3c2
+    style WorkflowPlugin fill:#50e3c2
+
+    style JiraPlugin fill:#b8e986
+    style DocsPlugin fill:#b8e986
+    style LinterPlugin fill:#b8e986
+    style LinearPlugin fill:#b8e986
+    style SlackPlugin fill:#b8e986

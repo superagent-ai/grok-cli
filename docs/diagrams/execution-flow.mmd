@@ -1,0 +1,66 @@
+%% Execution Flow Diagram
+%% Shows how a user request flows through the system
+
+sequenceDiagram
+    participant User
+    participant CLI
+    participant ModeManager
+    participant Agent
+    participant ModelRouter
+    participant Tools
+    participant LLM
+    participant Git
+
+    User->>CLI: Enter prompt
+    CLI->>ModeManager: Check current mode
+    ModeManager->>ModeManager: Validate mode permissions
+
+    alt Mode switch requested
+        ModeManager->>User: Request approval (if ACT mode)
+        User->>ModeManager: Approve/Deny
+    end
+
+    ModeManager->>Agent: Process in current mode
+    Agent->>Agent: Build context (workspace, files, history)
+
+    Agent->>ModelRouter: Select optimal model
+    ModelRouter->>ModelRouter: Check execution mode (cloud/local/hybrid)
+
+    alt Privacy-sensitive files
+        ModelRouter->>LLM: Use local model
+    else Normal operation
+        ModelRouter->>LLM: Use cloud model
+    end
+
+    LLM->>Agent: Return response with tool calls
+
+    loop For each tool call
+        Agent->>Tools: Execute tool
+
+        alt Write operation (ACT mode only)
+            Tools->>User: Request confirmation
+            User->>Tools: Approve/Deny
+
+            alt Approved
+                Tools->>Git: Create transaction
+                Tools->>Tools: Make changes
+                Git->>Git: Stage changes
+            end
+        else Read operation (all modes)
+            Tools->>Tools: Execute safely
+        end
+
+        Tools->>Agent: Return result
+    end
+
+    Agent->>LLM: Send tool results
+    LLM->>Agent: Final response
+
+    alt Changes made
+        Agent->>Git: Commit with message
+        Git->>Git: Create atomic commit
+        Git->>User: Show commit hash
+    end
+
+    Agent->>CLI: Display response
+    CLI->>User: Show result
