@@ -94,14 +94,14 @@ describe('AccountManager', () => {
     it('should mark account as unavailable when rate limit is reached', () => {
       const manager = new AccountManager(testAccounts);
 
-      // Make 60 requests (the rate limit)
-      for (let i = 0; i < 60; i++) {
+      // Make 120 requests (60 per account with round-robin)
+      for (let i = 0; i < 120; i++) {
         manager.getClient();
       }
 
       const stats = manager.getStats();
-      // At least one account should be at or near the limit
-      expect(stats.some((s) => !s.available || s.requestsPerMinute >= 60)).toBe(true);
+      // At least one account should be at the limit
+      expect(stats.some((s) => s.requestsPerMinute >= 60)).toBe(true);
     });
   });
 

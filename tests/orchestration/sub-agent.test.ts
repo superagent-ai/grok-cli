@@ -216,7 +216,7 @@ describe('SubAgent', () => {
     });
 
     it('should default to medium complexity', () => {
-      const complexity = SubAgent.analyzeComplexity('Update the code');
+      const complexity = SubAgent.analyzeComplexity('Implement the feature');
       expect(complexity).toBe('medium');
     });
   });
