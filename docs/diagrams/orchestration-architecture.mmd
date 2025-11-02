@@ -1,0 +1,67 @@
+```mermaid
+graph TB
+    subgraph "User Interface"
+        CLI[CLI Commands<br/>grok orchestrate]
+    end
+
+    subgraph "Orchestration Layer"
+        SA[SuperAgent<br/>Task Orchestration]
+        SA_DEC[Task Decomposition<br/>grok-3-fast]
+        SA_AGG[Result Aggregation<br/>grok-4]
+
+        SA --> SA_DEC
+        SA --> SA_AGG
+    end
+
+    subgraph "Execution Layer"
+        SUBA1[SubAgent 1<br/>Simple Task<br/>grok-code-fast-1]
+        SUBA2[SubAgent 2<br/>Medium Task<br/>grok-3-fast]
+        SUBA3[SubAgent 3<br/>Complex Task<br/>grok-4]
+    end
+
+    subgraph "Account Management"
+        AM[AccountManager<br/>Load Balancing]
+        RL[Rate Limiter<br/>60 req/min]
+        UT[Usage Tracker<br/>Requests, Tokens, Cost]
+
+        AM --> RL
+        AM --> UT
+    end
+
+    subgraph "API Keys"
+        ACC1[Account 1<br/>GROK_API_KEY]
+        ACC2[Account 2<br/>GROK_API_KEY_2]
+    end
+
+    subgraph "Storage Layer"
+        DB[(SQLite Database<br/>~/.supergrok/orchestration.db)]
+        PL[Prompt Library<br/>8 Templates]
+
+        DB --- CONV[Conversations]
+        DB --- DOCS[Documents]
+        DB --- PRMT[Prompts]
+        DB --- AGT[Agents]
+    end
+
+    CLI --> SA
+    SA_DEC --> SUBA1
+    SA_DEC --> SUBA2
+    SA_DEC --> SUBA3
+
+    SUBA1 --> AM
+    SUBA2 --> AM
+    SUBA3 --> AM
+
+    AM --> ACC1
+    AM --> ACC2
+
+    SA_AGG --> DB
+    SA --> PL
+
+    style CLI fill:#4A90E2
+    style SA fill:#50C878
+    style AM fill:#F39C12
+    style DB fill:#9B59B6
+    style ACC1 fill:#E74C3C
+    style ACC2 fill:#E74C3C
+```

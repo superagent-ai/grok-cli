@@ -8,6 +8,7 @@ import ChatInterface from "./ui/components/chat-interface.js";
 import { getSettingsManager } from "./utils/settings-manager.js";
 import { ConfirmationService } from "./utils/confirmation-service.js";
 import { createMCPCommand } from "./commands/mcp.js";
+import { createOrchestrationCommand } from "./commands/orchestrate.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
 // Load environment variables
@@ -458,5 +459,8 @@ gitCommand
 
 // MCP command
 program.addCommand(createMCPCommand());
+
+// Multi-agent orchestration command
+program.addCommand(createOrchestrationCommand());
 
 program.parse();

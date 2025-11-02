@@ -1,0 +1,56 @@
+```mermaid
+graph TB
+    subgraph "Round-Robin Strategy"
+        RR_REQ[Request 1,2,3,4,5,6]
+        RR_A1[Account 1<br/>Gets: 1,3,5]
+        RR_A2[Account 2<br/>Gets: 2,4,6]
+
+        RR_REQ --> RR_A1
+        RR_REQ --> RR_A2
+
+        style RR_A1 fill:#3498db
+        style RR_A2 fill:#3498db
+    end
+
+    subgraph "Least-Loaded Strategy"
+        LL_REQ[New Request]
+        LL_CHECK{Which account<br/>has fewer requests?}
+        LL_A1[Account 1<br/>15 requests]
+        LL_A2[Account 2<br/>8 requests]
+
+        LL_REQ --> LL_CHECK
+        LL_CHECK -->|Less loaded| LL_A2
+        LL_CHECK -->|More loaded| LL_A1
+
+        style LL_A2 fill:#2ecc71
+        style LL_A1 fill:#e74c3c
+    end
+
+    subgraph "Cost-Optimized Strategy"
+        CO_REQ[New Request]
+        CO_CHECK{Which account<br/>has lower cost?}
+        CO_A1[Account 1<br/>$2.50 spent]
+        CO_A2[Account 2<br/>$1.80 spent]
+
+        CO_REQ --> CO_CHECK
+        CO_CHECK -->|Lower cost| CO_A2
+        CO_CHECK -->|Higher cost| CO_A1
+
+        style CO_A2 fill:#2ecc71
+        style CO_A1 fill:#e74c3c
+    end
+
+    subgraph "Rate Limiting"
+        RL_REQ[Request 61]
+        RL_CHECK{Account 1<br/>available?}
+        RL_A1[Account 1<br/>60/60 req/min<br/>❌ Limited]
+        RL_A2[Account 2<br/>45/60 req/min<br/>✅ Available]
+
+        RL_REQ --> RL_CHECK
+        RL_CHECK -->|Rate limited| RL_A2
+        RL_CHECK -->|Available| RL_A1
+
+        style RL_A1 fill:#e74c3c
+        style RL_A2 fill:#2ecc71
+    end
+```

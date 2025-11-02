@@ -1,0 +1,57 @@
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI
+    participant SuperAgent
+    participant AccountManager
+    participant SubAgent1
+    participant SubAgent2
+    participant SubAgent3
+    participant API1 as Account 1<br/>(GROK_API_KEY)
+    participant API2 as Account 2<br/>(GROK_API_KEY_2)
+    participant DB as SQLite DB
+
+    User->>CLI: grok orchestrate run "Build REST API"
+    CLI->>SuperAgent: orchestrate(task)
+
+    Note over SuperAgent: Phase 1: Task Decomposition
+    SuperAgent->>AccountManager: getClient(grok-3-fast)
+    AccountManager->>API1: Select (round-robin)
+    SuperAgent->>API1: Decompose task into sub-tasks
+    API1-->>SuperAgent: [SubTask1, SubTask2, SubTask3]
+
+    Note over SuperAgent: Phase 2: Parallel Execution
+    par Execute Sub-Tasks
+        SuperAgent->>SubAgent1: execute(SubTask1, complexity:simple)
+        SubAgent1->>AccountManager: getClient(grok-code-fast-1)
+        AccountManager->>API2: Select (round-robin)
+        SubAgent1->>API2: Execute simple task
+        API2-->>SubAgent1: Result1
+    and
+        SuperAgent->>SubAgent2: execute(SubTask2, complexity:medium)
+        SubAgent2->>AccountManager: getClient(grok-3-fast)
+        AccountManager->>API1: Select (round-robin)
+        SubAgent2->>API1: Execute medium task
+        API1-->>SubAgent2: Result2
+    and
+        SuperAgent->>SubAgent3: execute(SubTask3, complexity:complex)
+        SubAgent3->>AccountManager: getClient(grok-4)
+        AccountManager->>API2: Select (round-robin)
+        SubAgent3->>API2: Execute complex task
+        API2-->>SubAgent3: Result3
+    end
+
+    Note over SuperAgent: Phase 3: Result Aggregation
+    SuperAgent->>AccountManager: getClient(grok-4)
+    AccountManager->>API1: Select (round-robin)
+    SuperAgent->>API1: Aggregate results
+    API1-->>SuperAgent: Final Result
+
+    SuperAgent->>DB: Save conversation & document
+    DB-->>SuperAgent: Saved
+
+    SuperAgent-->>CLI: OrchestrationResult
+    CLI-->>User: Display results & stats
+
+    Note over User,DB: Total: 5 API calls across 2 accounts<br/>Cost: ~$0.05, Time: ~20s
+```

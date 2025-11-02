@@ -9,6 +9,7 @@
 ## Features
 
 - **🤖 Conversational AI**: Natural language interface powered by any LLM (Grok, Claude, GPT, local models)
+- **🎭 Multi-Agent Orchestration**: NEW! Intelligent task decomposition with dual-account management for 2x speed
 - **📝 Smart File Operations**: AI automatically uses tools to view, create, and edit files
 - **⚡ Bash Integration**: Execute shell commands through natural conversation
 - **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
@@ -405,6 +406,162 @@ grok mcp remove server-name
 - **http**: Connect to HTTP-based MCP server
 - **sse**: Connect via Server-Sent Events
 
+## Multi-Agent Orchestration System 🎭
+
+**NEW in v2.0!** Maximize your SuperGrok Heavy subscriptions with intelligent multi-agent task orchestration.
+
+### Overview
+
+The multi-agent orchestration system automatically breaks down complex tasks into 3-5 sub-tasks and executes them intelligently across multiple API keys for maximum speed and cost efficiency.
+
+![Orchestration Architecture](docs/diagrams/orchestration-architecture.mmd)
+
+### Quick Start
+
+```bash
+# Configure two API keys for dual-account orchestration
+export GROK_API_KEY=xai-key-1
+export GROK_API_KEY_2=xai-key-2
+
+# Run a complex task with automatic orchestration
+grok orchestrate run "Build a REST API with authentication" \
+  --strategy adaptive \
+  --save-doc
+```
+
+### Key Features
+
+- **👥 Dual-Account Management**: Intelligent load balancing across 2 API keys
+- **🧠 Smart Task Decomposition**: Automatically breaks tasks into optimal sub-tasks using `grok-3-fast`
+- **⚡ Parallel Execution**: Execute independent sub-tasks concurrently for 2x speed
+- **💰 Cost Optimization**: Automatic model selection based on task complexity:
+  - Simple tasks → `grok-code-fast-1` ($0.005/1K tokens)
+  - Medium tasks → `grok-3-fast` ($0.008/1K tokens)
+  - Complex tasks → `grok-4` ($0.015/1K tokens)
+- **📊 Real-time Tracking**: Monitor requests, tokens, and costs per account
+- **💾 Persistent Storage**: SQLite database at `~/.supergrok/orchestration.db`
+- **📚 Prompt Library**: 8 pre-loaded templates (code-review, bug-fix, refactor, etc.)
+
+### Load Balancing Strategies
+
+Choose from three intelligent strategies:
+
+1. **Round-Robin** (default): Evenly distribute requests across accounts
+   ```bash
+   grok orchestrate run "..." --load-balancing round-robin
+   ```
+
+2. **Least-Loaded**: Route to the account with fewer requests
+   ```bash
+   grok orchestrate run "..." --load-balancing least-loaded
+   ```
+
+3. **Cost-Optimized**: Minimize total cost across accounts
+   ```bash
+   grok orchestrate run "..." --load-balancing cost-optimized
+   ```
+
+### Execution Strategies
+
+Choose how sub-tasks are executed:
+
+1. **Adaptive** (default): Smart mix of parallel and sequential
+   ```bash
+   grok orchestrate run "..." --strategy adaptive
+   ```
+
+2. **Parallel**: Maximum speed for independent tasks
+   ```bash
+   grok orchestrate run "..." --strategy parallel
+   ```
+
+3. **Sequential**: Context passing between dependent tasks
+   ```bash
+   grok orchestrate run "..." --strategy sequential
+   ```
+
+### Commands
+
+#### Run Orchestration
+
+```bash
+grok orchestrate run <task-description> [options]
+
+Options:
+  -c, --context <text>         Additional context for the task
+  -s, --strategy <type>        parallel|sequential|adaptive (default: adaptive)
+  -l, --load-balancing <type>  round-robin|least-loaded|cost-optimized
+  -m, --max-subtasks <number>  Maximum sub-tasks to create (default: 5)
+  --save-doc                   Save result as a document
+```
+
+#### View Statistics
+
+```bash
+grok orchestrate stats
+```
+
+#### Prompt Management
+
+```bash
+# List all prompt templates
+grok orchestrate prompt list
+
+# Show a specific template
+grok orchestrate prompt show code-review
+
+# Render template with variables
+grok orchestrate prompt render bug-fix \
+  --vars code="..." error="..." language="typescript"
+```
+
+#### Document Management
+
+```bash
+# List saved documents
+grok orchestrate docs --limit 10
+```
+
+### Example Use Cases
+
+**1. Parallel Feature Development**
+```bash
+grok orchestrate run "Implement user auth, profile management, and notifications" \
+  --strategy parallel \
+  --max-subtasks 3
+```
+
+**2. Code Review**
+```bash
+grok orchestrate run "Review this TypeScript project for security issues" \
+  --context "Focus on auth, input validation, and SQL injection" \
+  --save-doc
+```
+
+**3. Sequential Refactoring**
+```bash
+grok orchestrate run "Refactor callback-based code to async/await" \
+  --strategy sequential \
+  --context "Maintain backward compatibility"
+```
+
+### Performance
+
+Typical execution metrics:
+
+| Complexity | Sub-Tasks | Strategy   | Time   | Cost    |
+|------------|-----------|------------|--------|---------|
+| Simple     | 3         | Parallel   | 10-15s | $0.02   |
+| Medium     | 4         | Adaptive   | 20-30s | $0.05   |
+| Complex    | 5         | Sequential | 40-60s | $0.10   |
+
+### Complete Documentation
+
+For comprehensive documentation, see:
+- **[Orchestration Guide](docs/ORCHESTRATION.md)** - Complete reference
+- **[Architecture Diagrams](docs/diagrams/)** - System diagrams
+- **[Test Suite](tests/)** - 71 tests with full coverage
+
 ## Development
 
 ```bash
@@ -416,6 +573,9 @@ bun run dev
 
 # Build project
 bun run build
+
+# Run tests
+bun run test
 
 # Run linter
 bun run lint
