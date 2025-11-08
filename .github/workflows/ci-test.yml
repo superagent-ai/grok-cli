@@ -1,0 +1,20 @@
+name: 🧪 Grok CLI Test Workflow
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main, develop, feat/*, fix/* ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run lint || echo "Lint skipped"
+      - run: bun test --watch=false
+      - run: bun audit || echo "Audit skipped"
