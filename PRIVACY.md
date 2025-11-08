@@ -12,9 +12,9 @@ This document explains **what data may be sent**, **how it is handled**, and **h
 When you use Grok CLI features that call the Grok or Morph APIs, the following information **may be transmitted**:
 
 | Type | Purpose | Sent to |
-|------|----------|---------|
+|------|---------|---------|
 | User prompts (your questions) | Provide model responses | Grok API |
-| File snippets (optional) | Allow context-based editing | Grok API |
+| Optional project file snippets | Provide context for editing | Grok API |
 | Edit diffs (optional) | For "Fast Apply" edits | Morph API |
 | Error telemetry (opt-in) | Debug and improve CLI | Maintainers (optional) |
 
@@ -38,7 +38,7 @@ These files contain preferences and API keys. They are **never uploaded automati
 
 You must provide your own:
 - `GROK_API_KEY`
-- (Optional) `MORPH_API_KEY`
+- (Optional) `MORPH_API_KEY` (enables Fast Apply high-speed editing)
 
 Keep them private.  
 Do **not** commit `.env` files or user-settings to Git. The repository `.gitignore` protects this by default.
@@ -52,7 +52,21 @@ To enable anonymous usage metrics:
 
 ```bash
 grok config telemetry true
-```
+````
+
+To disable it again:
 
 ```bash
 grok config telemetry false
+```
+
+---
+
+## ⚠️ 5. Recommendations
+
+* Review what data will be sent before confirming.
+* Never include credentials, API keys, or internal-only code in prompts.
+* Use `--never-send-files` in secure environments.
+* Always use `--dry-run` before allowing command execution.
+
+---

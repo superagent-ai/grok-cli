@@ -19,5 +19,5 @@ We take security seriously and appreciate responsible reporting of vulnerabiliti
 If you discover a security issue:
 
 1. **Do not create a public issue.**
-2. **Contact the maintainers privately** via email:
-
+2. **Contact the maintainers privately** via email:  
+---

@@ -1,6 +1,7 @@
 import { spawnSync } from "child_process";
 import path from "path";
-import { describe, it, expect } from "bun:test";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 
 const cliPath = path.resolve(__dirname, "../src/index.ts");
 
@@ -10,9 +11,9 @@ describe("🧠 Grok CLI — run command safety", () => {
       encoding: "utf-8"
     });
 
-    expect(result.stdout).toContain("🧠 Suggested command:");
-    expect(result.stdout).toContain("✅ Dry-run mode");
-    expect(result.status).toBe(0);
+    assert.ok(String(result.stdout).includes("🧠 Suggested command:"), "Expected suggested command in stdout");
+    assert.ok(String(result.stdout).includes("✅ Dry-run mode"), "Expected dry-run indicator in stdout");
+    assert.strictEqual(result.status, 0);
   });
 
   it("should ask for confirmation when --confirm is used", () => {
@@ -21,8 +22,8 @@ describe("🧠 Grok CLI — run command safety", () => {
       input: "n\n"
     });
 
-    expect(result.stdout).toContain("⚠️  Do you want to run this command?");
-    expect(result.stdout).toContain("❌ Command aborted by user.");
+    assert.ok(String(result.stdout).includes("⚠️  Do you want to run this command?"), "Expected confirmation prompt");
+    assert.ok(String(result.stdout).includes("❌ Command aborted by user."), "Expected abort message");
   });
 
   it("should execute command when confirmed", () => {
@@ -31,8 +32,8 @@ describe("🧠 Grok CLI — run command safety", () => {
       input: "y\n"
     });
 
-    expect(result.stdout).toContain("🚀 Running command...");
-    expect(result.stdout).toContain("Confirmed");
+    assert.ok(String(result.stdout).includes("🚀 Running command..."), "Expected running message");
+    assert.ok(String(result.stdout).includes("Confirmed"), "Expected command output");
   });
 
   it("should execute command directly without flags", () => {
@@ -40,7 +41,7 @@ describe("🧠 Grok CLI — run command safety", () => {
       encoding: "utf-8"
     });
 
-    expect(result.stdout).toContain("DirectRun");
+    assert.ok(String(result.stdout).includes("DirectRun"), "Expected DirectRun output");
   });
 
   it("should handle errors gracefully", () => {
@@ -48,6 +49,6 @@ describe("🧠 Grok CLI — run command safety", () => {
       encoding: "utf-8"
     });
 
-    expect(result.stderr).toContain("❌ Command failed");
+    assert.ok(String(result.stderr).includes("❌ Command failed"), "Expected failure message in stderr");
   });
 });

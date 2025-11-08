@@ -40,7 +40,7 @@ export const runCommand = new Command("run")
 
     try {
       console.log(chalk.green("🚀 Running command..."));
-      execSync(cmd, { stdio: "inherit", shell: true });
+      execSync(cmd, { stdio: "inherit" });
       console.log(chalk.green("✅ Command completed successfully."));
     } catch (err: any) {
       console.error(chalk.red("❌ Command failed:"), err.message);
