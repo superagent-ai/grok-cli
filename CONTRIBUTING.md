@@ -9,23 +9,24 @@ We welcome contributions from the community, including bug fixes, new features, 
 
 ## 🛠️ Getting Started
 
-1. **Fork the repository** and clone it locally:
+**1. Fork the repository** and clone it locally:
+
    ```bash
    git clone https://github.com/<your-username>/grok-cli.git
    cd grok-cli
 ````
 
-2. **Install dependencies**:
+**2. Install dependencies**:
 
    ```bash
    bun install
    ```
-3. **Build the project**:
+**3. Build the project**:
 
    ```bash
    bun run build
    ```
-4. **Run the CLI locally**:
+**4. Run the CLI locally**:
 
    ```bash
    bun run dev
