@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import { validateModel, getModelInfo } from "../utils/model-utils";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
@@ -56,11 +57,31 @@ export class GrokClient {
       timeout: 360000,
     });
     if (model) {
+      // Validate model (non-strict to allow custom models)
+      validateModel(model, false);
       this.currentModel = model;
+
+      // Log warning if model is not officially supported
+      const modelInfo = getModelInfo(model);
+      if (!modelInfo.isSupported) {
+        console.warn(
+          `Warning: Model '${model}' is not officially supported. Using default token limits.`
+        );
+      }
     }
   }
 
   setModel(model: string): void {
+    // Validate model (non-strict to allow custom models)
+    validateModel(model, false);
+
+    const modelInfo = getModelInfo(model);
+    if (!modelInfo.isSupported) {
+      console.warn(
+        `Warning: Model '${model}' is not officially supported. Using default token limits.`
+      );
+    }
+
     this.currentModel = model;
   }
 

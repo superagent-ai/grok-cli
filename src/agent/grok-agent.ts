@@ -12,26 +12,64 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSetting } from "../utils/settings";
+import { AGENT_CONFIG } from "../config/constants";
 
+/**
+ * Represents a single entry in the chat history
+ */
 export interface ChatEntry {
+  /** Type of chat entry */
   type: "user" | "assistant" | "tool_result" | "tool_call";
+  /** Content of the message */
   content: string;
+  /** When this entry was created */
   timestamp: Date;
+  /** Tool calls made by the assistant (if any) */
   toolCalls?: GrokToolCall[];
+  /** Single tool call (for tool_call type) */
   toolCall?: GrokToolCall;
+  /** Result of tool execution (for tool_result type) */
   toolResult?: { success: boolean; output?: string; error?: string };
+  /** Whether this entry is currently being streamed */
   isStreaming?: boolean;
 }
 
+/**
+ * Represents a chunk of data in a streaming response
+ */
 export interface StreamingChunk {
+  /** Type of streaming chunk */
   type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
+  /** Text content (for content type) */
   content?: string;
+  /** Tool calls made (for tool_calls type) */
   toolCalls?: GrokToolCall[];
+  /** Single tool call (for tool_call type) */
   toolCall?: GrokToolCall;
+  /** Result of tool execution (for tool_result type) */
   toolResult?: ToolResult;
+  /** Current token count (for token_count type) */
   tokenCount?: number;
 }
 
+/**
+ * Main agent class that orchestrates conversation with Grok AI and tool execution
+ *
+ * @example
+ * ```typescript
+ * const agent = new GrokAgent(apiKey, baseURL, model);
+ *
+ * // Process a message with streaming
+ * for await (const chunk of agent.processUserMessageStream("Show me package.json")) {
+ *   if (chunk.type === "content") {
+ *     console.log(chunk.content);
+ *   }
+ * }
+ *
+ * // Clean up when done
+ * agent.dispose();
+ * ```
+ */
 export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
@@ -44,6 +82,13 @@ export class GrokAgent extends EventEmitter {
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
 
+  /**
+   * Create a new GrokAgent instance
+   *
+   * @param apiKey - API key for authentication
+   * @param baseURL - Optional base URL for the API endpoint
+   * @param model - Optional model name (defaults to saved model or grok-4-latest)
+   */
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
     // Use saved model if no model is explicitly provided
@@ -313,6 +358,33 @@ Current working directory: ${process.cwd()}`,
     return reduce(previous, item.choices[0]?.delta || {});
   }
 
+  /**
+   * Process a user message with streaming response
+   *
+   * This method runs an agentic loop that can execute multiple tool rounds.
+   * It yields chunks as they arrive, including content, tool calls, and results.
+   *
+   * @param message - The user's message to process
+   * @yields StreamingChunk objects containing different types of data
+   * @throws Error if processing fails
+   *
+   * @example
+   * ```typescript
+   * for await (const chunk of agent.processUserMessageStream("List files")) {
+   *   switch (chunk.type) {
+   *     case "content":
+   *       console.log(chunk.content);
+   *       break;
+   *     case "tool_calls":
+   *       console.log("Tools:", chunk.toolCalls);
+   *       break;
+   *     case "done":
+   *       console.log("Completed");
+   *       break;
+   *   }
+   * }
+   * ```
+   */
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
@@ -337,7 +409,7 @@ Current working directory: ${process.cwd()}`,
       tokenCount: inputTokens,
     };
 
-    const maxToolRounds = 30; // Prevent infinite loops
+    const maxToolRounds = AGENT_CONFIG.MAX_TOOL_ROUNDS; // Prevent infinite loops
     let toolRounds = 0;
     let totalOutputTokens = 0;
 
@@ -624,5 +696,26 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  /**
+   * Clean up all resources
+   * Should be called when the agent is no longer needed
+   */
+  dispose(): void {
+    // Clean up token counter
+    if (this.tokenCounter) {
+      this.tokenCounter.dispose();
+    }
+
+    // Abort any ongoing operations
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Clear chat history and messages to free memory
+    this.chatHistory = [];
+    this.messages = [];
   }
 }

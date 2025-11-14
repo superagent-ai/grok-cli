@@ -200,10 +200,177 @@ npm run typecheck
 
 ## Architecture
 
-- **Agent**: Core command processing and execution logic
-- **Tools**: Text editor and bash tool implementations
-- **UI**: Ink-based terminal interface components
-- **Types**: TypeScript definitions for the entire system
+- **Agent**: Core command processing and execution logic (`src/agent/`)
+  - GrokAgent: Main orchestration and conversation management
+  - Token counting and streaming support
+  - Tool execution and result processing
+
+- **Tools** (`src/tools/`): Modular tool implementations
+  - TextEditorTool: File viewing, creation, and editing with fuzzy matching
+  - BashTool: Command execution with safety validation
+  - SearchTool: Fast code search using ripgrep with caching
+  - TodoTool: Task management and tracking
+
+- **UI** (`src/ui/`): Ink-based terminal interface components
+  - ChatInterface: Main conversational UI
+  - ConfirmationDialog: User approval for destructive operations
+  - DiffRenderer: Visual diff display for file changes
+  - ModelSelection: Interactive model switching
+
+- **Utils** (`src/utils/`): Shared utilities and services
+  - Error handling with custom error classes
+  - Resource caching with TTL support
+  - Settings management
+  - Token counting and formatting
+
+## Troubleshooting
+
+### Common Issues
+
+#### "No API key found"
+**Solution**: Ensure you've set up your API key using one of the methods in the Setup section. Check that:
+- Environment variable `GROK_API_KEY` is set
+- Or `~/.grok/user-settings.json` exists with valid `apiKey`
+- Or you're passing `--api-key` flag
+
+#### "Command execution failed"
+**Solution**: Some commands may be blocked for security reasons. The following commands require explicit confirmation:
+- File deletion: `rm`, `rmdir`, `del`
+- System operations: `shutdown`, `reboot`, `halt`
+- Potentially destructive: `format`, `mkfs`, `dd`
+
+Certain commands are completely blocked (e.g., fork bombs) for safety.
+
+#### "Network error" or "Connection timeout"
+**Solution**:
+- Check your internet connection
+- Verify the API endpoint is accessible
+- If using a custom base URL, ensure it's correct and reachable
+- Check if your API key is valid and has not expired
+
+#### "File not found" errors
+**Solution**:
+- Verify the file path is correct (use absolute paths when possible)
+- Check file permissions
+- Ensure the file exists in the current working directory
+
+#### Token/Rate limit errors
+**Solution**:
+- Each model has different token limits (see Configuration section)
+- Break down large requests into smaller chunks
+- Clear chat history if the conversation becomes too long
+- Consider using a faster model for simple tasks
+
+### Performance Issues
+
+#### Search is slow
+The search tool uses caching to improve performance. Results are cached for 60 seconds by default. If you're still experiencing slowness:
+- Limit search scope with `--include-pattern` or `--exclude-pattern`
+- Use more specific search queries
+- Exclude large directories like `node_modules` (done automatically)
+
+#### High memory usage
+If the application is consuming too much memory:
+- Restart the CLI to clear conversation history
+- Use headless mode (`--prompt`) for single operations
+- Limit the number of search results returned
+
+### Getting Help
+
+If you encounter issues not covered here:
+1. Check existing [GitHub Issues](https://github.com/vibe-kit/grok-cli/issues)
+2. Create a new issue with:
+   - Grok CLI version (`grok --version`)
+   - Node.js version (`node --version`)
+   - Operating system
+   - Complete error message
+   - Steps to reproduce
+
+## Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Setup
+
+1. **Fork and clone the repository**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/grok-cli.git
+   cd grok-cli
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Create a branch for your feature**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+4. **Make your changes and test**
+   ```bash
+   npm run dev          # Run in development mode
+   npm run typecheck    # Check TypeScript types
+   npm run lint         # Lint your code
+   npm run build        # Build the project
+   ```
+
+### Code Guidelines
+
+- **TypeScript**: All code should be written in TypeScript with proper typing
+- **Code Style**: Follow the existing code style (enforced by ESLint)
+- **Error Handling**: Use custom error classes from `src/utils/errors.ts`
+- **Documentation**: Add JSDoc comments for public APIs and complex logic
+- **Constants**: Use centralized constants from `src/config/constants.ts`
+- **Testing**: Add tests for new features (when test infrastructure is available)
+
+### Adding New Tools
+
+To add a new tool:
+
+1. Create a new file in `src/tools/your-tool.ts`
+2. Implement the tool class with proper error handling
+3. Add the tool definition to `src/grok/tools.ts`
+4. Register the tool in `src/agent/grok-agent.ts`
+5. Update documentation
+
+### Pull Request Process
+
+1. **Update documentation** if you're adding/changing features
+2. **Ensure all checks pass** (type checking, linting)
+3. **Write clear commit messages** following conventional commits
+4. **Create a pull request** with:
+   - Clear description of changes
+   - Motivation and context
+   - Related issue numbers (if applicable)
+   - Screenshots for UI changes
+
+### Security
+
+If you discover a security vulnerability:
+- **Do NOT** create a public GitHub issue
+- Email security concerns to the maintainers
+- Include detailed information about the vulnerability
+- Wait for confirmation before disclosing publicly
+
+### Code of Conduct
+
+- Be respectful and inclusive
+- Welcome newcomers and help them get started
+- Focus on constructive feedback
+- Prioritize the community and project health
+
+## Roadmap
+
+Future improvements planned:
+- [ ] Test infrastructure with comprehensive test coverage
+- [ ] Plugin system for custom tools
+- [ ] Configuration file support (`.grokrc`)
+- [ ] Multi-model support improvements
+- [ ] Enhanced diff visualization
+- [ ] Conversation export/import
+- [ ] Integration with popular editors
 
 ## License
 
