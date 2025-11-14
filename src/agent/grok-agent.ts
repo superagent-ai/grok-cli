@@ -1,20 +1,14 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
-import { GROK_TOOLS } from "../grok/tools";
-import {
-  TextEditorTool,
-  BashTool,
-  TodoTool,
-  ConfirmationTool,
-  SearchTool,
-} from "../tools";
-import { ToolResult } from "../types";
-import { EventEmitter } from "events";
-import { createTokenCounter, TokenCounter } from "../utils/token-counter";
-import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSetting } from "../utils/settings";
+import { GrokClient, GrokMessage, GrokToolCall } from '../grok/client';
+import { GROK_TOOLS } from '../grok/tools';
+import { TextEditorTool, BashTool, TodoTool, ConfirmationTool, SearchTool } from '../tools';
+import { ToolResult } from '../types';
+import { EventEmitter } from 'events';
+import { createTokenCounter, TokenCounter } from '../utils/token-counter';
+import { loadCustomInstructions } from '../utils/custom-instructions';
+import { getSetting } from '../utils/settings';
 
 export interface ChatEntry {
-  type: "user" | "assistant" | "tool_result" | "tool_call";
+  type: 'user' | 'assistant' | 'tool_result' | 'tool_call';
   content: string;
   timestamp: Date;
   toolCalls?: GrokToolCall[];
@@ -24,7 +18,7 @@ export interface ChatEntry {
 }
 
 export interface StreamingChunk {
-  type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
+  type: 'content' | 'tool_calls' | 'tool_result' | 'done' | 'token_count';
   content?: string;
   toolCalls?: GrokToolCall[];
   toolCall?: GrokToolCall;
@@ -61,11 +55,11 @@ export class GrokAgent extends EventEmitter {
     const customInstructions = loadCustomInstructions();
     const customInstructionsSection = customInstructions
       ? `\n\nCUSTOM INSTRUCTIONS:\n${customInstructions}\n\nThe above custom instructions should be followed alongside the standard instructions below.`
-      : "";
+      : '';
 
     // Initialize with system message
     this.messages.push({
-      role: "system",
+      role: 'system',
       content: `You are Grok CLI, an AI assistant that helps with file editing, coding tasks, and system operations.${customInstructionsSection}
 
 You have access to these tools:
@@ -129,44 +123,38 @@ Current working directory: ${process.cwd()}`,
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
-      type: "user",
+      type: 'user',
       content: message,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: "user", content: message });
+    this.messages.push({ role: 'user', content: message });
 
     const newEntries: ChatEntry[] = [userEntry];
     const maxToolRounds = 10; // Prevent infinite loops
     let toolRounds = 0;
 
     try {
-      let currentResponse = await this.grokClient.chat(
-        this.messages,
-        GROK_TOOLS,
-        undefined,
-        { search_parameters: { mode: "auto" } }
-      );
+      let currentResponse = await this.grokClient.chat(this.messages, GROK_TOOLS, undefined, {
+        search_parameters: { mode: 'auto' },
+      });
 
       // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         const assistantMessage = currentResponse.choices[0]?.message;
 
         if (!assistantMessage) {
-          throw new Error("No response from Grok");
+          throw new Error('No response from Grok');
         }
 
         // Handle tool calls
-        if (
-          assistantMessage.tool_calls &&
-          assistantMessage.tool_calls.length > 0
-        ) {
+        if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
           toolRounds++;
 
           // Add assistant message with tool calls
           const assistantEntry: ChatEntry = {
-            type: "assistant",
-            content: assistantMessage.content || "Using tools to help you...",
+            type: 'assistant',
+            content: assistantMessage.content || 'Using tools to help you...',
             timestamp: new Date(),
             toolCalls: assistantMessage.tool_calls,
           };
@@ -175,16 +163,16 @@ Current working directory: ${process.cwd()}`,
 
           // Add assistant message to conversation
           this.messages.push({
-            role: "assistant",
-            content: assistantMessage.content || "",
+            role: 'assistant',
+            content: assistantMessage.content || '',
             tool_calls: assistantMessage.tool_calls,
           } as any);
 
           // Create initial tool call entries to show tools are being executed
           assistantMessage.tool_calls.forEach((toolCall) => {
             const toolCallEntry: ChatEntry = {
-              type: "tool_call",
-              content: "Executing...",
+              type: 'tool_call',
+              content: 'Executing...',
               timestamp: new Date(),
               toolCall: toolCall,
             };
@@ -198,26 +186,23 @@ Current working directory: ${process.cwd()}`,
 
             // Update the existing tool_call entry with the result
             const entryIndex = this.chatHistory.findIndex(
-              (entry) =>
-                entry.type === "tool_call" && entry.toolCall?.id === toolCall.id
+              (entry) => entry.type === 'tool_call' && entry.toolCall?.id === toolCall.id
             );
 
             if (entryIndex !== -1) {
               const updatedEntry: ChatEntry = {
                 ...this.chatHistory[entryIndex],
-                type: "tool_result",
+                type: 'tool_result',
                 content: result.success
-                  ? result.output || "Success"
-                  : result.error || "Error occurred",
+                  ? result.output || 'Success'
+                  : result.error || 'Error occurred',
                 toolResult: result,
               };
               this.chatHistory[entryIndex] = updatedEntry;
 
               // Also update in newEntries for return value
               const newEntryIndex = newEntries.findIndex(
-                (entry) =>
-                  entry.type === "tool_call" &&
-                  entry.toolCall?.id === toolCall.id
+                (entry) => entry.type === 'tool_call' && entry.toolCall?.id === toolCall.id
               );
               if (newEntryIndex !== -1) {
                 newEntries[newEntryIndex] = updatedEntry;
@@ -226,34 +211,28 @@ Current working directory: ${process.cwd()}`,
 
             // Add tool result to messages with proper format (needed for AI context)
             this.messages.push({
-              role: "tool",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error",
+              role: 'tool',
+              content: result.success ? result.output || 'Success' : result.error || 'Error',
               tool_call_id: toolCall.id,
             });
           }
 
           // Get next response - this might contain more tool calls
-          currentResponse = await this.grokClient.chat(
-            this.messages,
-            GROK_TOOLS,
-            undefined,
-            { search_parameters: { mode: "auto" } }
-          );
+          currentResponse = await this.grokClient.chat(this.messages, GROK_TOOLS, undefined, {
+            search_parameters: { mode: 'auto' },
+          });
         } else {
           // No more tool calls, add final response
           const finalEntry: ChatEntry = {
-            type: "assistant",
+            type: 'assistant',
             content:
-              assistantMessage.content ||
-              "I understand, but I don't have a specific response.",
+              assistantMessage.content || "I understand, but I don't have a specific response.",
             timestamp: new Date(),
           };
           this.chatHistory.push(finalEntry);
           this.messages.push({
-            role: "assistant",
-            content: assistantMessage.content || "",
+            role: 'assistant',
+            content: assistantMessage.content || '',
           });
           newEntries.push(finalEntry);
           break; // Exit the loop
@@ -262,9 +241,8 @@ Current working directory: ${process.cwd()}`,
 
       if (toolRounds >= maxToolRounds) {
         const warningEntry: ChatEntry = {
-          type: "assistant",
-          content:
-            "Maximum tool execution rounds reached. Stopping to prevent infinite loops.",
+          type: 'assistant',
+          content: 'Maximum tool execution rounds reached. Stopping to prevent infinite loops.',
           timestamp: new Date(),
         };
         this.chatHistory.push(warningEntry);
@@ -274,7 +252,7 @@ Current working directory: ${process.cwd()}`,
       return newEntries;
     } catch (error: any) {
       const errorEntry: ChatEntry = {
-        type: "assistant",
+        type: 'assistant',
         content: `Sorry, I encountered an error: ${error.message}`,
         timestamp: new Date(),
       };
@@ -295,7 +273,7 @@ Current working directory: ${process.cwd()}`,
               delete arr.index;
             }
           }
-        } else if (typeof acc[key] === "string" && typeof value === "string") {
+        } else if (typeof acc[key] === 'string' && typeof value === 'string') {
           (acc[key] as string) += value;
         } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
           const accArray = acc[key] as any[];
@@ -303,7 +281,7 @@ Current working directory: ${process.cwd()}`,
             if (!accArray[i]) accArray[i] = {};
             accArray[i] = reduce(accArray[i], value[i]);
           }
-        } else if (typeof acc[key] === "object" && typeof value === "object") {
+        } else if (typeof acc[key] === 'object' && typeof value === 'object') {
           acc[key] = reduce(acc[key], value);
         }
       }
@@ -313,27 +291,23 @@ Current working directory: ${process.cwd()}`,
     return reduce(previous, item.choices[0]?.delta || {});
   }
 
-  async *processUserMessageStream(
-    message: string
-  ): AsyncGenerator<StreamingChunk, void, unknown> {
+  async *processUserMessageStream(message: string): AsyncGenerator<StreamingChunk, void, unknown> {
     // Create new abort controller for this request
     this.abortController = new AbortController();
 
     // Add user message to conversation
     const userEntry: ChatEntry = {
-      type: "user",
+      type: 'user',
       content: message,
       timestamp: new Date(),
     };
     this.chatHistory.push(userEntry);
-    this.messages.push({ role: "user", content: message });
+    this.messages.push({ role: 'user', content: message });
 
     // Calculate input tokens
-    let inputTokens = this.tokenCounter.countMessageTokens(
-      this.messages as any
-    );
+    let inputTokens = this.tokenCounter.countMessageTokens(this.messages as any);
     yield {
-      type: "token_count",
+      type: 'token_count',
       tokenCount: inputTokens,
     };
 
@@ -347,32 +321,29 @@ Current working directory: ${process.cwd()}`,
         // Check if operation was cancelled
         if (this.abortController?.signal.aborted) {
           yield {
-            type: "content",
-            content: "\n\n[Operation cancelled by user]",
+            type: 'content',
+            content: '\n\n[Operation cancelled by user]',
           };
-          yield { type: "done" };
+          yield { type: 'done' };
           return;
         }
 
         // Stream response and accumulate
-        const stream = this.grokClient.chatStream(
-          this.messages,
-          GROK_TOOLS,
-          undefined,
-          { search_parameters: { mode: "auto" } }
-        );
+        const stream = this.grokClient.chatStream(this.messages, GROK_TOOLS, undefined, {
+          search_parameters: { mode: 'auto' },
+        });
         let accumulatedMessage: any = {};
-        let accumulatedContent = "";
+        let accumulatedContent = '';
         let toolCallsYielded = false;
 
         for await (const chunk of stream) {
           // Check for cancellation in the streaming loop
           if (this.abortController?.signal.aborted) {
             yield {
-              type: "content",
-              content: "\n\n[Operation cancelled by user]",
+              type: 'content',
+              content: '\n\n[Operation cancelled by user]',
             };
-            yield { type: "done" };
+            yield { type: 'done' };
             return;
           }
 
@@ -389,7 +360,7 @@ Current working directory: ${process.cwd()}`,
             );
             if (hasCompleteTool) {
               yield {
-                type: "tool_calls",
+                type: 'tool_calls',
                 toolCalls: accumulatedMessage.tool_calls,
               };
               toolCallsYielded = true;
@@ -401,18 +372,21 @@ Current working directory: ${process.cwd()}`,
             accumulatedContent += chunk.choices[0].delta.content;
 
             // Update token count in real-time including accumulated content and any tool calls
-            const currentOutputTokens = this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
-              (accumulatedMessage.tool_calls ? this.tokenCounter.countTokens(JSON.stringify(accumulatedMessage.tool_calls)) : 0);
+            const currentOutputTokens =
+              this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
+              (accumulatedMessage.tool_calls
+                ? this.tokenCounter.countTokens(JSON.stringify(accumulatedMessage.tool_calls))
+                : 0);
             totalOutputTokens = currentOutputTokens;
 
             yield {
-              type: "content",
+              type: 'content',
               content: chunk.choices[0].delta.content,
             };
 
             // Emit token count update
             yield {
-              type: "token_count",
+              type: 'token_count',
               tokenCount: inputTokens + totalOutputTokens,
             };
           }
@@ -420,8 +394,8 @@ Current working directory: ${process.cwd()}`,
 
         // Add assistant entry to history
         const assistantEntry: ChatEntry = {
-          type: "assistant",
-          content: accumulatedMessage.content || "Using tools to help you...",
+          type: 'assistant',
+          content: accumulatedMessage.content || 'Using tools to help you...',
           timestamp: new Date(),
           toolCalls: accumulatedMessage.tool_calls || undefined,
         };
@@ -429,8 +403,8 @@ Current working directory: ${process.cwd()}`,
 
         // Add accumulated message to conversation
         this.messages.push({
-          role: "assistant",
-          content: accumulatedMessage.content || "",
+          role: 'assistant',
+          content: accumulatedMessage.content || '',
           tool_calls: accumulatedMessage.tool_calls,
         } as any);
 
@@ -441,7 +415,7 @@ Current working directory: ${process.cwd()}`,
           // Only yield tool_calls if we haven't already yielded them during streaming
           if (!toolCallsYielded) {
             yield {
-              type: "tool_calls",
+              type: 'tool_calls',
               toolCalls: accumulatedMessage.tool_calls,
             };
           }
@@ -451,20 +425,20 @@ Current working directory: ${process.cwd()}`,
             // Check for cancellation before executing each tool
             if (this.abortController?.signal.aborted) {
               yield {
-                type: "content",
-                content: "\n\n[Operation cancelled by user]",
+                type: 'content',
+                content: '\n\n[Operation cancelled by user]',
               };
-              yield { type: "done" };
+              yield { type: 'done' };
               return;
             }
 
             const result = await this.executeTool(toolCall);
 
             const toolResultEntry: ChatEntry = {
-              type: "tool_result",
+              type: 'tool_result',
               content: result.success
-                ? result.output || "Success"
-                : result.error || "Error occurred",
+                ? result.output || 'Success'
+                : result.error || 'Error occurred',
               timestamp: new Date(),
               toolCall: toolCall,
               toolResult: result,
@@ -472,17 +446,15 @@ Current working directory: ${process.cwd()}`,
             this.chatHistory.push(toolResultEntry);
 
             yield {
-              type: "tool_result",
+              type: 'tool_result',
               toolCall,
               toolResult: result,
             };
 
             // Add tool result with proper format (needed for AI context)
             this.messages.push({
-              role: "tool",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error",
+              role: 'tool',
+              content: result.success ? result.output || 'Success' : result.error || 'Error',
               tool_call_id: toolCall.id,
             });
           }
@@ -490,7 +462,7 @@ Current working directory: ${process.cwd()}`,
           // Update token count after processing all tool calls to include tool results
           inputTokens = this.tokenCounter.countMessageTokens(this.messages as any);
           yield {
-            type: "token_count",
+            type: 'token_count',
             tokenCount: inputTokens + totalOutputTokens,
           };
 
@@ -503,35 +475,34 @@ Current working directory: ${process.cwd()}`,
 
       if (toolRounds >= maxToolRounds) {
         yield {
-          type: "content",
-          content:
-            "\n\nMaximum tool execution rounds reached. Stopping to prevent infinite loops.",
+          type: 'content',
+          content: '\n\nMaximum tool execution rounds reached. Stopping to prevent infinite loops.',
         };
       }
 
-      yield { type: "done" };
+      yield { type: 'done' };
     } catch (error: any) {
       // Check if this was a cancellation
       if (this.abortController?.signal.aborted) {
         yield {
-          type: "content",
-          content: "\n\n[Operation cancelled by user]",
+          type: 'content',
+          content: '\n\n[Operation cancelled by user]',
         };
-        yield { type: "done" };
+        yield { type: 'done' };
         return;
       }
 
       const errorEntry: ChatEntry = {
-        type: "assistant",
+        type: 'assistant',
         content: `Sorry, I encountered an error: ${error.message}`,
         timestamp: new Date(),
       };
       this.chatHistory.push(errorEntry);
       yield {
-        type: "content",
+        type: 'content',
         content: errorEntry.content,
       };
-      yield { type: "done" };
+      yield { type: 'done' };
     } finally {
       // Clean up abort controller
       this.abortController = null;
@@ -543,17 +514,15 @@ Current working directory: ${process.cwd()}`,
       const args = JSON.parse(toolCall.function.arguments);
 
       switch (toolCall.function.name) {
-        case "view_file":
+        case 'view_file':
           const range: [number, number] | undefined =
-            args.start_line && args.end_line
-              ? [args.start_line, args.end_line]
-              : undefined;
+            args.start_line && args.end_line ? [args.start_line, args.end_line] : undefined;
           return await this.textEditor.view(args.path, range);
 
-        case "create_file":
+        case 'create_file':
           return await this.textEditor.create(args.path, args.content);
 
-        case "str_replace_editor":
+        case 'str_replace_editor':
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
@@ -561,16 +530,16 @@ Current working directory: ${process.cwd()}`,
             args.replace_all
           );
 
-        case "bash":
+        case 'bash':
           return await this.bash.execute(args.command);
 
-        case "create_todo_list":
+        case 'create_todo_list':
           return await this.todoTool.createTodoList(args.todos);
 
-        case "update_todo_list":
+        case 'update_todo_list':
           return await this.todoTool.updateTodoList(args.updates);
 
-        case "search":
+        case 'search':
           return await this.search.search(args.query, {
             searchType: args.search_type,
             includePattern: args.include_pattern,

@@ -110,11 +110,11 @@ export const DiffRenderer = ({
   const lines = diffContent.split('\n');
   const firstLine = lines[0];
   let actualDiffContent = diffContent;
-  
+
   if (firstLine && (firstLine.startsWith('Updated ') || firstLine.startsWith('Created '))) {
     actualDiffContent = lines.slice(1).join('\n');
   }
-  
+
   const parsedLines = parseDiffWithLineNumbers(actualDiffContent);
 
   if (parsedLines.length === 0) {
@@ -127,7 +127,7 @@ export const DiffRenderer = ({
     filename,
     tabWidth,
     availableTerminalHeight,
-    terminalWidth,
+    terminalWidth
   );
 
   return <>{renderedOutput}</>;
@@ -138,7 +138,7 @@ const renderDiffContent = (
   filename: string | undefined,
   tabWidth = DEFAULT_TAB_WIDTH,
   availableTerminalHeight: number | undefined,
-  terminalWidth: number,
+  terminalWidth: number
 ) => {
   // 1. Normalize whitespace (replace tabs with spaces) *before* further processing
   const normalizedLines = parsedLines.map((line) => ({
@@ -147,9 +147,7 @@ const renderDiffContent = (
   }));
 
   // Filter out non-displayable lines (hunks, potentially 'other') using the normalized list
-  const displayableLines = normalizedLines.filter(
-    (l) => l.type !== 'hunk' && l.type !== 'other',
-  );
+  const displayableLines = normalizedLines.filter((l) => l.type !== 'hunk' && l.type !== 'other');
 
   if (displayableLines.length === 0) {
     return <Text dimColor>No changes detected.</Text>;
@@ -178,11 +176,7 @@ const renderDiffContent = (
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;
 
   return (
-    <MaxSizedBox
-      maxHeight={availableTerminalHeight}
-      maxWidth={terminalWidth}
-      key={key}
-    >
+    <MaxSizedBox maxHeight={availableTerminalHeight} maxWidth={terminalWidth} key={key}>
       {displayableLines.reduce<React.ReactNode[]>((acc, line, index) => {
         // Determine the relevant line number for gap calculation based on type
         let relevantLineNumberForGapCalc: number | null = null;
@@ -196,13 +190,12 @@ const renderDiffContent = (
         if (
           lastLineNumber !== null &&
           relevantLineNumberForGapCalc !== null &&
-          relevantLineNumberForGapCalc >
-            lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
+          relevantLineNumberForGapCalc > lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
         ) {
           acc.push(
             <Box key={`gap-${index}`}>
               <Text wrap="truncate">{'═'.repeat(terminalWidth)}</Text>
-            </Box>,
+            </Box>
           );
         }
 
@@ -244,19 +237,31 @@ const renderDiffContent = (
 
         acc.push(
           <Box key={lineKey} flexDirection="row">
-            <Text color={Colors.Gray} dimColor={dim}>{gutterNumStr.padEnd(4)}</Text>
-            <Text color={backgroundColor ? '#000000' : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim}>{prefixSymbol} </Text>
-            <Text color={backgroundColor ? '#000000' : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim} wrap="wrap">
+            <Text color={Colors.Gray} dimColor={dim}>
+              {gutterNumStr.padEnd(4)}
+            </Text>
+            <Text
+              color={backgroundColor ? '#000000' : undefined}
+              backgroundColor={backgroundColor}
+              dimColor={!backgroundColor && dim}
+            >
+              {prefixSymbol}{' '}
+            </Text>
+            <Text
+              color={backgroundColor ? '#000000' : undefined}
+              backgroundColor={backgroundColor}
+              dimColor={!backgroundColor && dim}
+              wrap="wrap"
+            >
               {displayContent}
             </Text>
-          </Box>,
+          </Box>
         );
         return acc;
       }, [])}
     </MaxSizedBox>
   );
 };
-
 
 const getLanguageFromExtension = (extension: string): string | null => {
   const languageMap: { [key: string]: string } = {

@@ -11,7 +11,15 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,md}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:run": "vitest run",
+    "prepare": "husky"
   },
   "keywords": [
     "cli",
@@ -38,14 +46,25 @@
     "tiktoken": "^1.0.21"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
     "@types/fs-extra": "^11.0.2",
     "@types/node": "^20.8.0",
     "@types/react": "^17.0.0",
+    "@types/shell-escape": "^0.2.3",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
+    "@vitest/coverage-v8": "^4.0.9",
+    "@vitest/ui": "^4.0.9",
     "eslint": "^9.31.0",
+    "happy-dom": "^20.0.10",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2",
+    "shell-escape": "^0.2.0",
     "tsx": "^4.0.0",
-    "typescript": "^4.9.5"
+    "typescript": "^4.9.5",
+    "vitest": "^4.0.9"
   },
   "engines": {
     "node": ">=16.0.0"

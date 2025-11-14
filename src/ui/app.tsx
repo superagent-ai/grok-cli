@@ -16,7 +16,7 @@ export default function App({ agent }: Props) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
   const { exit } = useApp();
-  
+
   const confirmationService = ConfirmationService.getInstance();
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function App({ agent }: Props) {
       if (input.trim()) {
         setIsProcessing(true);
         const result = await agent.processCommand(input.trim());
-        setHistory(prev => [...prev, { command: input.trim(), result }]);
+        setHistory((prev) => [...prev, { command: input.trim(), result }]);
         setInput('');
         setIsProcessing(false);
       }
@@ -63,12 +63,12 @@ export default function App({ agent }: Props) {
     }
 
     if (key.backspace || key.delete) {
-      setInput(prev => prev.slice(0, -1));
+      setInput((prev) => prev.slice(0, -1));
       return;
     }
 
     if (inputChar && !key.ctrl && !key.meta) {
-      setInput(prev => prev + inputChar);
+      setInput((prev) => prev + inputChar);
     }
   });
 
@@ -127,14 +127,12 @@ export default function App({ agent }: Props) {
           🔧 Grok CLI - Text Editor Agent
         </Text>
       </Box>
-      
+
       <Box flexDirection="column" marginBottom={1}>
         <Text dimColor>
           Available commands: view, str_replace, create, insert, undo_edit, bash, help
         </Text>
-        <Text dimColor>
-          Type 'help' for detailed usage, 'exit' or Ctrl+C to quit
-        </Text>
+        <Text dimColor>Type 'help' for detailed usage, 'exit' or Ctrl+C to quit</Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>

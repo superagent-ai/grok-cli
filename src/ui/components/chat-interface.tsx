@@ -1,19 +1,16 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text } from "ink";
-import { GrokAgent, ChatEntry } from "../../agent/grok-agent";
-import { useInputHandler } from "../../hooks/use-input-handler";
-import { LoadingSpinner } from "./loading-spinner";
-import { CommandSuggestions } from "./command-suggestions";
-import { ModelSelection } from "./model-selection";
-import { ChatHistory } from "./chat-history";
-import { ChatInput } from "./chat-input";
-import ConfirmationDialog from "./confirmation-dialog";
-import {
-  ConfirmationService,
-  ConfirmationOptions,
-} from "../../utils/confirmation-service";
-import ApiKeyInput from "./api-key-input";
-import cfonts from "cfonts";
+import React, { useState, useEffect, useRef } from 'react';
+import { Box, Text } from 'ink';
+import { GrokAgent, ChatEntry } from '../../agent/grok-agent';
+import { useInputHandler } from '../../hooks/use-input-handler';
+import { LoadingSpinner } from './loading-spinner';
+import { CommandSuggestions } from './command-suggestions';
+import { ModelSelection } from './model-selection';
+import { ChatHistory } from './chat-history';
+import { ChatInput } from './chat-input';
+import ConfirmationDialog from './confirmation-dialog';
+import { ConfirmationService, ConfirmationOptions } from '../../utils/confirmation-service';
+import ApiKeyInput from './api-key-input';
+import cfonts from 'cfonts';
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;
@@ -26,8 +23,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   const [processingTime, setProcessingTime] = useState(0);
   const [tokenCount, setTokenCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [confirmationOptions, setConfirmationOptions] =
-    useState<ConfirmationOptions | null>(null);
+  const [confirmationOptions, setConfirmationOptions] = useState<ConfirmationOptions | null>(null);
   const scrollRef = useRef<any>();
   const processingStartTime = useRef<number>(0);
 
@@ -59,9 +55,9 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
   useEffect(() => {
     // Only clear console on non-Windows platforms or if not PowerShell
     // Windows PowerShell can have issues with console.clear() causing flickering
-    const isWindows = process.platform === "win32";
+    const isWindows = process.platform === 'win32';
     const isPowerShell =
-      process.env.ComSpec?.toLowerCase().includes("powershell") ||
+      process.env.ComSpec?.toLowerCase().includes('powershell') ||
       process.env.PSModulePath !== undefined;
 
     if (!isWindows || !isPowerShell) {
@@ -69,32 +65,32 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     }
 
     // Add top padding
-    console.log("    ");
+    console.log('    ');
 
     // Generate logo with margin to match Ink paddingX={2}
-    const logoOutput = cfonts.render("GROK", {
-      font: "3d",
-      align: "left",
-      colors: ["magenta", "gray"],
+    const logoOutput = cfonts.render('GROK', {
+      font: '3d',
+      align: 'left',
+      colors: ['magenta', 'gray'],
       space: true,
-      maxLength: "0",
-      gradient: ["magenta", "cyan"],
+      maxLength: '0',
+      gradient: ['magenta', 'cyan'],
       independentGradient: false,
       transitionGradient: true,
-      env: "node",
+      env: 'node',
     });
 
     // Add horizontal margin (2 spaces) to match Ink paddingX={2}
-    const logoLines = (logoOutput as any).string.split("\n");
+    const logoLines = (logoOutput as any).string.split('\n');
     logoLines.forEach((line: string) => {
       if (line.trim()) {
-        console.log(" " + line); // Add 2 spaces for horizontal margin
+        console.log(' ' + line); // Add 2 spaces for horizontal margin
       } else {
         console.log(line); // Keep empty lines as-is
       }
     });
 
-    console.log(" "); // Spacing after logo
+    console.log(' '); // Spacing after logo
 
     setChatHistory([]);
   }, []);
@@ -104,13 +100,10 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       setConfirmationOptions(options);
     };
 
-    confirmationService.on("confirmation-requested", handleConfirmationRequest);
+    confirmationService.on('confirmation-requested', handleConfirmationRequest);
 
     return () => {
-      confirmationService.off(
-        "confirmation-requested",
-        handleConfirmationRequest
-      );
+      confirmationService.off('confirmation-requested', handleConfirmationRequest);
     };
   }, [confirmationService]);
 
@@ -125,9 +118,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
     }
 
     const interval = setInterval(() => {
-      setProcessingTime(
-        Math.floor((Date.now() - processingStartTime.current) / 1000)
-      );
+      setProcessingTime(Math.floor((Date.now() - processingStartTime.current) / 1000));
     }, 1000);
 
     return () => clearInterval(interval);
@@ -159,32 +150,23 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             Tips for getting started:
           </Text>
           <Box marginTop={1} flexDirection="column">
-            <Text color="gray">
-              1. Ask questions, edit files, or run commands.
-            </Text>
+            <Text color="gray">1. Ask questions, edit files, or run commands.</Text>
             <Text color="gray">2. Be specific for the best results.</Text>
             <Text color="gray">
               3. Create GROK.md files to customize your interactions with Grok.
             </Text>
-            <Text color="gray">
-              4. Press Shift+Tab to toggle auto-edit mode.
-            </Text>
+            <Text color="gray">4. Press Shift+Tab to toggle auto-edit mode.</Text>
             <Text color="gray">5. /help for more information.</Text>
           </Box>
         </Box>
       )}
 
       <Box flexDirection="column" marginBottom={1}>
-        <Text dimColor>
-          Type your request in natural language. Type 'exit' or Ctrl+C to quit.
-        </Text>
+        <Text dimColor>Type your request in natural language. Type 'exit' or Ctrl+C to quit.</Text>
       </Box>
 
       <Box flexDirection="column" ref={scrollRef}>
-        <ChatHistory
-          entries={chatHistory}
-          isConfirmationActive={!!confirmationOptions}
-        />
+        <ChatHistory entries={chatHistory} isConfirmationActive={!!confirmationOptions} />
       </Box>
 
       {/* Show confirmation dialog if one is pending */}
@@ -207,16 +189,11 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
             tokenCount={tokenCount}
           />
 
-          <ChatInput
-            input={input}
-            isProcessing={isProcessing}
-            isStreaming={isStreaming}
-          />
+          <ChatInput input={input} isProcessing={isProcessing} isStreaming={isStreaming} />
 
           <Box flexDirection="row">
             <Text color="cyan">
-              {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
-              {autoEditEnabled ? "on" : "off"}
+              {autoEditEnabled ? '▶' : '⏸'} auto-edit: {autoEditEnabled ? 'on' : 'off'}
             </Text>
             <Box marginLeft={1}>
               <Text dimColor>(shift + tab)</Text>
@@ -247,9 +224,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
 // Main component that handles API key input or chat interface
 export default function ChatInterface({ agent }: ChatInterfaceProps) {
-  const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
-    agent || null
-  );
+  const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(agent || null);
 
   const handleApiKeySet = (newAgent: GrokAgent) => {
     setCurrentAgent(newAgent);

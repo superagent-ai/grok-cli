@@ -10,5 +10,5 @@ export const Colors = {
   Cyan: 'cyan',
   Magenta: 'magenta',
   White: 'white',
-  Black: 'black'
+  Black: 'black',
 } as const;

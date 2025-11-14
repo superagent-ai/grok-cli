@@ -14,10 +14,7 @@ export const MaxSizedBox: React.FC<MaxSizedBoxProps> = ({
   ...props
 }) => {
   return (
-    <Box 
-      flexDirection="column"
-      {...props}
-    >
+    <Box flexDirection="column" {...props}>
       {children}
     </Box>
   );

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
-import { DiffRenderer } from "./diff-renderer";
+import React, { useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { DiffRenderer } from './diff-renderer';
 
 interface ConfirmationDialogProps {
   operation: string;
@@ -21,14 +21,9 @@ export default function ConfirmationDialog({
 }: ConfirmationDialogProps) {
   const [selectedOption, setSelectedOption] = useState(0);
   const [feedbackMode, setFeedbackMode] = useState(false);
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState('');
 
-  const options = [
-    "Yes",
-    "Yes, and don't ask again this session",
-    "No",
-    "No, with feedback",
-  ];
+  const options = ['Yes', "Yes, and don't ask again this session", 'No', 'No, with feedback'];
 
   useInput((input, key) => {
     if (feedbackMode) {
@@ -62,7 +57,7 @@ export default function ConfirmationDialog({
       } else if (selectedOption === 1) {
         onConfirm(true);
       } else if (selectedOption === 2) {
-        onReject("Operation cancelled by user");
+        onReject('Operation cancelled by user');
       } else {
         setFeedbackMode(true);
       }
@@ -72,10 +67,10 @@ export default function ConfirmationDialog({
     if (key.escape) {
       if (feedbackMode) {
         setFeedbackMode(false);
-        setFeedback("");
+        setFeedback('');
       } else {
         // Cancel the confirmation when escape is pressed from main confirmation
-        onReject("Operation cancelled by user (pressed Escape)");
+        onReject('Operation cancelled by user (pressed Escape)');
       }
       return;
     }
@@ -85,17 +80,10 @@ export default function ConfirmationDialog({
     return (
       <Box flexDirection="column" padding={1}>
         <Box flexDirection="column" marginBottom={1}>
-          <Text color="gray">
-            Type your feedback and press Enter, or press Escape to go back.
-          </Text>
+          <Text color="gray">Type your feedback and press Enter, or press Escape to go back.</Text>
         </Box>
 
-        <Box
-          borderStyle="round"
-          borderColor="yellow"
-          paddingX={1}
-          marginTop={1}
-        >
+        <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
           <Text color="gray">❯ </Text>
           <Text>
             {feedback}
@@ -113,7 +101,7 @@ export default function ConfirmationDialog({
         <Box>
           <Text color="magenta">⏺</Text>
           <Text color="white">
-            {" "}
+            {' '}
             {operation}({filename})
           </Text>
         </Box>
@@ -133,11 +121,7 @@ export default function ConfirmationDialog({
           <>
             <Text color="gray">⎿ {content.split('\n')[0]}</Text>
             <Box marginLeft={4} flexDirection="column">
-              <DiffRenderer
-                diffContent={content}
-                filename={filename}
-                terminalWidth={80}
-              />
+              <DiffRenderer diffContent={content} filename={filename} terminalWidth={80} />
             </Box>
           </>
         )}
@@ -153,8 +137,8 @@ export default function ConfirmationDialog({
           {options.map((option, index) => (
             <Box key={index} paddingLeft={1}>
               <Text
-                color={selectedOption === index ? "black" : "white"}
-                backgroundColor={selectedOption === index ? "cyan" : undefined}
+                color={selectedOption === index ? 'black' : 'white'}
+                backgroundColor={selectedOption === index ? 'cyan' : undefined}
               >
                 {index + 1}. {option}
               </Text>

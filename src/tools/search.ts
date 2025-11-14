@@ -1,8 +1,8 @@
-import { spawn } from "child_process";
-import { ToolResult } from "../types";
-import { ConfirmationService } from "../utils/confirmation-service";
-import * as fs from "fs-extra";
-import * as path from "path";
+import { spawn } from 'child_process';
+import { ToolResult } from '../types';
+import { ConfirmationService } from '../utils/confirmation-service';
+import * as fs from 'fs-extra';
+import * as path from 'path';
 
 export interface SearchResult {
   file: string;
@@ -19,7 +19,7 @@ export interface FileSearchResult {
 }
 
 export interface UnifiedSearchResult {
-  type: "text" | "file";
+  type: 'text' | 'file';
   file: string;
   line?: number;
   column?: number;
@@ -38,7 +38,7 @@ export class SearchTool {
   async search(
     query: string,
     options: {
-      searchType?: "text" | "files" | "both";
+      searchType?: 'text' | 'files' | 'both';
       includePattern?: string;
       excludePattern?: string;
       caseSensitive?: boolean;
@@ -51,15 +51,15 @@ export class SearchTool {
     } = {}
   ): Promise<ToolResult> {
     try {
-      const searchType = options.searchType || "both";
+      const searchType = options.searchType || 'both';
       const results: UnifiedSearchResult[] = [];
 
       // Search for text content if requested
-      if (searchType === "text" || searchType === "both") {
+      if (searchType === 'text' || searchType === 'both') {
         const textResults = await this.executeRipgrep(query, options);
         results.push(
           ...textResults.map((r) => ({
-            type: "text" as const,
+            type: 'text' as const,
             file: r.file,
             line: r.line,
             column: r.column,
@@ -70,11 +70,11 @@ export class SearchTool {
       }
 
       // Search for files if requested
-      if (searchType === "files" || searchType === "both") {
+      if (searchType === 'files' || searchType === 'both') {
         const fileResults = await this.findFilesByPattern(query, options);
         results.push(
           ...fileResults.map((r) => ({
-            type: "file" as const,
+            type: 'file' as const,
             file: r.path,
             score: r.score,
           }))
@@ -88,11 +88,7 @@ export class SearchTool {
         };
       }
 
-      const formattedOutput = this.formatUnifiedResults(
-        results,
-        query,
-        searchType
-      );
+      const formattedOutput = this.formatUnifiedResults(results, query, searchType);
 
       return {
         success: true,
@@ -124,88 +120,88 @@ export class SearchTool {
   ): Promise<SearchResult[]> {
     return new Promise((resolve, reject) => {
       const args = [
-        "--json",
-        "--with-filename",
-        "--line-number",
-        "--column",
-        "--no-heading",
-        "--color=never",
+        '--json',
+        '--with-filename',
+        '--line-number',
+        '--column',
+        '--no-heading',
+        '--color=never',
       ];
 
       // Add case sensitivity
       if (!options.caseSensitive) {
-        args.push("--ignore-case");
+        args.push('--ignore-case');
       }
 
       // Add whole word matching
       if (options.wholeWord) {
-        args.push("--word-regexp");
+        args.push('--word-regexp');
       }
 
       // Add regex mode
       if (!options.regex) {
-        args.push("--fixed-strings");
+        args.push('--fixed-strings');
       }
 
       // Add max results limit
       if (options.maxResults) {
-        args.push("--max-count", options.maxResults.toString());
+        args.push('--max-count', options.maxResults.toString());
       }
 
       // Add file type filters
       if (options.fileTypes) {
         options.fileTypes.forEach((type) => {
-          args.push("--type", type);
+          args.push('--type', type);
         });
       }
 
       // Add include pattern
       if (options.includePattern) {
-        args.push("--glob", options.includePattern);
+        args.push('--glob', options.includePattern);
       }
 
       // Add exclude pattern
       if (options.excludePattern) {
-        args.push("--glob", `!${options.excludePattern}`);
+        args.push('--glob', `!${options.excludePattern}`);
       }
 
       // Add exclude files
       if (options.excludeFiles) {
         options.excludeFiles.forEach((file) => {
-          args.push("--glob", `!${file}`);
+          args.push('--glob', `!${file}`);
         });
       }
 
       // Respect gitignore and common ignore patterns
       args.push(
-        "--no-require-git",
-        "--follow",
-        "--glob",
-        "!.git/**",
-        "--glob",
-        "!node_modules/**",
-        "--glob",
-        "!.DS_Store",
-        "--glob",
-        "!*.log"
+        '--no-require-git',
+        '--follow',
+        '--glob',
+        '!.git/**',
+        '--glob',
+        '!node_modules/**',
+        '--glob',
+        '!.DS_Store',
+        '--glob',
+        '!*.log'
       );
 
       // Add query and search directory
       args.push(query, this.currentDirectory);
 
-      const rg = spawn("rg", args);
-      let output = "";
-      let errorOutput = "";
+      const rg = spawn('rg', args);
+      let output = '';
+      let errorOutput = '';
 
-      rg.stdout.on("data", (data) => {
+      rg.stdout.on('data', (data) => {
         output += data.toString();
       });
 
-      rg.stderr.on("data", (data) => {
+      rg.stderr.on('data', (data) => {
         errorOutput += data.toString();
       });
 
-      rg.on("close", (code) => {
+      rg.on('close', (code) => {
         if (code === 0 || code === 1) {
           // 0 = found, 1 = not found
           const results = this.parseRipgrepOutput(output);
@@ -215,7 +211,7 @@ export class SearchTool {
         }
       });
 
-      rg.on("error", (error) => {
+      rg.on('error', (error) => {
         reject(error);
       });
     });
@@ -228,20 +224,20 @@ export class SearchTool {
     const results: SearchResult[] = [];
     const lines = output
       .trim()
-      .split("\n")
+      .split('\n')
       .filter((line) => line.length > 0);
 
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === "match") {
+        if (parsed.type === 'match') {
           const data = parsed.data;
           results.push({
             file: data.path.text,
             line: data.line_number,
             column: data.submatches[0]?.start || 0,
             text: data.lines.text.trim(),
-            match: data.submatches[0]?.match?.text || "",
+            match: data.submatches[0]?.match?.text || '',
           });
         }
       } catch (e) {
@@ -281,41 +277,27 @@ export class SearchTool {
           const relativePath = path.relative(this.currentDirectory, fullPath);
 
           // Skip hidden files unless explicitly included
-          if (!options.includeHidden && entry.name.startsWith(".")) {
+          if (!options.includeHidden && entry.name.startsWith('.')) {
             continue;
           }
 
           // Skip common directories
           if (
             entry.isDirectory() &&
-            [
-              "node_modules",
-              ".git",
-              ".svn",
-              ".hg",
-              "dist",
-              "build",
-              ".next",
-              ".cache",
-            ].includes(entry.name)
+            ['node_modules', '.git', '.svn', '.hg', 'dist', 'build', '.next', '.cache'].includes(
+              entry.name
+            )
           ) {
             continue;
           }
 
           // Apply exclude pattern
-          if (
-            options.excludePattern &&
-            relativePath.includes(options.excludePattern)
-          ) {
+          if (options.excludePattern && relativePath.includes(options.excludePattern)) {
             continue;
           }
 
           if (entry.isFile()) {
-            const score = this.calculateFileScore(
-              entry.name,
-              relativePath,
-              searchPattern
-            );
+            const score = this.calculateFileScore(entry.name, relativePath, searchPattern);
             if (score > 0) {
               files.push({
                 path: relativePath,
@@ -341,11 +323,7 @@ export class SearchTool {
   /**
    * Calculate fuzzy match score for file names
    */
-  private calculateFileScore(
-    fileName: string,
-    filePath: string,
-    pattern: string
-  ): number {
+  private calculateFileScore(fileName: string, filePath: string, pattern: string): number {
     const lowerFileName = fileName.toLowerCase();
     const lowerFilePath = filePath.toLowerCase();
 
@@ -358,11 +336,7 @@ export class SearchTool {
 
     // Fuzzy matching - check if all characters of pattern exist in order
     let patternIndex = 0;
-    for (
-      let i = 0;
-      i < lowerFileName.length && patternIndex < pattern.length;
-      i++
-    ) {
+    for (let i = 0; i < lowerFileName.length && patternIndex < pattern.length; i++) {
       if (lowerFileName[i] === pattern[patternIndex]) {
         patternIndex++;
       }
@@ -391,8 +365,8 @@ export class SearchTool {
     let output = `Search results for "${query}":\n`;
 
     // Separate text and file results
-    const textResults = results.filter((r) => r.type === "text");
-    const fileResults = results.filter((r) => r.type === "file");
+    const textResults = results.filter((r) => r.type === 'text');
+    const fileResults = results.filter((r) => r.type === 'file');
 
     // Show all unique files (from both text matches and file matches)
     const allFiles = new Set<string>();
@@ -414,7 +388,7 @@ export class SearchTool {
     fileList.slice(0, displayLimit).forEach((file) => {
       // Count matches in this file for text results
       const matchCount = textResults.filter((r) => r.file === file).length;
-      const matchIndicator = matchCount > 0 ? ` (${matchCount} matches)` : "";
+      const matchIndicator = matchCount > 0 ? ` (${matchCount} matches)` : '';
       output += `  ${file}${matchIndicator}\n`;
     });
 

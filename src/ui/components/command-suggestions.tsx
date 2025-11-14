@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React from 'react';
+import { Box, Text } from 'ink';
 
 interface CommandSuggestion {
   command: string;
@@ -23,8 +23,8 @@ export function CommandSuggestions({
 
   const filteredSuggestions = suggestions
     .filter((suggestion) =>
-      input.startsWith("/")
-        ? suggestion.command.startsWith("/")
+      input.startsWith('/')
+        ? suggestion.command.startsWith('/')
         : suggestion.command.toLowerCase().startsWith(input.toLowerCase())
     )
     .slice(0, 8);
@@ -34,8 +34,8 @@ export function CommandSuggestions({
       {filteredSuggestions.map((suggestion, index) => (
         <Box key={index} paddingLeft={1}>
           <Text
-            color={index === selectedIndex ? "black" : "white"}
-            backgroundColor={index === selectedIndex ? "cyan" : undefined}
+            color={index === selectedIndex ? 'black' : 'white'}
+            backgroundColor={index === selectedIndex ? 'cyan' : undefined}
           >
             {suggestion.command}
           </Text>

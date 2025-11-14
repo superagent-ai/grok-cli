@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
-import { formatTokenCount } from "../../utils/token-counter";
+import React, { useState, useEffect } from 'react';
+import { Box, Text } from 'ink';
+import { formatTokenCount } from '../../utils/token-counter';
 
 interface LoadingSpinnerProps {
   isActive: boolean;
@@ -9,34 +9,30 @@ interface LoadingSpinnerProps {
 }
 
 const loadingTexts = [
-  "Thinking...",
-  "Computing...",
-  "Analyzing...",
-  "Processing...",
-  "Calculating...",
-  "Interfacing...",
-  "Optimizing...",
-  "Synthesizing...",
-  "Decrypting...",
-  "Calibrating...",
-  "Bootstrapping...",
-  "Synchronizing...",
-  "Compiling...",
-  "Downloading...",
+  'Thinking...',
+  'Computing...',
+  'Analyzing...',
+  'Processing...',
+  'Calculating...',
+  'Interfacing...',
+  'Optimizing...',
+  'Synthesizing...',
+  'Decrypting...',
+  'Calibrating...',
+  'Bootstrapping...',
+  'Synchronizing...',
+  'Compiling...',
+  'Downloading...',
 ];
 
-export function LoadingSpinner({
-  isActive,
-  processingTime,
-  tokenCount,
-}: LoadingSpinnerProps) {
+export function LoadingSpinner({ isActive, processingTime, tokenCount }: LoadingSpinnerProps) {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
 
   useEffect(() => {
     if (!isActive) return;
 
-    const spinnerFrames = ["/", "-", "\\", "|"];
+    const spinnerFrames = ['/', '-', '\\', '|'];
     // Reduced frequency: 500ms instead of 250ms to reduce flickering on Windows
     const interval = setInterval(() => {
       setSpinnerFrame((prev) => (prev + 1) % spinnerFrames.length);
@@ -60,16 +56,15 @@ export function LoadingSpinner({
 
   if (!isActive) return null;
 
-  const spinnerFrames = ["/", "-", "\\", "|"];
+  const spinnerFrames = ['/', '-', '\\', '|'];
 
   return (
     <Box marginTop={1}>
       <Text color="cyan">
-        {spinnerFrames[spinnerFrame]} {loadingTexts[loadingTextIndex]}{" "}
+        {spinnerFrames[spinnerFrame]} {loadingTexts[loadingTextIndex]}{' '}
       </Text>
       <Text color="gray">
-        ({processingTime}s · ↑ {formatTokenCount(tokenCount)} tokens · esc to
-        interrupt)
+        ({processingTime}s · ↑ {formatTokenCount(tokenCount)} tokens · esc to interrupt)
       </Text>
     </Box>
   );

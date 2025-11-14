@@ -1,240 +1,235 @@
-import { GrokTool } from "./client";
+import { GrokTool } from './client';
 
 export const GROK_TOOLS: GrokTool[] = [
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "view_file",
-      description: "View contents of a file or list directory contents",
+      name: 'view_file',
+      description: 'View contents of a file or list directory contents',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           path: {
-            type: "string",
-            description: "Path to file or directory to view",
+            type: 'string',
+            description: 'Path to file or directory to view',
           },
           start_line: {
-            type: "number",
-            description:
-              "Starting line number for partial file view (optional)",
+            type: 'number',
+            description: 'Starting line number for partial file view (optional)',
           },
           end_line: {
-            type: "number",
-            description: "Ending line number for partial file view (optional)",
+            type: 'number',
+            description: 'Ending line number for partial file view (optional)',
           },
         },
-        required: ["path"],
+        required: ['path'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "create_file",
-      description: "Create a new file with specified content",
+      name: 'create_file',
+      description: 'Create a new file with specified content',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           path: {
-            type: "string",
-            description: "Path where the file should be created",
+            type: 'string',
+            description: 'Path where the file should be created',
           },
           content: {
-            type: "string",
-            description: "Content to write to the file",
+            type: 'string',
+            description: 'Content to write to the file',
           },
         },
-        required: ["path", "content"],
+        required: ['path', 'content'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "str_replace_editor",
-      description: "Replace specific text in a file",
+      name: 'str_replace_editor',
+      description: 'Replace specific text in a file',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           path: {
-            type: "string",
-            description: "Path to the file to edit",
+            type: 'string',
+            description: 'Path to the file to edit',
           },
           old_str: {
-            type: "string",
+            type: 'string',
             description:
-              "Text to replace (must match exactly, or will use fuzzy matching for multi-line strings)",
+              'Text to replace (must match exactly, or will use fuzzy matching for multi-line strings)',
           },
           new_str: {
-            type: "string",
-            description: "Text to replace with",
+            type: 'string',
+            description: 'Text to replace with',
           },
           replace_all: {
-            type: "boolean",
-            description:
-              "Replace all occurrences (default: false, only replaces first occurrence)",
+            type: 'boolean',
+            description: 'Replace all occurrences (default: false, only replaces first occurrence)',
           },
         },
-        required: ["path", "old_str", "new_str"],
+        required: ['path', 'old_str', 'new_str'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "bash",
-      description: "Execute a bash command",
+      name: 'bash',
+      description: 'Execute a bash command',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           command: {
-            type: "string",
-            description: "The bash command to execute",
+            type: 'string',
+            description: 'The bash command to execute',
           },
         },
-        required: ["command"],
+        required: ['command'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "search",
+      name: 'search',
       description:
         "Unified search tool for finding text content or files (similar to Cursor's search)",
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           query: {
-            type: "string",
-            description: "Text to search for or file name/path pattern",
+            type: 'string',
+            description: 'Text to search for or file name/path pattern',
           },
           search_type: {
-            type: "string",
-            enum: ["text", "files", "both"],
+            type: 'string',
+            enum: ['text', 'files', 'both'],
             description:
               "Type of search: 'text' for content search, 'files' for file names, 'both' for both (default: 'both')",
           },
           include_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to include (e.g. '*.ts', '*.js')",
+            type: 'string',
+            description: "Glob pattern for files to include (e.g. '*.ts', '*.js')",
           },
           exclude_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to exclude (e.g. '*.log', 'node_modules')",
+            type: 'string',
+            description: "Glob pattern for files to exclude (e.g. '*.log', 'node_modules')",
           },
           case_sensitive: {
-            type: "boolean",
-            description:
-              "Whether search should be case sensitive (default: false)",
+            type: 'boolean',
+            description: 'Whether search should be case sensitive (default: false)',
           },
           whole_word: {
-            type: "boolean",
-            description: "Whether to match whole words only (default: false)",
+            type: 'boolean',
+            description: 'Whether to match whole words only (default: false)',
           },
           regex: {
-            type: "boolean",
-            description: "Whether query is a regex pattern (default: false)",
+            type: 'boolean',
+            description: 'Whether query is a regex pattern (default: false)',
           },
           max_results: {
-            type: "number",
-            description: "Maximum number of results to return (default: 50)",
+            type: 'number',
+            description: 'Maximum number of results to return (default: 50)',
           },
           file_types: {
-            type: "array",
-            items: { type: "string" },
+            type: 'array',
+            items: { type: 'string' },
             description: "File types to search (e.g. ['js', 'ts', 'py'])",
           },
           include_hidden: {
-            type: "boolean",
-            description: "Whether to include hidden files (default: false)",
+            type: 'boolean',
+            description: 'Whether to include hidden files (default: false)',
           },
         },
-        required: ["query"],
+        required: ['query'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "create_todo_list",
-      description: "Create a new todo list for planning and tracking tasks",
+      name: 'create_todo_list',
+      description: 'Create a new todo list for planning and tracking tasks',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           todos: {
-            type: "array",
-            description: "Array of todo items",
+            type: 'array',
+            description: 'Array of todo items',
             items: {
-              type: "object",
+              type: 'object',
               properties: {
                 id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item",
+                  type: 'string',
+                  description: 'Unique identifier for the todo item',
                 },
                 content: {
-                  type: "string",
-                  description: "Description of the todo item",
+                  type: 'string',
+                  description: 'Description of the todo item',
                 },
                 status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item",
+                  type: 'string',
+                  enum: ['pending', 'in_progress', 'completed'],
+                  description: 'Current status of the todo item',
                 },
                 priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item",
+                  type: 'string',
+                  enum: ['high', 'medium', 'low'],
+                  description: 'Priority level of the todo item',
                 },
               },
-              required: ["id", "content", "status", "priority"],
+              required: ['id', 'content', 'status', 'priority'],
             },
           },
         },
-        required: ["todos"],
+        required: ['todos'],
       },
     },
   },
   {
-    type: "function",
+    type: 'function',
     function: {
-      name: "update_todo_list",
-      description: "Update existing todos in the todo list",
+      name: 'update_todo_list',
+      description: 'Update existing todos in the todo list',
       parameters: {
-        type: "object",
+        type: 'object',
         properties: {
           updates: {
-            type: "array",
-            description: "Array of todo updates",
+            type: 'array',
+            description: 'Array of todo updates',
             items: {
-              type: "object",
+              type: 'object',
               properties: {
                 id: {
-                  type: "string",
-                  description: "ID of the todo item to update",
+                  type: 'string',
+                  description: 'ID of the todo item to update',
                 },
                 status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item",
+                  type: 'string',
+                  enum: ['pending', 'in_progress', 'completed'],
+                  description: 'New status for the todo item',
                 },
                 content: {
-                  type: "string",
-                  description: "New content for the todo item",
+                  type: 'string',
+                  description: 'New content for the todo item',
                 },
                 priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item",
+                  type: 'string',
+                  enum: ['high', 'medium', 'low'],
+                  description: 'New priority for the todo item',
                 },
               },
-              required: ["id"],
+              required: ['id'],
             },
           },
         },
-        required: ["updates"],
+        required: ['updates'],
       },
     },
   },

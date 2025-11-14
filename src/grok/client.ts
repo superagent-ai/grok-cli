@@ -1,15 +1,15 @@
-import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat';
 
 export type GrokMessage = ChatCompletionMessageParam;
 
 export interface GrokTool {
-  type: "function";
+  type: 'function';
   function: {
     name: string;
     description: string;
     parameters: {
-      type: "object";
+      type: 'object';
       properties: Record<string, any>;
       required: string[];
     };
@@ -18,7 +18,7 @@ export interface GrokTool {
 
 export interface GrokToolCall {
   id: string;
-  type: "function";
+  type: 'function';
   function: {
     name: string;
     arguments: string;
@@ -26,7 +26,7 @@ export interface GrokToolCall {
 }
 
 export interface SearchParameters {
-  mode?: "auto" | "on" | "off";
+  mode?: 'auto' | 'on' | 'off';
   // sources removed - let API use default sources to avoid format issues
 }
 
@@ -47,12 +47,12 @@ export interface GrokResponse {
 
 export class GrokClient {
   private client: OpenAI;
-  private currentModel: string = "grok-3-latest";
+  private currentModel: string = 'grok-3-latest';
 
   constructor(apiKey: string, model?: string, baseURL?: string) {
     this.client = new OpenAI({
       apiKey,
-      baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
+      baseURL: baseURL || process.env.GROK_BASE_URL || 'https://api.x.ai/v1',
       timeout: 360000,
     });
     if (model) {
@@ -79,7 +79,7 @@ export class GrokClient {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : undefined,
+        tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
         temperature: 0.7,
         max_tokens: 4000,
       };
@@ -89,9 +89,7 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
-      const response = await this.client.chat.completions.create(
-        requestPayload
-      );
+      const response = await this.client.chat.completions.create(requestPayload);
 
       return response as GrokResponse;
     } catch (error: any) {
@@ -110,7 +108,7 @@ export class GrokClient {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
-        tool_choice: tools && tools.length > 0 ? "auto" : undefined,
+        tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
         temperature: 0.7,
         max_tokens: 4000,
         stream: true,
@@ -121,9 +119,7 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
-      const stream = (await this.client.chat.completions.create(
-        requestPayload
-      )) as any;
+      const stream = (await this.client.chat.completions.create(requestPayload)) as any;
 
       for await (const chunk of stream) {
         yield chunk;
@@ -133,17 +129,14 @@ export class GrokClient {
     }
   }
 
-  async search(
-    query: string,
-    searchParameters?: SearchParameters
-  ): Promise<GrokResponse> {
+  async search(query: string, searchParameters?: SearchParameters): Promise<GrokResponse> {
     const searchMessage: GrokMessage = {
-      role: "user",
+      role: 'user',
       content: query,
     };
 
     const searchOptions: SearchOptions = {
-      search_parameters: searchParameters || { mode: "on" },
+      search_parameters: searchParameters || { mode: 'on' },
     };
 
     return this.chat([searchMessage], [], undefined, searchOptions);

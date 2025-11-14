@@ -21,19 +21,19 @@ function ensureSettingsDirectory(): void {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  selectedModel: 'grok-4-latest'
+  selectedModel: 'grok-4-latest',
 };
 
 export function loadSettings(): Settings {
   try {
     ensureSettingsDirectory();
     const settingsPath = getSettingsPath();
-    
+
     if (!fs.existsSync(settingsPath)) {
       saveSettings(DEFAULT_SETTINGS);
       return DEFAULT_SETTINGS;
     }
-    
+
     const settingsContent = fs.readFileSync(settingsPath, 'utf-8');
     return JSON.parse(settingsContent);
   } catch (error) {
@@ -46,7 +46,7 @@ export function saveSettings(settings: Settings): void {
   try {
     ensureSettingsDirectory();
     const settingsPath = getSettingsPath();
-    
+
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   } catch (error) {
     console.error('Failed to save settings:', error);
