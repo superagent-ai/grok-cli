@@ -6,87 +6,11 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { GrokAgent } from "./agent/grok-agent";
 import ChatInterface from "./ui/components/chat-interface";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
 import { ConfirmationService } from "./utils/confirmation-service";
+import { resolveConfig, validateConfig, getConfigHelp } from "./utils/config";
 
 // Load environment variables
 dotenv.config();
-
-// Ensure user .grok directory exists with default settings
-function ensureUserSettingsDirectory(): void {
-  try {
-    const homeDir = os.homedir();
-    const grokDir = path.join(homeDir, ".grok");
-    const settingsFile = path.join(grokDir, "user-settings.json");
-
-    // Create .grok directory if it doesn't exist
-    if (!fs.existsSync(grokDir)) {
-      fs.mkdirSync(grokDir, { recursive: true });
-    }
-
-    // Create default user-settings.json if it doesn't exist
-    if (!fs.existsSync(settingsFile)) {
-      const defaultSettings = {
-        apiKey: "",
-        baseURL: "",
-        defaultModel: "grok-4-latest"
-      };
-      fs.writeFileSync(settingsFile, JSON.stringify(defaultSettings, null, 2));
-    }
-  } catch (error) {
-    // Silently ignore errors during setup
-  }
-}
-
-// Load API key from user settings if not in environment
-function loadApiKey(): string | undefined {
-  // First check environment variables
-  let apiKey = process.env.GROK_API_KEY;
-
-  if (!apiKey) {
-    // Try to load from user settings file
-    try {
-      ensureUserSettingsDirectory();
-      const homeDir = os.homedir();
-      const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
-
-      if (fs.existsSync(settingsFile)) {
-        const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
-        apiKey = settings.apiKey;
-      }
-    } catch (error) {
-      // Ignore errors, apiKey will remain undefined
-    }
-  }
-
-  return apiKey;
-}
-
-// Load base URL from user settings if not in environment
-function loadBaseURL(): string | undefined {
-  // First check environment variables
-  let baseURL = process.env.GROK_BASE_URL;
-
-  if (!baseURL) {
-    // Try to load from user settings file
-    try {
-      ensureUserSettingsDirectory();
-      const homeDir = os.homedir();
-      const settingsFile = path.join(homeDir, ".grok", "user-settings.json");
-
-      if (fs.existsSync(settingsFile)) {
-        const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
-        baseURL = settings.baseURL;
-      }
-    } catch (error) {
-      // Ignore errors, baseURL will remain undefined
-    }
-  }
-
-  return baseURL;
-}
 
 // Handle commit-and-push command in headless mode
 async function handleCommitAndPushHeadless(
@@ -295,17 +219,23 @@ program
     }
 
     try {
-      // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
-      const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      // Resolve configuration from all sources
+      const config = resolveConfig({
+        apiKey: options.apiKey,
+        baseURL: options.baseUrl,
+        model: options.model,
+      });
 
-      if (!apiKey) {
-        console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
-        );
+      // Validate required configuration
+      const validation = validateConfig(config);
+      if (!validation.valid) {
+        console.error("❌ Configuration Error:");
+        validation.errors.forEach((error) => console.error(`  - ${error}`));
+        console.log(getConfigHelp());
         process.exit(1);
       }
+
+      const { apiKey, baseURL, model } = config;
 
       // Headless mode: process prompt and exit
       if (options.prompt) {
@@ -355,17 +285,23 @@ gitCommand
     }
 
     try {
-      // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || loadApiKey();
-      const baseURL = options.baseUrl || loadBaseURL();
-      const model = options.model;
+      // Resolve configuration from all sources
+      const config = resolveConfig({
+        apiKey: options.apiKey,
+        baseURL: options.baseUrl,
+        model: options.model,
+      });
 
-      if (!apiKey) {
-        console.error(
-          "❌ Error: API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.grok/user-settings.json"
-        );
+      // Validate required configuration
+      const validation = validateConfig(config);
+      if (!validation.valid) {
+        console.error("❌ Configuration Error:");
+        validation.errors.forEach((error) => console.error(`  - ${error}`));
+        console.log(getConfigHelp());
         process.exit(1);
       }
+
+      const { apiKey, baseURL, model } = config;
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model);
     } catch (error: any) {
