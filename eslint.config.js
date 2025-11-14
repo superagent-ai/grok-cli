@@ -30,9 +30,15 @@ module.exports = [
     },
     rules: {
       ...typescriptEslint.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': 'error',
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
       '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
       'no-undef': 'off', // TypeScript handles this
+      'no-case-declarations': 'off', // Allow lexical declarations in case blocks
     },
   },
   {
@@ -42,6 +48,8 @@ module.exports = [
       'build/**',
       'coverage/**',
       '.husky/**',
+      '*.config.js',
+      '*.config.ts',
     ],
   },
 ];

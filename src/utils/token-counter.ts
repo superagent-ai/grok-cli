@@ -91,3 +91,26 @@ export function formatTokenCount(count: number): string {
 export function createTokenCounter(model?: string): TokenCounter {
   return new TokenCounter(model);
 }
+
+// Singleton instance for simple usage
+let defaultCounter: TokenCounter | null = null;
+
+/**
+ * Count tokens in a string using default encoder
+ * This is a convenience function for simple token counting
+ *
+ * @param text - The text to count tokens for
+ * @returns Number of tokens
+ *
+ * @example
+ * ```typescript
+ * const count = countTokens('Hello, world!');
+ * console.log(count); // 4
+ * ```
+ */
+export function countTokens(text: string): number {
+  if (!defaultCounter) {
+    defaultCounter = new TokenCounter();
+  }
+  return defaultCounter.countTokens(text);
+}

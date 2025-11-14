@@ -46,18 +46,16 @@ export function validatePath(inputPath: string, workingDir: string): string {
     throw new Error(`Path traversal detected: "${inputPath}" resolves outside working directory`);
   }
 
-  // Check for sensitive files
-  const basename = path.basename(resolvedPath);
+  // Check if it's in .ssh directory (check first before filename)
   const dirname = path.basename(path.dirname(resolvedPath));
-
-  // Check if filename is in sensitive list
-  if (SENSITIVE_FILES.includes(basename)) {
-    throw new Error(`Access to sensitive file "${basename}" is not allowed`);
-  }
-
-  // Check if it's in .ssh directory
   if (dirname === '.ssh' || resolvedPath.includes('/.ssh/')) {
     throw new Error(`Access to .ssh directory is not allowed`);
+  }
+
+  // Check for sensitive files
+  const basename = path.basename(resolvedPath);
+  if (SENSITIVE_FILES.includes(basename)) {
+    throw new Error(`Access to sensitive file "${basename}" is not allowed`);
   }
 
   return resolvedPath;
