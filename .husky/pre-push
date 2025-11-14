@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run full test suite with coverage
+echo "Running full test suite..."
+npm run test:coverage || exit 1
+
+# Check for vulnerabilities
+echo "Checking for vulnerabilities..."
+npm audit --audit-level=moderate || exit 1
+
+echo "✓ Pre-push checks passed!"
