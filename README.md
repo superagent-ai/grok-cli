@@ -1,5 +1,12 @@
 # Grok CLI
 
+[![npm version](https://img.shields.io/npm/v/@vibe-kit/grok-cli.svg)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
+[![CI](https://github.com/vibe-kit/grok-cli/workflows/CI/badge.svg)](https://github.com/vibe-kit/grok-cli/actions)
+[![codecov](https://codecov.io/gh/vibe-kit/grok-cli/branch/main/graph/badge.svg)](https://codecov.io/gh/vibe-kit/grok-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/node/v/@vibe-kit/grok-cli.svg)](https://nodejs.org)
+[![Downloads](https://img.shields.io/npm/dm/@vibe-kit/grok-cli.svg)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
+
 A conversational AI CLI tool powered by Grok with intelligent text editor capabilities and tool usage.
 
 <img width="980" height="435" alt="Screenshot 2025-07-21 at 13 35 41" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
