@@ -81,7 +81,7 @@ function ChatInterfaceWithAgent({
     console.log("    ");
 
     // Generate logo with margin to match Ink paddingX={2}
-    const logoOutput = cfonts.render("AX-CLI", {
+    const logoOutput = cfonts.render("AXCLI", {
       font: "3d",
       align: "left",
       colors: ["white"],
