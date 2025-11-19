@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MessageRoleEnum, FinishReasonEnum } from '@ax-cli/schemas';
 
 /**
  * Configuration schemas using Zod for runtime validation
@@ -71,7 +72,7 @@ export const APIResponseSchema = z.object({
   choices: z.array(z.object({
     index: z.number(),
     message: z.object({
-      role: z.enum(['system', 'user', 'assistant', 'tool']),
+      role: MessageRoleEnum,
       content: z.string().nullable(),
       tool_calls: z.array(z.object({
         id: z.string(),
@@ -82,7 +83,7 @@ export const APIResponseSchema = z.object({
         }),
       })).optional(),
     }),
-    finish_reason: z.enum(['stop', 'length', 'tool_calls', 'content_filter']).nullable(),
+    finish_reason: FinishReasonEnum.nullable(),
   })),
   usage: z.object({
     prompt_tokens: z.number(),
