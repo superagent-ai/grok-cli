@@ -2,6 +2,18 @@
 src/
 tsconfig.json
 
+# AutomatosX development files
+.automatosx/
+automatosx/
+.ax/
+.claude/
+.grok/
+quality_report.md
+CLAUDE.md
+
+# Monorepo packages (development only)
+packages/
+
 # Lock files from other package managers
 yarn.lock
 

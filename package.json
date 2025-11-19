@@ -71,7 +71,7 @@
     "@vitest/ui": "^4.0.10",
     "eslint": "^9.31.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.3.3",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.10"
   },
   "engines": {
