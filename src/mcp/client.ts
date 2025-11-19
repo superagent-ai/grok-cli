@@ -1,16 +1,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { EventEmitter } from "events";
-import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
+import { createTransport, MCPTransport, TransportType } from "./transports.js";
+import { MCP_CONFIG, ERROR_MESSAGES } from "../constants.js";
+import { MCPServerConfigSchema } from "../schemas/settings-schemas.js";
+import type { MCPServerConfig, MCPTransportConfig } from "../schemas/settings-schemas.js";
 
-export interface MCPServerConfig {
-  name: string;
-  transport: TransportConfig;
-  // Legacy support for stdio-only configs
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
+// Re-export types for external use
+export type { MCPServerConfig, MCPTransportConfig };
 
 export interface MCPTool {
   name: string;
@@ -45,30 +42,38 @@ export class MCPManager extends EventEmitter {
 
   private async _addServerInternal(config: MCPServerConfig): Promise<void> {
     try {
+      // Validate config with Zod
+      const validationResult = MCPServerConfigSchema.safeParse(config);
+      if (!validationResult.success) {
+        throw new Error(`Invalid MCP server config: ${validationResult.error.message}`);
+      }
+
+      const validatedConfig = validationResult.data;
+
       // Handle legacy stdio-only configuration
-      let transportConfig = config.transport;
-      if (!transportConfig && config.command) {
+      let transportConfig = validatedConfig.transport;
+      if (!transportConfig && validatedConfig.command) {
         transportConfig = {
-          type: 'stdio',
-          command: config.command,
-          args: config.args,
-          env: config.env
+          type: 'stdio' as const,
+          command: validatedConfig.command,
+          args: validatedConfig.args,
+          env: validatedConfig.env
         };
       }
 
       if (!transportConfig) {
-        throw new Error('Transport configuration is required');
+        throw new Error(ERROR_MESSAGES.TRANSPORT_CONFIG_REQUIRED);
       }
 
       // Create transport
       const transport = createTransport(transportConfig);
-      this.transports.set(config.name, transport);
+      this.transports.set(validatedConfig.name, transport);
 
       // Create client
       const client = new Client(
         {
-          name: "ax-cli",
-          version: "1.0.0"
+          name: MCP_CONFIG.CLIENT_NAME,
+          version: MCP_CONFIG.CLIENT_VERSION
         },
         {
           capabilities: {

@@ -1,26 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { UserSettingsSchema, ProjectSettingsSchema } from "../schemas/settings-schemas.js";
+import type { UserSettings, ProjectSettings } from "../schemas/settings-schemas.js";
 
-/**
- * User-level settings stored in ~/.grok/user-settings.json
- * These are global settings that apply across all projects
- */
-export interface UserSettings {
-  apiKey?: string; // Grok API key
-  baseURL?: string; // API base URL
-  defaultModel?: string; // User's preferred default model
-  models?: string[]; // Available models list
-}
-
-/**
- * Project-level settings stored in .grok/settings.json
- * These are project-specific settings
- */
-export interface ProjectSettings {
-  model?: string; // Current model for this project
-  mcpServers?: Record<string, any>; // MCP server configurations
-}
+// Re-export types for external use
+export type { UserSettings, ProjectSettings };
 
 /**
  * Default values for user settings
@@ -101,10 +86,21 @@ export class SettingsManager {
       }
 
       const content = fs.readFileSync(this.userSettingsPath, "utf-8");
-      const settings = JSON.parse(content);
+      const rawSettings = JSON.parse(content);
+
+      // Validate with Zod schema
+      const validationResult = UserSettingsSchema.safeParse(rawSettings);
+
+      if (!validationResult.success) {
+        console.warn(
+          "User settings validation failed, using defaults:",
+          validationResult.error.message
+        );
+        return { ...DEFAULT_USER_SETTINGS };
+      }
 
       // Merge with defaults to ensure all required fields exist
-      return { ...DEFAULT_USER_SETTINGS, ...settings };
+      return { ...DEFAULT_USER_SETTINGS, ...validationResult.data };
     } catch (error) {
       console.warn(
         "Failed to load user settings:",
@@ -181,10 +177,21 @@ export class SettingsManager {
       }
 
       const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
-      const settings = JSON.parse(content);
+      const rawSettings = JSON.parse(content);
+
+      // Validate with Zod schema
+      const validationResult = ProjectSettingsSchema.safeParse(rawSettings);
+
+      if (!validationResult.success) {
+        console.warn(
+          "Project settings validation failed, using defaults:",
+          validationResult.error.message
+        );
+        return { ...DEFAULT_PROJECT_SETTINGS };
+      }
 
       // Merge with defaults
-      return { ...DEFAULT_PROJECT_SETTINGS, ...settings };
+      return { ...DEFAULT_PROJECT_SETTINGS, ...validationResult.data };
     } catch (error) {
       console.warn(
         "Failed to load project settings:",
