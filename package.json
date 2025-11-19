@@ -73,5 +73,16 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/defai-digital/ax-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/defai-digital/ax-cli/issues"
+  },
+  "homepage": "https://github.com/defai-digital/ax-cli#readme",
   "preferGlobal": true
 }

@@ -1,0 +1,168 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v0.0.35, etc.
+  workflow_dispatch:  # Allows manual triggering from GitHub UI
+    inputs:
+      version:
+        description: 'Version to publish (leave empty to use package.json version)'
+        required: false
+        type: string
+
+jobs:
+  test:
+    name: Test Before Publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true  # Don't fail on lint warnings
+
+      - name: Run type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build project
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  publish:
+    name: Publish to NPM
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write  # Required for npm provenance
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Bump version (if manual trigger)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        run: |
+          npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to ${{ github.event.inputs.version }}"
+          git tag "v${{ github.event.inputs.version }}"
+
+      - name: Get package version
+        id: package-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Check if version exists on NPM
+        id: check-version
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          if npm view $PACKAGE_NAME@${{ steps.package-version.outputs.version }} version 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Version ${{ steps.package-version.outputs.version }} already exists on NPM"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Version ${{ steps.package-version.outputs.version }} is new"
+          fi
+
+      - name: Publish to NPM (with provenance)
+        if: steps.check-version.outputs.exists == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.check-version.outputs.exists == 'false' && github.event_name == 'push'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ steps.package-version.outputs.version }}
+          body: |
+            ## AX CLI v${{ steps.package-version.outputs.version }}
+
+            ### Installation
+            ```bash
+            npm install -g @defai.digital/ax-cli@${{ steps.package-version.outputs.version }}
+            ```
+
+            ### Changes
+            See [CHANGELOG.md](https://github.com/defai-digital/ax-cli/blob/main/CHANGELOG.md) for details.
+
+            ### NPM Package
+            https://www.npmjs.com/package/@defai.digital/ax-cli/v/${{ steps.package-version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      - name: Notify success
+        if: steps.check-version.outputs.exists == 'false'
+        run: |
+          echo "🎉 Successfully published @defai.digital/ax-cli@${{ steps.package-version.outputs.version }} to NPM!"
+          echo "📦 NPM Package: https://www.npmjs.com/package/@defai.digital/ax-cli"
+          echo "🏷️ Version: ${{ steps.package-version.outputs.version }}"
+
+      - name: Skip publishing (version exists)
+        if: steps.check-version.outputs.exists == 'true'
+        run: |
+          echo "⏭️ Skipping publish - version ${{ steps.package-version.outputs.version }} already exists on NPM"
+          exit 0
+
+  notify-failure:
+    name: Notify on Failure
+    needs: [test, publish]
+    if: failure()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Notify failure
+        run: |
+          echo "❌ Publish workflow failed!"
+          echo "Please check the logs and fix any issues before retrying."
