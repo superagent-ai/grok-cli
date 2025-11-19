@@ -1,6 +1,6 @@
 {
   "name": "@defai.digital/ax-cli",
-  "version": "0.0.34",
+  "version": "0.1.1",
   "description": "An open-source AI agent CLI powered by AutomatosX - bringing multi-agent orchestration to your terminal.",
   "type": "module",
   "main": "dist/index.js",
