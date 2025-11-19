@@ -499,25 +499,6 @@ ax-cli mcp remove server-name
 - **http**: Connect to HTTP-based MCP server
 - **sse**: Connect via Server-Sent Events
 
-## Development
-
-```bash
-# Install dependencies
-bun install
-
-# Development mode
-bun run dev
-
-# Build project
-bun run build
-
-# Run linter
-bun run lint
-
-# Type check
-bun run typecheck
-```
-
 ## Architecture
 
 - **Agent**: Core command processing and execution logic
