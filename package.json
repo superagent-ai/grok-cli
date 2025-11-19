@@ -1,7 +1,7 @@
 {
-  "name": "@vibe-kit/grok-cli",
+  "name": "@defai-digital/ax-cli",
   "version": "0.0.33",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "description": "An open-source AI agent CLI powered by AutomatosX - bringing multi-agent orchestration to your terminal.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -11,7 +11,7 @@
     }
   },
   "bin": {
-    "grok": "dist/index.js"
+    "ax-cli": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -28,8 +28,9 @@
     "cli",
     "agent",
     "text-editor",
-    "grok",
-    "ai"
+    "automatosx",
+    "ai",
+    "orchestration"
   ],
   "author": "Your Name",
   "license": "MIT",
@@ -48,7 +49,8 @@
     "openai": "^5.10.1",
     "react": "^18.3.1",
     "ripgrep-node": "^1.0.0",
-    "tiktoken": "^1.0.21"
+    "tiktoken": "^1.0.21",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.2",
