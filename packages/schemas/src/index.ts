@@ -44,6 +44,17 @@ export {
   type RequestId as RequestIdType,
 } from './public/core/id-types.js';
 
+// Centralized Enums
+export {
+  MessageRoleEnum,
+  FinishReasonEnum,
+  TransportEnum,
+  EditorCommandEnum,
+  type MessageRole,
+  type FinishReason,
+  type Transport,
+  type EditorCommand,
+} from './public/core/enums.js';
+
 // Additional exports will be added as we implement them:
-// - Enums (MessageRoleEnum, FinishReasonEnum, etc.)
 // - Domain schemas (Usage, API, MCP)
