@@ -14,7 +14,7 @@ export function MCPStatus({}: MCPStatusProps) {
         const servers = manager.getServers();
 
         setConnectedServers(servers);
-      } catch (error) {
+      } catch {
         // MCP manager not initialized yet
         setConnectedServers([]);
       }

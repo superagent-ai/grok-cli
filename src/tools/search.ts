@@ -242,7 +242,7 @@ export class SearchTool {
             match: data.submatches[0]?.match?.text || "",
           });
         }
-      } catch (e) {
+      } catch {
         // Skip invalid JSON lines
         continue;
       }
@@ -325,7 +325,7 @@ export class SearchTool {
             await walkDir(fullPath, depth + 1);
           }
         }
-      } catch (error) {
+      } catch {
         // Skip directories we can't read
       }
     };

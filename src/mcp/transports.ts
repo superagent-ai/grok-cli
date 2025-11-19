@@ -91,7 +91,7 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
     // Test connection
     try {
       await this.client.get('/health');
-    } catch (error) {
+    } catch {
       // If health endpoint doesn't exist, assume connected
     }
 

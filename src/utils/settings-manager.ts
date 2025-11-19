@@ -124,7 +124,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.userSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_USER_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn("Corrupted user settings file, using defaults");
         }
@@ -215,7 +215,7 @@ export class SettingsManager {
           const content = fs.readFileSync(this.projectSettingsPath, "utf-8");
           const parsed = JSON.parse(content);
           existingSettings = { ...DEFAULT_PROJECT_SETTINGS, ...parsed };
-        } catch (error) {
+        } catch {
           // If file is corrupted, use defaults
           console.warn("Corrupted project settings file, using defaults");
         }
