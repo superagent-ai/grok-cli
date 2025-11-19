@@ -20,7 +20,30 @@ export {
   type ExtractBase,
 } from './public/core/brand-types.js';
 
+// ID Brand Types
+export {
+  ApiResponseId,
+  ToolCallId,
+  ModelId,
+  TenantId,
+  ApiKeyId,
+  MCPServerId,
+  UsageRecordId,
+  PlanId,
+  SessionId,
+  RequestId,
+  type ApiResponseId as ApiResponseIdType,
+  type ToolCallId as ToolCallIdType,
+  type ModelId as ModelIdType,
+  type TenantId as TenantIdType,
+  type ApiKeyId as ApiKeyIdType,
+  type MCPServerId as MCPServerIdType,
+  type UsageRecordId as UsageRecordIdType,
+  type PlanId as PlanIdType,
+  type SessionId as SessionIdType,
+  type RequestId as RequestIdType,
+} from './public/core/id-types.js';
+
 // Additional exports will be added as we implement them:
 // - Enums (MessageRoleEnum, FinishReasonEnum, etc.)
 // - Domain schemas (Usage, API, MCP)
-// - Brand type factories (TenantId, ApiKeyId, etc.)
