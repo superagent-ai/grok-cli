@@ -66,7 +66,6 @@ export class GrokAgent extends EventEmitter {
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
-    this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.tokenCounter = createTokenCounter(modelToUse);
 
@@ -156,8 +155,6 @@ Current working directory: ${process.cwd()}`,
         }
       } catch (error) {
         console.warn("MCP initialization failed:", error);
-      } finally {
-        this.mcpInitialized = true;
       }
     });
   }
