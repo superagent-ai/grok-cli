@@ -5,7 +5,6 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen?style=flat-square)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9%2B-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/defai-digital/ax-cli?style=flat-square)](https://github.com/defai-digital/ax-cli/issues)
 
 ![AX CLI Logo](.github/assets/ax-cli.png)
 
