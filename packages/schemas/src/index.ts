@@ -26,6 +26,7 @@ export {
   ToolCallId,
   ToolCallIdSchema,
   ModelId,
+  ModelIdSchema,
   TenantId,
   ApiKeyId,
   MCPServerId,

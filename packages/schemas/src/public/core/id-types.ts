@@ -66,6 +66,12 @@ export const ModelId = createBrandFactory(
 export type ModelId = Brand<string, 'ModelId'>;
 
 /**
+ * ModelIdSchema - Zod schema for ModelId that can be used in z.object()
+ * This transforms strings to branded ModelId types
+ */
+export const ModelIdSchema = z.string().min(1).transform((val) => brand<string, 'ModelId'>(val));
+
+/**
  * Tenant ID - Unique identifier for tenants (multi-tenancy support)
  *
  * @security MUST validate at authentication boundaries

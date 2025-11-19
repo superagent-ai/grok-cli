@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { MessageRoleEnum, ToolCallIdSchema } from '@ax-cli/schemas';
+import { MessageRoleEnum, ToolCallIdSchema, ModelIdSchema } from '@ax-cli/schemas';
 
 // Grok Tool Call Schema
 export const GrokToolCallSchema = z.object({
@@ -34,7 +34,7 @@ export const GrokResponseSchema = z.object({
   id: z.string().optional(),
   object: z.string().optional(),
   created: z.number().optional(),
-  model: z.string().optional(),
+  model: ModelIdSchema.optional(),
   choices: z.array(
     z.object({
       index: z.number().optional(),

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MessageRoleEnum, FinishReasonEnum, TransportEnum } from '@ax-cli/schemas';
+import { MessageRoleEnum, FinishReasonEnum, TransportEnum, ModelIdSchema } from '@ax-cli/schemas';
 
 /**
  * Configuration schemas using Zod for runtime validation
@@ -9,15 +9,15 @@ import { MessageRoleEnum, FinishReasonEnum, TransportEnum } from '@ax-cli/schema
 export const UserSettingsSchema = z.object({
   apiKey: z.string().optional(),
   baseURL: z.string().url().optional(),
-  defaultModel: z.string().optional(),
-  models: z.array(z.string()).optional(),
+  defaultModel: ModelIdSchema.optional(),
+  models: z.array(ModelIdSchema).optional(),
 });
 
 export type UserSettings = z.infer<typeof UserSettingsSchema>;
 
 // Project settings schema
 export const ProjectSettingsSchema = z.object({
-  model: z.string().optional(),
+  model: ModelIdSchema.optional(),
   mcpServers: z.record(z.string(), z.object({
     name: z.string(),
     transport: TransportEnum,
@@ -68,7 +68,7 @@ export const APIResponseSchema = z.object({
   id: z.string(),
   object: z.string(),
   created: z.number(),
-  model: z.string(),
+  model: ModelIdSchema,
   choices: z.array(z.object({
     index: z.number(),
     message: z.object({
