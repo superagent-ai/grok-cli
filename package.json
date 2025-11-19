@@ -1,7 +1,7 @@
 {
   "name": "@defai.digital/ax-cli",
   "version": "0.1.1",
-  "description": "An open-source AI agent CLI powered by AutomatosX - bringing multi-agent orchestration to your terminal.",
+  "description": "Enterprise-Class AI Command Line Interface - Primary support for GLM (General Language Model) with multi-provider AI orchestration powered by AutomatosX.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {

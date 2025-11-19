@@ -19,7 +19,9 @@
 
 ## 🚀 Overview
 
-**AX CLI** is an **enterprise-class AI command line interface** that combines the power of offline-first LLM execution with cloud-based AI providers. Originally forked from [grok-cli](https://github.com/superagent-ai/grok-cli), AX CLI has been extensively upgraded using **AutomatosX** — a multi-agent AI orchestration platform — to deliver production-ready quality with comprehensive testing, robust TypeScript architecture, and enterprise-grade reliability.
+**AX CLI** is an **enterprise-class AI command line interface** primarily designed for **GLM (General Language Model)** with support for multiple AI providers. Combining the power of offline-first local LLM execution with cloud-based AI services, AX CLI delivers production-ready quality with comprehensive testing, robust TypeScript architecture, and enterprise-grade reliability.
+
+Originally forked from [grok-cli](https://github.com/superagent-ai/grok-cli), AX CLI has been extensively upgraded using **AutomatosX** — a multi-agent AI orchestration platform — to achieve enterprise-class standards.
 
 ### 🏆 Enterprise-Class Features
 
@@ -32,6 +34,8 @@
 
 ### 💡 Why AX CLI?
 
+**GLM-Optimized**: Primary support for GLM (General Language Model) with optimized performance for local and cloud GLM deployments.
+
 **Privacy-First**: Run powerful AI models completely offline on your local machine with GLM 4.6, or connect to cloud providers when needed.
 
 **Developer-Centric**: Built by developers, for developers, with smart file operations, bash integration, and intelligent tool selection.
@@ -42,14 +46,17 @@
 
 ## ✨ Key Features
 
-### 🔒 **Offline-First Architecture**
-- Run GLM 4.6 and other LLM models locally via Ollama
-- Zero internet dependency for complete privacy
-- No API keys required for local operation
+### 🔒 **GLM-First Architecture**
+- **Primary Support**: Optimized for GLM (General Language Model) deployments
+- **Local GLM**: Run GLM 4.6 and other GLM models locally via Ollama
+- **Cloud GLM**: Connect to cloud-hosted GLM services
+- **Zero internet dependency** for complete privacy with local models
+- **No API keys required** for local operation
 - Full conversational AI capabilities offline
 
 ### 🚀 **Multi-Provider AI Support**
-- **Local Models**: GLM 4.6 (9B parameters), Llama 3.1, Qwen 2.5, and more
+- **Primary**: GLM 4.6 (9B parameters) - Optimized for AX CLI
+- **Local Models**: Llama 3.1, Qwen 2.5, DeepSeek, and more via Ollama
 - **Cloud Providers**: OpenAI, Anthropic (Claude), X.AI (Grok), OpenRouter, Groq
 - **Flexible Configuration**: Switch between providers seamlessly
 - **OpenAI-Compatible API**: Works with any OpenAI-compatible endpoint
