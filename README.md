@@ -6,7 +6,7 @@
 
 Primary focus: **GLM 4.6** - Run powerful AI assistance completely offline on your local machine.
 
-![AX CLI Logo](https://github.com/user-attachments/assets/1a36e4f4-dc1d-4ada-8a54-36ba31eba00f)
+![AX CLI Logo](.github/assets/ax-cli.png)
 
 ## Features
 
