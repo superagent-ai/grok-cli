@@ -1,6 +1,6 @@
 {
   "name": "@defai.digital/ax-cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Enterprise-Class AI Command Line Interface - Primary support for GLM (General Language Model) with multi-provider AI orchestration powered by AutomatosX.",
   "type": "module",
   "main": "dist/index.js",

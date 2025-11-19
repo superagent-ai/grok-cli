@@ -7,8 +7,55 @@
 export const AGENT_CONFIG = {
   MAX_TOOL_ROUNDS: 400,
   DEFAULT_TIMEOUT: 360000, // 6 minutes
-  DEFAULT_MAX_TOKENS: 1536,
+  DEFAULT_MAX_TOKENS: 8192, // Updated for GLM-4.6 (was 1536)
 } as const;
+
+// GLM Model Configuration
+export const GLM_MODELS = {
+  "glm-4.6": {
+    name: "glm-4.6",
+    contextWindow: 200000,      // 200K tokens
+    maxOutputTokens: 128000,    // 128K max output
+    defaultMaxTokens: 8192,     // Conservative default
+    supportsThinking: true,
+    defaultTemperature: 0.7,
+    temperatureRange: { min: 0.6, max: 1.0 },
+    tokenEfficiency: 1.3,       // 30% more efficient
+  },
+  "grok-code-fast-1": {
+    name: "grok-code-fast-1",
+    contextWindow: 128000,      // 128K tokens
+    maxOutputTokens: 4096,
+    defaultMaxTokens: 1536,
+    supportsThinking: false,
+    defaultTemperature: 0.7,
+    temperatureRange: { min: 0.0, max: 2.0 },
+    tokenEfficiency: 1.0,
+  },
+  "glm-4-air": {
+    name: "glm-4-air",
+    contextWindow: 128000,
+    maxOutputTokens: 8192,
+    defaultMaxTokens: 4096,
+    supportsThinking: false,
+    defaultTemperature: 0.7,
+    temperatureRange: { min: 0.6, max: 1.0 },
+    tokenEfficiency: 1.15,
+  },
+  "glm-4-airx": {
+    name: "glm-4-airx",
+    contextWindow: 8192,
+    maxOutputTokens: 8192,
+    defaultMaxTokens: 2048,
+    supportsThinking: false,
+    defaultTemperature: 0.7,
+    temperatureRange: { min: 0.6, max: 1.0 },
+    tokenEfficiency: 1.1,
+  },
+} as const;
+
+export type SupportedModel = keyof typeof GLM_MODELS;
+export const DEFAULT_MODEL: SupportedModel = "glm-4.6";
 
 // File Operations
 export const FILE_CONFIG = {
