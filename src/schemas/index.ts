@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MessageRoleEnum, FinishReasonEnum, TransportEnum, ModelIdSchema } from '@ax-cli/schemas';
+import { MessageRoleEnum, FinishReasonEnum, TransportEnum, ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
 
 /**
  * Configuration schemas using Zod for runtime validation
@@ -19,7 +19,7 @@ export type UserSettings = z.infer<typeof UserSettingsSchema>;
 export const ProjectSettingsSchema = z.object({
   model: ModelIdSchema.optional(),
   mcpServers: z.record(z.string(), z.object({
-    name: z.string(),
+    name: MCPServerIdSchema,
     transport: TransportEnum,
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
@@ -32,7 +32,7 @@ export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
 
 // MCP Server configuration schema
 export const MCPServerConfigSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
+  name: MCPServerIdSchema,
   transport: TransportEnum,
   command: z.string().optional(),
   args: z.array(z.string()).optional(),

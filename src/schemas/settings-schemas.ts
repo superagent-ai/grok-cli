@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { ModelIdSchema } from '@ax-cli/schemas';
+import { ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
 
 // User Settings Schema
 export const UserSettingsSchema = z.object({
@@ -50,7 +50,7 @@ export const MCPTransportConfigSchema = z.object({
 });
 
 export const MCPServerConfigSchema = z.object({
-  name: z.string().min(1),
+  name: MCPServerIdSchema,
   transport: MCPTransportConfigSchema,
   command: z.string().optional(), // Legacy support
   args: z.array(z.string()).optional(), // Legacy support

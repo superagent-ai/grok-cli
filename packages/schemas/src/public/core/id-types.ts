@@ -109,6 +109,12 @@ export const MCPServerId = createBrandFactory(
 export type MCPServerId = Brand<string, 'MCPServerId'>;
 
 /**
+ * MCPServerIdSchema - Zod schema for MCPServerId that can be used in z.object()
+ * This transforms strings to branded MCPServerId types
+ */
+export const MCPServerIdSchema = z.string().min(1).transform((val) => brand<string, 'MCPServerId'>(val));
+
+/**
  * Usage Record ID - Unique identifier for usage tracking records
  *
  * @security MUST validate at billing/usage boundaries
