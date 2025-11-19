@@ -211,10 +211,11 @@ Current working directory: ${process.cwd()}`,
       let currentResponse = await this.grokClient.chat(
         this.messages,
         tools,
-        undefined,
-        this.isGrokModel() && this.shouldUseSearchFor(message)
-          ? { search_parameters: { mode: "auto" } }
-          : { search_parameters: { mode: "off" } }
+        {
+          searchOptions: this.isGrokModel() && this.shouldUseSearchFor(message)
+            ? { search_parameters: { mode: "auto" } }
+            : { search_parameters: { mode: "off" } }
+        }
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -307,10 +308,11 @@ Current working directory: ${process.cwd()}`,
           currentResponse = await this.grokClient.chat(
             this.messages,
             tools,
-            undefined,
-            this.isGrokModel() && this.shouldUseSearchFor(message)
-              ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
+            {
+              searchOptions: this.isGrokModel() && this.shouldUseSearchFor(message)
+                ? { search_parameters: { mode: "auto" } }
+                : { search_parameters: { mode: "off" } }
+            }
           );
         } else {
           // No more tool calls, add final response
@@ -431,10 +433,11 @@ Current working directory: ${process.cwd()}`,
         const stream = this.grokClient.chatStream(
           this.messages,
           tools,
-          undefined,
-          this.isGrokModel() && this.shouldUseSearchFor(message)
-            ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
+          {
+            searchOptions: this.isGrokModel() && this.shouldUseSearchFor(message)
+              ? { search_parameters: { mode: "auto" } }
+              : { search_parameters: { mode: "off" } }
+          }
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";

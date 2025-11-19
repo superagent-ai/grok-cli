@@ -8,7 +8,6 @@
  * @see https://docs.z.ai/guides/llm/glm-4.6
  */
 
-import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import type { GrokTool, GrokToolCall, SearchOptions } from "./client.js";
 
 /**

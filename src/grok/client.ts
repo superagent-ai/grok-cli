@@ -6,7 +6,6 @@ import { GLM_MODELS, DEFAULT_MODEL, type SupportedModel } from "../constants.js"
 import type {
   ChatOptions,
   ThinkingConfig,
-  GLM46Response,
   GLM46StreamChunk,
 } from "./types.js";
 
