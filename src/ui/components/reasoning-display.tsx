@@ -211,7 +211,7 @@ export function ReasoningSection({
  * @returns Array of reasoning steps
  */
 export function parseReasoningSteps(content: string): string[] {
-  if (!content) return [];
+  if (!content || content.trim().length === 0) return [];
 
   // Try to detect step patterns
   const stepPatterns = [
