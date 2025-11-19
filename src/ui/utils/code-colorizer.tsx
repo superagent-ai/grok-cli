@@ -3,9 +3,9 @@ import { Text, Box } from 'ink';
 
 export const colorizeCode = (
   content: string,
-  language: string | null,
-  availableTerminalHeight?: number,
-  terminalWidth?: number
+  _language: string | null,
+  _availableTerminalHeight?: number,
+  _terminalWidth?: number
 ): React.ReactNode => {
   // Simple plain text rendering - could be enhanced with syntax highlighting later
   return (

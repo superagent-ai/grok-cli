@@ -19,7 +19,6 @@ export interface ConfirmationResult {
 
 export class ConfirmationService extends EventEmitter {
   private static instance: ConfirmationService;
-  private skipConfirmationThisSession = false;
   private pendingConfirmation: Promise<ConfirmationResult> | null = null;
   private resolveConfirmation: ((result: ConfirmationResult) => void) | null =
     null;

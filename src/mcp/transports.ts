@@ -1,6 +1,6 @@
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess } from "child_process";
 import { EventEmitter } from "events";
 import axios, { AxiosInstance } from "axios";
 
@@ -71,7 +71,6 @@ export class StdioTransport implements MCPTransport {
 
 export class HttpTransport extends EventEmitter implements MCPTransport {
   private client?: AxiosInstance;
-  private connected = false;
 
   constructor(private config: TransportConfig) {
     super();
@@ -92,17 +91,14 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
     // Test connection
     try {
       await this.client.get('/health');
-      this.connected = true;
     } catch (error) {
-      // If health endpoint doesn't exist, try a basic request
-      this.connected = true;
+      // If health endpoint doesn't exist, assume connected
     }
 
     return new HttpClientTransport(this.client);
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
     this.client = undefined;
   }
 
@@ -112,8 +108,6 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
 }
 
 export class SSETransport extends EventEmitter implements MCPTransport {
-  private connected = false;
-
   constructor(private config: TransportConfig) {
     super();
     if (!config.url) {
@@ -126,7 +120,6 @@ export class SSETransport extends EventEmitter implements MCPTransport {
       try {
         // For Node.js environment, we'll use a simple HTTP-based approach
         // In a real implementation, you'd use a proper SSE library like 'eventsource'
-        this.connected = true;
         resolve(new SSEClientTransport(this.config.url!));
       } catch (error) {
         reject(error);
@@ -135,7 +128,7 @@ export class SSETransport extends EventEmitter implements MCPTransport {
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
+    // Nothing to disconnect for SSE
   }
 
   getType(): TransportType {
@@ -196,8 +189,6 @@ class SSEClientTransport extends EventEmitter implements Transport {
 }
 
 export class StreamableHttpTransport extends EventEmitter implements MCPTransport {
-  private connected = false;
-
   constructor(private config: TransportConfig) {
     super();
     if (!config.url) {
@@ -208,7 +199,6 @@ export class StreamableHttpTransport extends EventEmitter implements MCPTranspor
   async connect(): Promise<Transport> {
     return new Promise((resolve, reject) => {
       try {
-        this.connected = true;
         resolve(new StreamableHttpClientTransport(this.config.url!, this.config.headers));
       } catch (error) {
         reject(error);
@@ -217,7 +207,7 @@ export class StreamableHttpTransport extends EventEmitter implements MCPTranspor
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
+    // Nothing to disconnect for streamable HTTP
   }
 
   getType(): TransportType {
@@ -227,7 +217,7 @@ export class StreamableHttpTransport extends EventEmitter implements MCPTranspor
 
 // Custom Streamable HTTP Transport implementation for GitHub Copilot MCP
 class StreamableHttpClientTransport extends EventEmitter implements Transport {
-  constructor(private url: string, private headers?: Record<string, string>) {
+  constructor(_url: string, _headers?: Record<string, string>) {
     super();
   }
 
@@ -242,7 +232,7 @@ class StreamableHttpClientTransport extends EventEmitter implements Transport {
   async send(message: any): Promise<any> {
     console.log('StreamableHttpTransport: SSE endpoints require persistent connections, not suitable for MCP request-response pattern');
     console.log('StreamableHttpTransport: Message that would be sent:', JSON.stringify(message));
-    
+
     // For now, return a mock response to indicate the transport type is not compatible
     // with the MCP protocol's request-response pattern
     throw new Error('StreamableHttpTransport: SSE endpoints are not compatible with MCP request-response pattern. GitHub Copilot MCP may require a different integration approach.');

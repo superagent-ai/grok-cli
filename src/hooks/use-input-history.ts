@@ -9,6 +9,8 @@ export interface InputHistoryHook {
   setOriginalInput: (input: string) => void;
 }
 
+const MAX_HISTORY_SIZE = 1000;
+
 export function useInputHistory(): InputHistoryHook {
   const [history, setHistory] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -16,7 +18,14 @@ export function useInputHistory(): InputHistoryHook {
 
   const addToHistory = useCallback((input: string) => {
     if (input.trim() && !history.includes(input.trim())) {
-      setHistory(prev => [...prev, input.trim()]);
+      setHistory(prev => {
+        const newHistory = [...prev, input.trim()];
+        // Keep only the last MAX_HISTORY_SIZE entries to prevent unbounded growth
+        if (newHistory.length > MAX_HISTORY_SIZE) {
+          return newHistory.slice(-MAX_HISTORY_SIZE);
+        }
+        return newHistory;
+      });
     }
     setCurrentIndex(-1);
     setOriginalInput("");

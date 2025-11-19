@@ -5,6 +5,14 @@ import { ConfirmationService } from '../utils/confirmation-service.js';
 
 const execAsync = promisify(exec);
 
+/**
+ * Escape shell argument to prevent command injection
+ */
+function escapeShellArg(arg: string): string {
+  // Replace single quotes with '\'' to safely escape them
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 export class BashTool {
   private currentDirectory: string = process.cwd();
   private confirmationService = ConfirmationService.getInstance();
@@ -73,14 +81,14 @@ export class BashTool {
   }
 
   async listFiles(directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`ls -la ${directory}`);
+    return this.execute(`ls -la ${escapeShellArg(directory)}`);
   }
 
   async findFiles(pattern: string, directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`find ${directory} -name "${pattern}" -type f`);
+    return this.execute(`find ${escapeShellArg(directory)} -name ${escapeShellArg(pattern)} -type f`);
   }
 
   async grep(pattern: string, files: string = '.'): Promise<ToolResult> {
-    return this.execute(`grep -r "${pattern}" ${files}`);
+    return this.execute(`grep -r ${escapeShellArg(pattern)} ${escapeShellArg(files)}`);
   }
 }

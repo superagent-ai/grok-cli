@@ -110,21 +110,27 @@ function ChatInterfaceWithAgent({
 
   // Process initial message if provided (streaming for faster feedback)
   useEffect(() => {
-    if (initialMessage && agent) {
-      const userEntry: ChatEntry = {
-        type: "user",
-        content: initialMessage,
-        timestamp: new Date(),
-      };
-      setChatHistory([userEntry]);
+    if (!initialMessage || !agent) {
+      return;
+    }
 
-      const processInitialMessage = async () => {
+    const userEntry: ChatEntry = {
+      type: "user",
+      content: initialMessage,
+      timestamp: new Date(),
+    };
+    setChatHistory([userEntry]);
+
+    let cancelled = false;
+
+    const processInitialMessage = async () => {
         setIsProcessing(true);
         setIsStreaming(true);
 
         try {
           let streamingEntry: ChatEntry | null = null;
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
+            if (cancelled) break;
             switch (chunk.type) {
               case "content":
                 if (chunk.content) {
@@ -233,8 +239,11 @@ function ChatInterfaceWithAgent({
         processingStartTime.current = 0;
       };
 
-      processInitialMessage();
-    }
+    processInitialMessage();
+
+    return () => {
+      cancelled = true;
+    };
   }, [initialMessage, agent]);
 
   useEffect(() => {

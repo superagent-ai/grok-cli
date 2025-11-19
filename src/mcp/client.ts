@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { EventEmitter } from "events";
 import { createTransport, MCPTransport, TransportType, TransportConfig } from "./transports.js";
 
@@ -23,8 +23,27 @@ export class MCPManager extends EventEmitter {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, MCPTransport> = new Map();
   private tools: Map<string, MCPTool> = new Map();
+  private pendingConnections: Map<string, Promise<void>> = new Map();
 
   async addServer(config: MCPServerConfig): Promise<void> {
+    // Check if already connecting to prevent race condition
+    const pending = this.pendingConnections.get(config.name);
+    if (pending) {
+      return pending;
+    }
+
+    // Create a promise for this connection attempt
+    const connectionPromise = this._addServerInternal(config);
+    this.pendingConnections.set(config.name, connectionPromise);
+
+    try {
+      await connectionPromise;
+    } finally {
+      this.pendingConnections.delete(config.name);
+    }
+  }
+
+  private async _addServerInternal(config: MCPServerConfig): Promise<void> {
     try {
       // Handle legacy stdio-only configuration
       let transportConfig = config.transport;
@@ -66,7 +85,7 @@ export class MCPManager extends EventEmitter {
 
       // List available tools
       const toolsResult = await client.listTools();
-      
+
       // Register tools
       for (const tool of toolsResult.tools) {
         const mcpTool: MCPTool = {
@@ -80,6 +99,13 @@ export class MCPManager extends EventEmitter {
 
       this.emit('serverAdded', config.name, toolsResult.tools.length);
     } catch (error) {
+      // Clean up on error
+      this.clients.delete(config.name);
+      const transport = this.transports.get(config.name);
+      if (transport) {
+        await transport.disconnect().catch(() => {/* ignore cleanup errors */});
+        this.transports.delete(config.name);
+      }
       this.emit('serverError', config.name, error);
       throw error;
     }
@@ -124,10 +150,12 @@ export class MCPManager extends EventEmitter {
     // Extract the original tool name (remove mcp__servername__ prefix)
     const originalToolName = toolName.replace(`mcp__${tool.serverName}__`, '');
 
-    return await client.callTool({
+    const result = await client.callTool({
       name: originalToolName,
       arguments: arguments_
     });
+
+    return result as CallToolResult;
   }
 
   getTools(): MCPTool[] {
