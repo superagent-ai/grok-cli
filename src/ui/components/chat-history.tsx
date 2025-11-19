@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { ChatEntry } from "../../agent/grok-agent.js";
 import { DiffRenderer } from "./diff-renderer.js";
 import { MarkdownRenderer } from "../utils/markdown-renderer.js";
+import { ReasoningDisplay } from "./reasoning-display.js";
 
 interface ChatHistoryProps {
   entries: ChatEntry[];
@@ -62,6 +63,15 @@ const MemoizedChatEntry = React.memo(
       case "assistant":
         return (
           <Box key={index} flexDirection="column" marginTop={1}>
+            {/* Render reasoning content if present (GLM-4.6 thinking mode) */}
+            {entry.reasoningContent && (
+              <ReasoningDisplay
+                content={entry.reasoningContent}
+                visible={true}
+                isStreaming={entry.isReasoningStreaming}
+              />
+            )}
+            {/* Render assistant response */}
             <Box flexDirection="row" alignItems="flex-start">
               <Text color="white">⏺ </Text>
               <Box flexDirection="column" flexGrow={1}>

@@ -26,11 +26,17 @@ export interface ChatEntry {
   toolCall?: GrokToolCall;
   toolResult?: { success: boolean; output?: string; error?: string };
   isStreaming?: boolean;
+  /** GLM-4.6 reasoning content (thinking mode) */
+  reasoningContent?: string;
+  /** Whether reasoning is currently streaming */
+  isReasoningStreaming?: boolean;
 }
 
 export interface StreamingChunk {
-  type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
+  type: "content" | "reasoning" | "tool_calls" | "tool_result" | "done" | "token_count";
   content?: string;
+  /** GLM-4.6 reasoning content chunk */
+  reasoningContent?: string;
   toolCalls?: GrokToolCall[];
   toolCall?: GrokToolCall;
   toolResult?: ToolResult;
@@ -472,6 +478,14 @@ Current working directory: ${process.cwd()}`,
               };
               toolCallsYielded = true;
             }
+          }
+
+          // Stream reasoning content (GLM-4.6 thinking mode)
+          if (chunk.choices[0].delta?.reasoning_content) {
+            yield {
+              type: "reasoning",
+              reasoningContent: chunk.choices[0].delta.reasoning_content,
+            };
           }
 
           // Stream content as it comes

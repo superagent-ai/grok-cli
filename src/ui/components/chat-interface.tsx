@@ -132,6 +132,35 @@ function ChatInterfaceWithAgent({
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
             if (cancelled) break;
             switch (chunk.type) {
+              case "reasoning":
+                // Handle reasoning content from GLM-4.6 thinking mode
+                if (chunk.reasoningContent) {
+                  if (!streamingEntry) {
+                    const newStreamingEntry = {
+                      type: "assistant" as const,
+                      content: "",
+                      timestamp: new Date(),
+                      isStreaming: true,
+                      reasoningContent: chunk.reasoningContent,
+                      isReasoningStreaming: true,
+                    };
+                    setChatHistory((prev) => [...prev, newStreamingEntry]);
+                    streamingEntry = newStreamingEntry;
+                  } else {
+                    setChatHistory((prev) =>
+                      prev.map((entry, idx) =>
+                        idx === prev.length - 1 && entry.isStreaming
+                          ? {
+                              ...entry,
+                              reasoningContent: (entry.reasoningContent || "") + chunk.reasoningContent,
+                              isReasoningStreaming: true,
+                            }
+                          : entry
+                      )
+                    );
+                  }
+                }
+                break;
               case "content":
                 if (chunk.content) {
                   if (!streamingEntry) {
@@ -147,7 +176,11 @@ function ChatInterfaceWithAgent({
                     setChatHistory((prev) =>
                       prev.map((entry, idx) =>
                         idx === prev.length - 1 && entry.isStreaming
-                          ? { ...entry, content: entry.content + chunk.content }
+                          ? {
+                              ...entry,
+                              content: entry.content + chunk.content,
+                              isReasoningStreaming: false, // Stop reasoning streaming when content starts
+                            }
                           : entry
                       )
                     );
