@@ -100,3 +100,18 @@ temp/
 # Coding agents
 .claude/
 .grok/
+.gemini/
+.specify/
+
+# AutomatosX
+.automatosx/
+automatosx/
+automatosx.config.json
+
+# Documentation and config files
+AX.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+GROK.md
+AutomatosX-Integration.md
