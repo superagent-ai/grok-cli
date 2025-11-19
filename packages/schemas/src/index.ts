@@ -24,6 +24,7 @@ export {
 export {
   ApiResponseId,
   ToolCallId,
+  ToolCallIdSchema,
   ModelId,
   TenantId,
   ApiKeyId,

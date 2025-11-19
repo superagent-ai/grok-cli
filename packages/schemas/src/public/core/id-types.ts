@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-import { createBrandFactory, type Brand } from './brand-types.js';
+import { createBrandFactory, brand, type Brand } from './brand-types.js';
 
 /**
  * API Response ID - Unique identifier for API responses
@@ -42,6 +42,12 @@ export const ToolCallId = createBrandFactory(
 );
 
 export type ToolCallId = Brand<string, 'ToolCallId'>;
+
+/**
+ * ToolCallIdSchema - Zod schema for ToolCallId that can be used in z.object()
+ * This transforms strings to branded ToolCallId types
+ */
+export const ToolCallIdSchema = z.string().min(1).transform((val) => brand<string, 'ToolCallId'>(val));
 
 /**
  * Model ID - Identifier for AI models
