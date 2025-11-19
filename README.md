@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/defai-digital/ax-cli/actions/workflows/test.yml/badge.svg)](https://github.com/defai-digital/ax-cli/actions/workflows/test.yml)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen)](https://nodejs.org/)
+[![npm downloads](https://img.shields.io/npm/dt/@defai.digital/ax-cli)](https://npm-stat.com/charts.html?package=%40defai.digital%2Fax-cli)
 [![GitHub issues](https://img.shields.io/github/issues/defai-digital/ax-cli)](https://github.com/defai-digital/ax-cli/issues)
 
 ![AX CLI Logo](.github/assets/ax-cli.png)
