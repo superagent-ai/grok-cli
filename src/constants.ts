@@ -41,6 +41,20 @@ export const TOKEN_CONFIG = {
   TOKENS_FOR_REPLY_PRIMING: 3,
   DEFAULT_MODEL: 'gpt-4',
   DEFAULT_ENCODING: 'cl100k_base',
+  CACHE_MAX_SIZE: 1000, // Maximum cached token counts
+} as const;
+
+// Cache Configuration
+export const CACHE_CONFIG = {
+  DEFAULT_MAX_SIZE: 1000,
+  DEFAULT_TTL: 300000, // 5 minutes
+} as const;
+
+// Performance Monitoring
+export const PERF_CONFIG = {
+  DEBOUNCE_DELAY: 300, // ms
+  THROTTLE_LIMIT: 1000, // ms
+  SLOW_OPERATION_THRESHOLD: 1000, // ms - log warning if operation takes longer
 } as const;
 
 // Tool Names

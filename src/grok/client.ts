@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import { safeValidateGrokResponse } from "../schemas/api-schemas.js";
+import { ErrorCategory, createErrorMessage } from "../utils/error-handler.js";
 
 export type GrokMessage = ChatCompletionMessageParam;
 
@@ -94,6 +96,19 @@ export class GrokClient {
 
       const response =
         await this.client.chat.completions.create(requestPayload);
+
+      // Validate response structure
+      const validationResult = safeValidateGrokResponse(response);
+      if (!validationResult.success) {
+        console.warn(
+          createErrorMessage(
+            ErrorCategory.VALIDATION,
+            'Grok API response validation',
+            validationResult.error || 'Invalid response structure'
+          )
+        );
+        // Return response anyway for backward compatibility, but log warning
+      }
 
       return response as GrokResponse;
     } catch (error: any) {

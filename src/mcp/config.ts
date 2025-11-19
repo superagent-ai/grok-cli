@@ -1,18 +1,40 @@
 import { getSettingsManager } from "../utils/settings-manager.js";
 import { MCPServerConfig } from "./client.js";
+import { MCPServerConfigSchema } from "../schemas/settings-schemas.js";
+import { ErrorCategory, createErrorMessage } from "../utils/error-handler.js";
 
 export interface MCPConfig {
   servers: MCPServerConfig[];
 }
 
 /**
- * Load MCP configuration from project settings
+ * Load MCP configuration from project settings with validation
  */
 export function loadMCPConfig(): MCPConfig {
   const manager = getSettingsManager();
   const projectSettings = manager.loadProjectSettings();
-  const servers = projectSettings.mcpServers ? Object.values(projectSettings.mcpServers) : [];
-  return { servers };
+  const rawServers = projectSettings.mcpServers
+    ? Object.values(projectSettings.mcpServers)
+    : [];
+
+  // Validate each server config
+  const validatedServers: MCPServerConfig[] = [];
+  for (const server of rawServers) {
+    const result = MCPServerConfigSchema.safeParse(server);
+    if (result.success && result.data) {
+      validatedServers.push(result.data as MCPServerConfig);
+    } else {
+      console.warn(
+        createErrorMessage(
+          ErrorCategory.VALIDATION,
+          `MCP server config validation for "${(server as any)?.name || 'unknown'}"`,
+          result.error || 'Invalid configuration'
+        )
+      );
+    }
+  }
+
+  return { servers: validatedServers };
 }
 
 export function saveMCPConfig(config: MCPConfig): void {
@@ -28,11 +50,23 @@ export function saveMCPConfig(config: MCPConfig): void {
 }
 
 export function addMCPServer(config: MCPServerConfig): void {
+  // Validate server config before adding
+  const validationResult = MCPServerConfigSchema.safeParse(config);
+  if (!validationResult.success) {
+    throw new Error(
+      createErrorMessage(
+        ErrorCategory.VALIDATION,
+        `Adding MCP server "${config.name}"`,
+        validationResult.error || 'Invalid server configuration'
+      )
+    );
+  }
+
   const manager = getSettingsManager();
   const projectSettings = manager.loadProjectSettings();
   const mcpServers = projectSettings.mcpServers || {};
 
-  mcpServers[config.name] = config;
+  mcpServers[config.name] = validationResult.data!;
   manager.updateProjectSetting('mcpServers', mcpServers);
 }
 

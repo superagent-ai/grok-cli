@@ -1,10 +1,10 @@
 import { get_encoding, encoding_for_model, Tiktoken } from 'tiktoken';
 import { TOKEN_CONFIG } from '../constants.js';
+import { LRUCache } from './cache.js';
 
 export class TokenCounter {
   private encoder: Tiktoken;
-  private cache: Map<string, number> = new Map();
-  private static readonly MAX_CACHE_SIZE = 1000;
+  private cache: LRUCache<string, number>;
 
   constructor(model: string = TOKEN_CONFIG.DEFAULT_MODEL) {
     try {
@@ -14,6 +14,8 @@ export class TokenCounter {
       // Fallback to cl100k_base (used by GPT-4 and most modern models)
       this.encoder = get_encoding(TOKEN_CONFIG.DEFAULT_ENCODING);
     }
+    // Initialize cache with configured limit
+    this.cache = new LRUCache({ maxSize: TOKEN_CONFIG.CACHE_MAX_SIZE });
   }
 
   /**
@@ -31,14 +33,7 @@ export class TokenCounter {
     // Count tokens
     const count = this.encoder.encode(text).length;
 
-    // Add to cache with LRU eviction
-    if (this.cache.size >= TokenCounter.MAX_CACHE_SIZE) {
-      // Remove oldest entry (first one)
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
-    }
+    // Add to cache (LRU eviction handled automatically)
     this.cache.set(text, count);
 
     return count;
@@ -87,6 +82,13 @@ export class TokenCounter {
   dispose(): void {
     this.cache.clear();
     this.encoder.free();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return this.cache.stats();
   }
 }
 
