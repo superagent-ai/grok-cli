@@ -3,6 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import { UserSettingsSchema, ProjectSettingsSchema } from "../schemas/settings-schemas.js";
 import type { UserSettings, ProjectSettings } from "../schemas/settings-schemas.js";
+import { ModelIdSchema } from '@ax-cli/schemas';
 
 // Re-export types for external use
 export type { UserSettings, ProjectSettings };
@@ -12,13 +13,13 @@ export type { UserSettings, ProjectSettings };
  */
 const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
   baseURL: "https://api.x.ai/v1",
-  defaultModel: "grok-code-fast-1",
+  defaultModel: ModelIdSchema.parse("grok-code-fast-1"),
   models: [
-    "grok-code-fast-1",
-    "grok-4-latest",
-    "grok-3-latest",
-    "grok-3-fast",
-    "grok-3-mini-fast",
+    ModelIdSchema.parse("grok-code-fast-1"),
+    ModelIdSchema.parse("grok-4-latest"),
+    ModelIdSchema.parse("grok-3-latest"),
+    ModelIdSchema.parse("grok-3-fast"),
+    ModelIdSchema.parse("grok-3-mini-fast"),
   ],
 };
 
@@ -26,7 +27,7 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
  * Default values for project settings
  */
 const DEFAULT_PROJECT_SETTINGS: Partial<ProjectSettings> = {
-  model: "grok-code-fast-1",
+  model: ModelIdSchema.parse("grok-code-fast-1"),
 };
 
 /**
@@ -274,14 +275,14 @@ export class SettingsManager {
       return userDefaultModel;
     }
 
-    return DEFAULT_PROJECT_SETTINGS.model || "grok-code-fast-1";
+    return DEFAULT_PROJECT_SETTINGS.model || ModelIdSchema.parse("grok-code-fast-1");
   }
 
   /**
    * Set the current model for the project
    */
   public setCurrentModel(model: string): void {
-    this.updateProjectSetting("model", model);
+    this.updateProjectSetting("model", ModelIdSchema.parse(model));
   }
 
   /**

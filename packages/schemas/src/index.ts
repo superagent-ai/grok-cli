@@ -11,6 +11,7 @@
 
 // Core brand type utilities
 export {
+  __brand,
   brand,
   unbrand,
   isBranded,

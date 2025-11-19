@@ -4,7 +4,10 @@
  */
 
 import { z } from 'zod';
-import { MessageRoleEnum, ToolCallIdSchema, ModelIdSchema } from '@ax-cli/schemas';
+import { __brand, MessageRoleEnum, ToolCallIdSchema, ModelIdSchema } from '@ax-cli/schemas';
+
+// Re-export __brand to satisfy TypeScript's type resolution
+export { __brand };
 
 // Grok Tool Call Schema
 export const GrokToolCallSchema = z.object({

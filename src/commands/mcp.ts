@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { addMCPServer, removeMCPServer, loadMCPConfig, PREDEFINED_SERVERS } from '../mcp/config.js';
 import { getMCPManager } from '../grok/tools.js';
 import { MCPServerConfig } from '../mcp/client.js';
+import { MCPServerIdSchema } from '@ax-cli/schemas';
 import chalk from 'chalk';
 
 export function createMCPCommand(): Command {
@@ -74,7 +75,7 @@ export function createMCPCommand(): Command {
         }
 
         const config = {
-          name,
+          name: MCPServerIdSchema.parse(name),
           transport: {
             type: transportType as 'stdio' | 'http' | 'sse' | 'streamable_http',
             command: options.command,
@@ -117,7 +118,7 @@ export function createMCPCommand(): Command {
         }
 
         const serverConfig: MCPServerConfig = {
-          name,
+          name: MCPServerIdSchema.parse(name),
           transport: {
             type: 'stdio', // default
             command: config.command,

@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { MessageRoleEnum, FinishReasonEnum, TransportEnum, ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
+import { __brand, MessageRoleEnum, FinishReasonEnum, TransportEnum, ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
+
+// Re-export __brand to satisfy TypeScript's type resolution
+export { __brand };
 
 /**
  * Configuration schemas using Zod for runtime validation

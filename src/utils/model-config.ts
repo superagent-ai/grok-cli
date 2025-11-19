@@ -1,4 +1,5 @@
 import { getSettingsManager, UserSettings, ProjectSettings } from './settings-manager.js';
+import { ModelIdSchema } from '@ax-cli/schemas';
 
 export interface ModelOption {
   model: string;
@@ -52,5 +53,5 @@ export function updateCurrentModel(modelName: string): void {
  */
 export function updateDefaultModel(modelName: string): void {
   const manager = getSettingsManager();
-  manager.updateUserSetting('defaultModel', modelName);
+  manager.updateUserSetting('defaultModel', ModelIdSchema.parse(modelName));
 }

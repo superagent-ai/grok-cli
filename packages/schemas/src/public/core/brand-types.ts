@@ -41,13 +41,13 @@
 
 /**
  * Unique symbol used as a phantom type marker for branding.
- * This symbol is not exported and cannot be accessed at runtime,
+ * This symbol is exported for type compatibility but cannot be accessed at runtime,
  * making it impossible to forge branded types without using the
  * provided constructor functions.
  *
  * @internal
  */
-declare const __brand: unique symbol;
+export declare const __brand: unique symbol;
 
 /**
  * Brand<T, B> creates a "nominal type" from a structural type.

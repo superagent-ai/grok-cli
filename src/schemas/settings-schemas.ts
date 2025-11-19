@@ -4,7 +4,10 @@
  */
 
 import { z } from 'zod';
-import { ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
+import { __brand, ModelIdSchema, MCPServerIdSchema } from '@ax-cli/schemas';
+
+// Re-export __brand to satisfy TypeScript's type resolution
+export { __brand };
 
 // User Settings Schema
 export const UserSettingsSchema = z.object({

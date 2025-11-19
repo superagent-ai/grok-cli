@@ -1,6 +1,6 @@
 {
   "name": "@ax-cli/schemas",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Single Source of Truth (SSOT) type system for ax-cli - Zod schemas, brand types, and OpenAPI generation",
   "type": "module",
   "main": "./dist/index.js",
