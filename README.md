@@ -1,6 +1,6 @@
 # AX CLI
 
-[![npm version](https://badge.fury.io/js/%40defai-digital%2Fax-cli.svg)](https://www.npmjs.com/package/@defai-digital/ax-cli)
+[![npm version](https://badge.fury.io/js/%40defai.digital%2Fax-cli.svg)](https://www.npmjs.com/package/@defai.digital/ax-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/defai-digital/ax-cli?style=social)](https://github.com/defai-digital/ax-cli/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/defai-digital/ax-cli?style=social)](https://github.com/defai-digital/ax-cli/network/members)
