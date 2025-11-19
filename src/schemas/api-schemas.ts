@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { MessageRoleEnum } from '@ax-cli/schemas';
 
 // Grok Tool Call Schema
 export const GrokToolCallSchema = z.object({
@@ -19,7 +20,7 @@ export type GrokToolCall = z.infer<typeof GrokToolCallSchema>;
 
 // Grok Message Schema
 export const GrokMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant', 'tool']),
+  role: MessageRoleEnum,
   content: z.string().nullable(),
   tool_calls: z.array(GrokToolCallSchema).optional(),
   tool_call_id: z.string().optional(),
