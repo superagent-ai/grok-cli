@@ -24,18 +24,24 @@ export interface MCPTransport {
 export class StdioTransport implements MCPTransport {
   private transport?: StdioClientTransport;
   private process?: ChildProcess;
+  private command: string;
+  private args: string[];
+  private env?: Record<string, string>;
 
-  constructor(private config: TransportConfig) {
+  constructor(config: TransportConfig) {
     if (!config.command) {
       throw new Error('Command is required for stdio transport');
     }
+    this.command = config.command;
+    this.args = config.args || [];
+    this.env = config.env;
   }
 
   async connect(): Promise<Transport> {
     // Create transport with environment variables to suppress verbose output
-    const env = { 
-      ...process.env, 
-      ...this.config.env,
+    const env = {
+      ...process.env,
+      ...this.env,
       // Try to suppress verbose output from mcp-remote
       MCP_REMOTE_QUIET: '1',
       MCP_REMOTE_SILENT: '1',
@@ -44,8 +50,8 @@ export class StdioTransport implements MCPTransport {
     };
 
     this.transport = new StdioClientTransport({
-      command: this.config.command!,
-      args: this.config.args || [],
+      command: this.command,
+      args: this.args,
       env
     });
 
@@ -108,11 +114,14 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
 }
 
 export class SSETransport extends EventEmitter implements MCPTransport {
-  constructor(private config: TransportConfig) {
+  private url: string;
+
+  constructor(config: TransportConfig) {
     super();
     if (!config.url) {
       throw new Error('URL is required for SSE transport');
     }
+    this.url = config.url;
   }
 
   async connect(): Promise<Transport> {
@@ -120,7 +129,7 @@ export class SSETransport extends EventEmitter implements MCPTransport {
       try {
         // For Node.js environment, we'll use a simple HTTP-based approach
         // In a real implementation, you'd use a proper SSE library like 'eventsource'
-        resolve(new SSEClientTransport(this.config.url!));
+        resolve(new SSEClientTransport(this.url));
       } catch (error) {
         reject(error);
       }
@@ -189,17 +198,22 @@ class SSEClientTransport extends EventEmitter implements Transport {
 }
 
 export class StreamableHttpTransport extends EventEmitter implements MCPTransport {
-  constructor(private config: TransportConfig) {
+  private url: string;
+  private headers?: Record<string, string>;
+
+  constructor(config: TransportConfig) {
     super();
     if (!config.url) {
       throw new Error('URL is required for streamable_http transport');
     }
+    this.url = config.url;
+    this.headers = config.headers;
   }
 
   async connect(): Promise<Transport> {
     return new Promise((resolve, reject) => {
       try {
-        resolve(new StreamableHttpClientTransport(this.config.url!, this.config.headers));
+        resolve(new StreamableHttpClientTransport(this.url, this.headers));
       } catch (error) {
         reject(error);
       }

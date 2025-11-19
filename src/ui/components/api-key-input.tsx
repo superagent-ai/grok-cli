@@ -65,7 +65,7 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
       }
 
       onApiKeySet(agent);
-    } catch (_error: unknown) {
+    } catch {
       setError("Invalid API key format");
       setIsSubmitting(false);
     }

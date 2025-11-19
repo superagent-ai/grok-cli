@@ -1,10 +1,14 @@
 # AX CLI - Enterprise-Class AI CLI
 
-[![npm downloads](https://img.shields.io/npm/dt/@defai.digital/ax-cli)](https://npm-stat.com/charts.html?package=%40defai.digital%2Fax-cli)
-[![Tests](https://github.com/defai-digital/ax-cli/actions/workflows/test.yml/badge.svg)](https://github.com/defai-digital/ax-cli/actions/workflows/test.yml)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/defai-digital/ax-cli)](https://github.com/defai-digital/ax-cli/issues)
+[![npm version](https://img.shields.io/npm/v/%40defai.digital%2Fax-cli.svg?style=flat-square)](https://www.npmjs.com/package/@defai.digital/ax-cli)
+[![npm downloads](https://img.shields.io/npm/dt/%40defai.digital%2Fax-cli?style=flat-square)](https://npm-stat.com/charts.html?package=%40defai.digital%2Fax-cli)
+[![Tests](https://img.shields.io/badge/tests-124%20passing-brightgreen?style=flat-square)](https://github.com/defai-digital/ax-cli/actions/workflows/test.yml)
+[![Coverage](https://img.shields.io/badge/coverage-98.29%25-brightgreen?style=flat-square)](https://github.com/defai-digital/ax-cli)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen?style=flat-square)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3%2B-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![GitHub issues](https://img.shields.io/github/issues/defai-digital/ax-cli?style=flat-square)](https://github.com/defai-digital/ax-cli/issues)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 ![AX CLI Logo](.github/assets/ax-cli.png)
 

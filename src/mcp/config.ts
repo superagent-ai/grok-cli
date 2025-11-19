@@ -66,8 +66,11 @@ export function addMCPServer(config: MCPServerConfig): void {
   const projectSettings = manager.loadProjectSettings();
   const mcpServers = projectSettings.mcpServers || {};
 
-  mcpServers[config.name] = validationResult.data!;
-  manager.updateProjectSetting('mcpServers', mcpServers);
+  // Type narrowing: validationResult.success is true, so data is defined
+  if (validationResult.data) {
+    mcpServers[config.name] = validationResult.data;
+    manager.updateProjectSetting('mcpServers', mcpServers);
+  }
 }
 
 export function removeMCPServer(serverName: string): void {

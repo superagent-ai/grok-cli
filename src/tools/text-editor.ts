@@ -365,7 +365,13 @@ export class TextEditorTool {
       };
     }
 
-    const lastEdit = this.editHistory.pop()!;
+    const lastEdit = this.editHistory.pop();
+    if (!lastEdit) {
+      return {
+        success: false,
+        error: "Failed to retrieve last edit",
+      };
+    }
 
     try {
       switch (lastEdit.command) {
