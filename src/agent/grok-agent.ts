@@ -1,7 +1,5 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
-  GROK_TOOLS,
-  addMCPToolsToGrokTools,
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
@@ -12,7 +10,6 @@ import {
   MorphEditorTool,
   BashTool,
   TodoTool,
-  ConfirmationTool,
   SearchTool,
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
@@ -46,13 +43,11 @@ export class GrokAgent extends EventEmitter {
   private morphEditor: MorphEditorTool | null;
   private bash: BashTool;
   private todoTool: TodoTool;
-  private confirmationTool: ConfirmationTool;
   private search: SearchTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
-  private mcpInitialized: boolean = false;
   private maxToolRounds: number;
 
   constructor(

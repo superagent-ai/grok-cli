@@ -1,6 +1,11 @@
 MIT License
 
-Copyright (c) [year] [copyright holders]
+This software is based on grok-cli (MIT License)
+Copyright (c) 2023 GrokCLI Authors https://github.com/superagent-ai/grok-cli
+
+Modifications Copyright (c) 2025 DEFAI Private Limited
+Licensed under the MIT License https://github.com/defai-digital/ax-cli
+
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

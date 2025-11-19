@@ -32,7 +32,6 @@ interface ModelOption {
 
 export function useInputHandler({
   agent,
-  chatHistory,
   setChatHistory,
   setIsProcessing,
   setIsStreaming,
@@ -697,9 +696,9 @@ Respond with ONLY the commit message, no additional text.`;
                     return {
                       ...entry,
                       type: "tool_result",
-                      content: chunk.toolResult.success
-                        ? chunk.toolResult.output || "Success"
-                        : chunk.toolResult.error || "Error occurred",
+                      content: chunk.toolResult?.success
+                        ? chunk.toolResult?.output || "Success"
+                        : chunk.toolResult?.error || "Error occurred",
                       toolResult: chunk.toolResult,
                     };
                   }

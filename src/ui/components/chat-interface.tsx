@@ -195,9 +195,9 @@ function ChatInterfaceWithAgent({
                         return {
                           ...entry,
                           type: "tool_result",
-                          content: chunk.toolResult.success
-                            ? chunk.toolResult.output || "Success"
-                            : chunk.toolResult.error || "Error occurred",
+                          content: chunk.toolResult?.success
+                            ? chunk.toolResult?.output || "Success"
+                            : chunk.toolResult?.error || "Error occurred",
                           toolResult: chunk.toolResult,
                         };
                       }
