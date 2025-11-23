@@ -1,13 +1,27 @@
 import * as fs from "fs-extra";
 import * as path from "path";
 
-export type AutonomyLevel = "suggest" | "confirm" | "auto" | "full";
+export type AutonomyLevel = "suggest" | "confirm" | "auto" | "full" | "yolo";
+
+export interface YOLOConfig {
+  enabled: boolean;
+  allowList: string[];           // Commands that can always auto-run
+  denyList: string[];            // Commands that always require confirmation
+  maxAutoEdits: number;          // Max files to edit without confirmation
+  maxAutoCommands: number;       // Max bash commands per turn
+  safeMode: boolean;             // Disables destructive operations entirely
+  allowedPaths: string[];        // Paths where edits are allowed
+  blockedPaths: string[];        // Paths where edits are never allowed
+  sessionEditCount: number;      // Track edits this session
+  sessionCommandCount: number;   // Track commands this session
+}
 
 export interface AutonomyConfig {
   level: AutonomyLevel;
   dangerousOperations: string[];  // Always require confirmation
   safeOperations: string[];       // Never require confirmation in auto/full mode
   sessionOverrides: Map<string, AutonomyLevel>;  // Per-operation overrides
+  yolo: YOLOConfig;              // YOLO mode configuration
 }
 
 const DEFAULT_DANGEROUS_OPERATIONS = [
@@ -36,6 +50,56 @@ const DEFAULT_SAFE_OPERATIONS = [
   "echo",
 ];
 
+const DEFAULT_YOLO_CONFIG: YOLOConfig = {
+  enabled: false,
+  allowList: [
+    "npm test",
+    "npm run lint",
+    "npm run build",
+    "npm run typecheck",
+    "git status",
+    "git diff",
+    "git log",
+    "yarn test",
+    "pnpm test",
+    "cargo test",
+    "go test",
+    "pytest",
+    "jest",
+    "vitest",
+  ],
+  denyList: [
+    "rm -rf /",
+    "rm -rf ~",
+    "rm -rf *",
+    "git push --force origin main",
+    "git push --force origin master",
+    "DROP DATABASE",
+    "DROP TABLE",
+    "TRUNCATE",
+    "format c:",
+    "mkfs",
+    "> /dev/sda",
+  ],
+  maxAutoEdits: 10,
+  maxAutoCommands: 20,
+  safeMode: false,
+  allowedPaths: [],  // Empty = all paths allowed
+  blockedPaths: [
+    "node_modules",
+    ".git",
+    ".env",
+    ".env.local",
+    ".env.production",
+    "credentials",
+    "secrets",
+    "*.pem",
+    "*.key",
+  ],
+  sessionEditCount: 0,
+  sessionCommandCount: 0,
+};
+
 export class AutonomyManager {
   private config: AutonomyConfig;
   private configPath: string;
@@ -51,6 +115,7 @@ export class AutonomyManager {
       dangerousOperations: [...DEFAULT_DANGEROUS_OPERATIONS],
       safeOperations: [...DEFAULT_SAFE_OPERATIONS],
       sessionOverrides: new Map(),
+      yolo: { ...DEFAULT_YOLO_CONFIG },
     };
 
     if (fs.existsSync(this.configPath)) {
@@ -60,6 +125,7 @@ export class AutonomyManager {
           ...defaultConfig,
           ...saved,
           sessionOverrides: new Map(Object.entries(saved.sessionOverrides || {})),
+          yolo: { ...DEFAULT_YOLO_CONFIG, ...saved.yolo },
         };
       } catch (error) {
         console.warn("Failed to load autonomy config:", error);
@@ -77,6 +143,11 @@ export class AutonomyManager {
       const toSave = {
         ...this.config,
         sessionOverrides: Object.fromEntries(this.config.sessionOverrides),
+        yolo: {
+          ...this.config.yolo,
+          sessionEditCount: 0,      // Don't persist session counts
+          sessionCommandCount: 0,
+        },
       };
 
       fs.writeJsonSync(this.configPath, toSave, { spaces: 2 });
@@ -196,6 +267,221 @@ export class AutonomyManager {
       this.config.safeOperations.splice(index, 1);
       this.saveConfig();
     }
+  }
+
+  // =====================
+  // YOLO Mode Methods
+  // =====================
+
+  enableYOLO(safeMode: boolean = false): void {
+    this.config.level = "yolo";
+    this.config.yolo.enabled = true;
+    this.config.yolo.safeMode = safeMode;
+    this.resetSessionCounts();
+    this.saveConfig();
+  }
+
+  disableYOLO(): void {
+    this.config.yolo.enabled = false;
+    this.config.level = "confirm";
+    this.saveConfig();
+  }
+
+  isYOLOEnabled(): boolean {
+    return this.config.level === "yolo" && this.config.yolo.enabled;
+  }
+
+  getYOLOConfig(): YOLOConfig {
+    return { ...this.config.yolo };
+  }
+
+  updateYOLOConfig(updates: Partial<YOLOConfig>): void {
+    this.config.yolo = { ...this.config.yolo, ...updates };
+    this.saveConfig();
+  }
+
+  addToYOLOAllowList(command: string): void {
+    if (!this.config.yolo.allowList.includes(command)) {
+      this.config.yolo.allowList.push(command);
+      this.saveConfig();
+    }
+  }
+
+  removeFromYOLOAllowList(command: string): void {
+    const index = this.config.yolo.allowList.indexOf(command);
+    if (index > -1) {
+      this.config.yolo.allowList.splice(index, 1);
+      this.saveConfig();
+    }
+  }
+
+  addToYOLODenyList(command: string): void {
+    if (!this.config.yolo.denyList.includes(command)) {
+      this.config.yolo.denyList.push(command);
+      this.saveConfig();
+    }
+  }
+
+  removeFromYOLODenyList(command: string): void {
+    const index = this.config.yolo.denyList.indexOf(command);
+    if (index > -1) {
+      this.config.yolo.denyList.splice(index, 1);
+      this.saveConfig();
+    }
+  }
+
+  /**
+   * Check if a command should auto-execute in YOLO mode
+   */
+  shouldYOLOExecute(command: string, type: "bash" | "edit"): { allowed: boolean; reason: string } {
+    if (!this.isYOLOEnabled()) {
+      return { allowed: false, reason: "YOLO mode not enabled" };
+    }
+
+    // Check deny list first (always blocked)
+    for (const denied of this.config.yolo.denyList) {
+      if (command.toLowerCase().includes(denied.toLowerCase())) {
+        return { allowed: false, reason: `Command matches deny list: ${denied}` };
+      }
+    }
+
+    // In safe mode, block all potentially destructive commands
+    if (this.config.yolo.safeMode) {
+      const destructive = ["rm", "delete", "drop", "truncate", "format", "mkfs"];
+      for (const d of destructive) {
+        if (command.toLowerCase().includes(d)) {
+          return { allowed: false, reason: `Safe mode: destructive command blocked` };
+        }
+      }
+    }
+
+    // Check session limits
+    if (type === "edit" && this.config.yolo.sessionEditCount >= this.config.yolo.maxAutoEdits) {
+      return { allowed: false, reason: `Edit limit reached (${this.config.yolo.maxAutoEdits})` };
+    }
+
+    if (type === "bash" && this.config.yolo.sessionCommandCount >= this.config.yolo.maxAutoCommands) {
+      return { allowed: false, reason: `Command limit reached (${this.config.yolo.maxAutoCommands})` };
+    }
+
+    // Check allow list (fast-track)
+    for (const allowed of this.config.yolo.allowList) {
+      if (command.toLowerCase().startsWith(allowed.toLowerCase())) {
+        return { allowed: true, reason: `Matches allow list: ${allowed}` };
+      }
+    }
+
+    // Default: allow in YOLO mode unless it's dangerous
+    if (this.isDangerousOperation(command)) {
+      return { allowed: false, reason: "Dangerous operation requires confirmation" };
+    }
+
+    return { allowed: true, reason: "YOLO mode auto-execution" };
+  }
+
+  /**
+   * Check if a file path is allowed for editing in YOLO mode
+   */
+  isPathAllowedForYOLO(filePath: string): { allowed: boolean; reason: string } {
+    if (!this.isYOLOEnabled()) {
+      return { allowed: false, reason: "YOLO mode not enabled" };
+    }
+
+    const normalizedPath = path.normalize(filePath);
+
+    // Check blocked paths
+    for (const blocked of this.config.yolo.blockedPaths) {
+      if (blocked.includes("*")) {
+        // Glob pattern
+        const pattern = blocked.replace(/\*/g, ".*");
+        if (new RegExp(pattern).test(normalizedPath)) {
+          return { allowed: false, reason: `Path matches blocked pattern: ${blocked}` };
+        }
+      } else if (normalizedPath.includes(blocked)) {
+        return { allowed: false, reason: `Path is blocked: ${blocked}` };
+      }
+    }
+
+    // Check allowed paths (if specified)
+    if (this.config.yolo.allowedPaths.length > 0) {
+      for (const allowed of this.config.yolo.allowedPaths) {
+        if (normalizedPath.startsWith(allowed) || normalizedPath.includes(allowed)) {
+          return { allowed: true, reason: `Path is in allowed list` };
+        }
+      }
+      return { allowed: false, reason: "Path not in allowed paths list" };
+    }
+
+    return { allowed: true, reason: "Path allowed by default" };
+  }
+
+  /**
+   * Record an auto-execution in YOLO mode
+   */
+  recordYOLOExecution(type: "bash" | "edit"): void {
+    if (type === "edit") {
+      this.config.yolo.sessionEditCount++;
+    } else {
+      this.config.yolo.sessionCommandCount++;
+    }
+  }
+
+  /**
+   * Reset session counts (call at session start)
+   */
+  resetSessionCounts(): void {
+    this.config.yolo.sessionEditCount = 0;
+    this.config.yolo.sessionCommandCount = 0;
+  }
+
+  /**
+   * Get remaining auto-executions
+   */
+  getRemainingYOLOExecutions(): { edits: number; commands: number } {
+    return {
+      edits: Math.max(0, this.config.yolo.maxAutoEdits - this.config.yolo.sessionEditCount),
+      commands: Math.max(0, this.config.yolo.maxAutoCommands - this.config.yolo.sessionCommandCount),
+    };
+  }
+
+  formatYOLOStatus(): string {
+    const yolo = this.config.yolo;
+    const remaining = this.getRemainingYOLOExecutions();
+
+    let output = `\n⚡ YOLO Mode Status\n${"═".repeat(50)}\n\n`;
+    output += `Status: ${yolo.enabled ? "🟢 ENABLED" : "🔴 DISABLED"}\n`;
+    output += `Safe Mode: ${yolo.safeMode ? "ON (destructive commands blocked)" : "OFF"}\n\n`;
+
+    output += `📊 Session Limits:\n`;
+    output += `   Edits: ${yolo.sessionEditCount}/${yolo.maxAutoEdits} (${remaining.edits} remaining)\n`;
+    output += `   Commands: ${yolo.sessionCommandCount}/${yolo.maxAutoCommands} (${remaining.commands} remaining)\n\n`;
+
+    output += `✅ Allow List (${yolo.allowList.length} commands):\n`;
+    for (const cmd of yolo.allowList.slice(0, 5)) {
+      output += `   • ${cmd}\n`;
+    }
+    if (yolo.allowList.length > 5) {
+      output += `   ... and ${yolo.allowList.length - 5} more\n`;
+    }
+
+    output += `\n🚫 Deny List (${yolo.denyList.length} patterns):\n`;
+    for (const cmd of yolo.denyList.slice(0, 5)) {
+      output += `   • ${cmd}\n`;
+    }
+    if (yolo.denyList.length > 5) {
+      output += `   ... and ${yolo.denyList.length - 5} more\n`;
+    }
+
+    output += `\n🛡️ Blocked Paths (${yolo.blockedPaths.length}):\n`;
+    for (const p of yolo.blockedPaths.slice(0, 5)) {
+      output += `   • ${p}\n`;
+    }
+    if (yolo.blockedPaths.length > 5) {
+      output += `   ... and ${yolo.blockedPaths.length - 5} more\n`;
+    }
+
+    output += `\n${"═".repeat(50)}\n`;
+    return output;
   }
 
   formatStatus(): string {

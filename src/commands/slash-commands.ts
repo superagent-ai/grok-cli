@@ -274,6 +274,171 @@ Be systematic and thorough in your analysis.`,
         prompt: '__INIT_GROK__',
         filePath: '',
         isBuiltin: true
+      },
+      // ==========================================
+      // New Enhanced Commands (Competitor Features)
+      // ==========================================
+      {
+        name: 'yolo',
+        description: 'Toggle YOLO mode (full auto-execution with guardrails)',
+        prompt: '__YOLO_MODE__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'on, off, safe, status, allow, deny', required: false }
+        ]
+      },
+      {
+        name: 'pipeline',
+        description: 'Run agent pipeline workflow',
+        prompt: '__PIPELINE__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'name', description: 'Pipeline name: code-review, bug-fix, feature-development, security-audit, documentation', required: false }
+        ]
+      },
+      {
+        name: 'skill',
+        description: 'Manage and activate specialized skills',
+        prompt: '__SKILL__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'list, activate <name>, deactivate, or skill name', required: false }
+        ]
+      },
+      {
+        name: 'cost',
+        description: 'Show cost tracking dashboard',
+        prompt: '__COST__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'status, budget <amount>, daily <amount>, export, reset', required: false }
+        ]
+      },
+      {
+        name: 'fork',
+        description: 'Fork conversation into a new branch',
+        prompt: '__FORK__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'name', description: 'Name for the new branch', required: false }
+        ]
+      },
+      {
+        name: 'branches',
+        description: 'List all conversation branches',
+        prompt: '__BRANCHES__',
+        filePath: '',
+        isBuiltin: true
+      },
+      {
+        name: 'checkout',
+        description: 'Switch to a different conversation branch',
+        prompt: '__CHECKOUT__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'branch', description: 'Branch ID or name to switch to', required: true }
+        ]
+      },
+      {
+        name: 'merge',
+        description: 'Merge a branch into current conversation',
+        prompt: '__MERGE__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'branch', description: 'Branch ID to merge', required: true }
+        ]
+      },
+      {
+        name: 'scan-todos',
+        description: 'Scan for AI-directed comments (// AI: fix this)',
+        prompt: '__SCAN_TODOS__',
+        filePath: '',
+        isBuiltin: true
+      },
+      {
+        name: 'address-todo',
+        description: 'Address a specific AI-directed comment',
+        prompt: '__ADDRESS_TODO__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'index', description: 'Index of the TODO to address', required: true }
+        ]
+      },
+      {
+        name: 'memory',
+        description: 'Manage persistent memory',
+        prompt: '__MEMORY__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'list, remember <key> <value>, recall <key>, forget <key>', required: false }
+        ]
+      },
+      {
+        name: 'remember',
+        description: 'Store something in persistent memory',
+        prompt: '__REMEMBER__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'key', description: 'Key for the memory', required: true },
+          { name: 'value', description: 'Value to remember', required: true }
+        ]
+      },
+      {
+        name: 'workspace',
+        description: 'Detect and show workspace configuration',
+        prompt: '__WORKSPACE__',
+        filePath: '',
+        isBuiltin: true
+      },
+      {
+        name: 'parallel',
+        description: 'Run multiple subagents in parallel',
+        prompt: '__PARALLEL__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'task', description: 'Task to run with parallel agents', required: false }
+        ]
+      },
+      {
+        name: 'model-router',
+        description: 'Configure multi-model routing',
+        prompt: '__MODEL_ROUTER__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'status, auto, manual, set <task> <model>', required: false }
+        ]
+      },
+      {
+        name: 'generate-tests',
+        description: 'Generate tests for a file',
+        prompt: '__GENERATE_TESTS__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'file', description: 'File to generate tests for', required: false }
+        ]
+      },
+      {
+        name: 'autonomy',
+        description: 'Set autonomy level (suggest, confirm, auto, full, yolo)',
+        prompt: '__AUTONOMY__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'level', description: 'Autonomy level', required: false }
+        ]
       }
     ];
 

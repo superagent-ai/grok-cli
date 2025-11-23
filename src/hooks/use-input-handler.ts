@@ -14,6 +14,7 @@ import { getHookSystem } from "../hooks/hook-system.js";
 import { getSecurityModeManager, SecurityMode } from "../security/security-modes.js";
 import { initGrokProject, formatInitResult } from "../utils/init-project.js";
 import { getBackgroundTaskManager } from "../tasks/background-tasks.js";
+import { getEnhancedCommandHandler } from "../commands/enhanced-command-handler.js";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -355,6 +356,33 @@ export function useInputHandler({
           setChatHistory((prev) => [...prev, entry]);
           clearInput();
           return true;
+        }
+
+        // Handle enhanced commands with special tokens
+        if (result.prompt.startsWith("__") && result.prompt.endsWith("__")) {
+          const enhancedHandler = getEnhancedCommandHandler();
+          enhancedHandler.setConversationHistory(chatHistory);
+
+          const args = trimmedInput.split(" ").slice(1);
+          const handlerResult = await enhancedHandler.handleCommand(
+            result.prompt,
+            args,
+            trimmedInput
+          );
+
+          if (handlerResult.handled) {
+            if (handlerResult.entry) {
+              setChatHistory((prev) => [...prev, handlerResult.entry!]);
+            }
+
+            if (handlerResult.passToAI && handlerResult.prompt) {
+              // Pass the generated prompt to the AI
+              await processUserMessage(handlerResult.prompt);
+            }
+
+            clearInput();
+            return true;
+          }
         }
 
         // Handle /security command
