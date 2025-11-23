@@ -391,8 +391,251 @@ export class SubagentManager {
   }
 }
 
+// Parallel execution types
+export interface ParallelTask {
+  id: string;
+  agentType: string;
+  task: string;
+  context?: string;
+  priority?: number;
+}
+
+export interface ParallelExecutionOptions {
+  maxConcurrent?: number;      // Default 10
+  batchSize?: number;          // Process in batches
+  stopOnFirstError?: boolean;  // Stop all if one fails
+  timeout?: number;            // Overall timeout
+  onProgress?: (completed: number, total: number, result: SubagentResult) => void;
+}
+
+export interface ParallelExecutionResult {
+  success: boolean;
+  results: Map<string, SubagentResult>;
+  totalDuration: number;
+  completedCount: number;
+  failedCount: number;
+  errors: string[];
+}
+
+/**
+ * Parallel Subagent Runner - Execute multiple subagents concurrently
+ * Inspired by Claude Code's parallel subagent execution (max 10 concurrent)
+ */
+export class ParallelSubagentRunner extends EventEmitter {
+  private manager: SubagentManager;
+  private maxConcurrent: number;
+  private runningCount: number = 0;
+  private queue: ParallelTask[] = [];
+  private isRunning: boolean = false;
+
+  constructor(manager: SubagentManager, maxConcurrent: number = 10) {
+    super();
+    this.manager = manager;
+    this.maxConcurrent = Math.min(maxConcurrent, 10); // Cap at 10
+  }
+
+  /**
+   * Run multiple subagents in parallel with batching
+   */
+  async runParallel(
+    tasks: ParallelTask[],
+    options: ParallelExecutionOptions = {},
+    sharedOptions: {
+      tools?: any[];
+      executeTool?: (toolCall: GrokToolCall) => Promise<ToolResult>;
+    } = {}
+  ): Promise<ParallelExecutionResult> {
+    const startTime = Date.now();
+    const {
+      maxConcurrent = this.maxConcurrent,
+      batchSize = maxConcurrent,
+      stopOnFirstError = false,
+      timeout = 600000, // 10 minutes default
+      onProgress,
+    } = options;
+
+    const results = new Map<string, SubagentResult>();
+    const errors: string[] = [];
+    let completedCount = 0;
+    let failedCount = 0;
+    this.isRunning = true;
+
+    this.emit("parallel:start", { taskCount: tasks.length, maxConcurrent });
+
+    // Sort by priority (higher first)
+    const sortedTasks = [...tasks].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    // Process in batches
+    const batches = this.chunk(sortedTasks, batchSize);
+
+    try {
+      for (const batch of batches) {
+        if (!this.isRunning) break;
+
+        // Check timeout
+        if (Date.now() - startTime > timeout) {
+          errors.push("Parallel execution timed out");
+          break;
+        }
+
+        this.emit("parallel:batch", { batchSize: batch.length, remaining: sortedTasks.length - completedCount });
+
+        // Run batch in parallel
+        const batchPromises = batch.map(async (task) => {
+          try {
+            const result = await this.manager.spawn(task.agentType, task.task, {
+              context: task.context,
+              tools: sharedOptions.tools,
+              executeTool: sharedOptions.executeTool,
+            });
+
+            results.set(task.id, result);
+
+            if (result.success) {
+              completedCount++;
+            } else {
+              failedCount++;
+              if (stopOnFirstError) {
+                this.isRunning = false;
+              }
+            }
+
+            if (onProgress) {
+              onProgress(completedCount + failedCount, tasks.length, result);
+            }
+
+            this.emit("parallel:task-complete", {
+              taskId: task.id,
+              success: result.success,
+              completedCount,
+              failedCount,
+            });
+
+            return { taskId: task.id, result };
+          } catch (error: any) {
+            const errorResult: SubagentResult = {
+              success: false,
+              output: `Error: ${error.message}`,
+              toolsUsed: [],
+              rounds: 0,
+              duration: 0,
+            };
+            results.set(task.id, errorResult);
+            failedCount++;
+            errors.push(`Task ${task.id}: ${error.message}`);
+
+            if (stopOnFirstError) {
+              this.isRunning = false;
+            }
+
+            return { taskId: task.id, result: errorResult };
+          }
+        });
+
+        await Promise.all(batchPromises);
+      }
+    } finally {
+      this.isRunning = false;
+    }
+
+    const totalDuration = Date.now() - startTime;
+
+    this.emit("parallel:complete", {
+      completedCount,
+      failedCount,
+      totalDuration,
+    });
+
+    return {
+      success: failedCount === 0,
+      results,
+      totalDuration,
+      completedCount,
+      failedCount,
+      errors,
+    };
+  }
+
+  /**
+   * Run tasks with different agent types exploring different aspects
+   * Useful for codebase exploration with multiple specialized agents
+   */
+  async exploreParallel(
+    baseTask: string,
+    agentTypes: string[],
+    options: ParallelExecutionOptions = {},
+    sharedOptions: {
+      tools?: any[];
+      executeTool?: (toolCall: GrokToolCall) => Promise<ToolResult>;
+    } = {}
+  ): Promise<ParallelExecutionResult> {
+    const tasks: ParallelTask[] = agentTypes.map((agentType, index) => ({
+      id: `explore-${agentType}-${index}`,
+      agentType,
+      task: baseTask,
+      priority: 0,
+    }));
+
+    return this.runParallel(tasks, options, sharedOptions);
+  }
+
+  /**
+   * Stop all running tasks
+   */
+  stop(): void {
+    this.isRunning = false;
+    this.manager.stopAll();
+    this.emit("parallel:stopped");
+  }
+
+  /**
+   * Get current status
+   */
+  getStatus(): { isRunning: boolean; queueLength: number } {
+    return {
+      isRunning: this.isRunning,
+      queueLength: this.queue.length,
+    };
+  }
+
+  private chunk<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  formatResults(result: ParallelExecutionResult): string {
+    let output = `\n🔄 Parallel Execution Results\n${"═".repeat(50)}\n\n`;
+    output += `✅ Completed: ${result.completedCount}\n`;
+    output += `❌ Failed: ${result.failedCount}\n`;
+    output += `⏱️  Duration: ${(result.totalDuration / 1000).toFixed(2)}s\n\n`;
+
+    if (result.errors.length > 0) {
+      output += `⚠️  Errors:\n`;
+      for (const error of result.errors) {
+        output += `   • ${error}\n`;
+      }
+      output += "\n";
+    }
+
+    output += `📋 Task Results:\n`;
+    for (const [taskId, taskResult] of result.results) {
+      const status = taskResult.success ? "✅" : "❌";
+      output += `\n${status} ${taskId}:\n`;
+      output += `   Rounds: ${taskResult.rounds} | Tools: ${taskResult.toolsUsed.join(", ") || "none"}\n`;
+      output += `   Output: ${taskResult.output.slice(0, 200)}${taskResult.output.length > 200 ? "..." : ""}\n`;
+    }
+
+    output += `\n${"═".repeat(50)}\n`;
+    return output;
+  }
+}
+
 // Singleton instance
 let subagentManagerInstance: SubagentManager | null = null;
+let parallelRunnerInstance: ParallelSubagentRunner | null = null;
 
 export function getSubagentManager(
   apiKey: string,
@@ -402,4 +645,23 @@ export function getSubagentManager(
     subagentManagerInstance = new SubagentManager(apiKey, baseURL);
   }
   return subagentManagerInstance;
+}
+
+export function getParallelSubagentRunner(
+  apiKey: string,
+  baseURL?: string,
+  maxConcurrent: number = 10
+): ParallelSubagentRunner {
+  if (!parallelRunnerInstance) {
+    const manager = getSubagentManager(apiKey, baseURL);
+    parallelRunnerInstance = new ParallelSubagentRunner(manager, maxConcurrent);
+  }
+  return parallelRunnerInstance;
+}
+
+export function resetParallelRunner(): void {
+  if (parallelRunnerInstance) {
+    parallelRunnerInstance.stop();
+  }
+  parallelRunnerInstance = null;
 }
