@@ -408,6 +408,130 @@ export class SessionStore {
       );
     });
   }
+
+  /**
+   * Get the most recent session
+   */
+  getLastSession(): Session | null {
+    const sessions = this.listSessions();
+    return sessions.length > 0 ? sessions[0] : null;
+  }
+
+  /**
+   * Resume the last session
+   */
+  resumeLastSession(): Session | null {
+    const lastSession = this.getLastSession();
+    if (lastSession) {
+      return this.resumeSession(lastSession.id);
+    }
+    return null;
+  }
+
+  /**
+   * Continue from last response (get last session and last message)
+   */
+  continueLastSession(): { session: Session; lastUserMessage: string } | null {
+    const session = this.resumeLastSession();
+    if (!session) return null;
+
+    // Find the last user message
+    const lastUserMessage = [...session.messages]
+      .reverse()
+      .find(m => m.type === 'user');
+
+    return {
+      session,
+      lastUserMessage: lastUserMessage?.content || ''
+    };
+  }
+
+  /**
+   * Get session by partial ID match
+   */
+  getSessionByPartialId(partialId: string): Session | null {
+    const sessions = this.listSessions();
+    const match = sessions.find(s =>
+      s.id.includes(partialId) || s.id.startsWith(partialId)
+    );
+    return match || null;
+  }
+
+  /**
+   * Clone a session (for branching conversations)
+   */
+  cloneSession(sessionId: string, newName?: string): Session | null {
+    const original = this.loadSession(sessionId);
+    if (!original) return null;
+
+    const cloned: Session = {
+      ...original,
+      id: this.generateSessionId(),
+      name: newName || `${original.name} (copy)`,
+      createdAt: new Date(),
+      lastAccessedAt: new Date(),
+      messages: [...original.messages]
+    };
+
+    this.saveSession(cloned);
+    return cloned;
+  }
+
+  /**
+   * Branch session at a specific message index
+   */
+  branchSession(sessionId: string, atMessageIndex: number, newName?: string): Session | null {
+    const original = this.loadSession(sessionId);
+    if (!original) return null;
+
+    const branchedMessages = original.messages.slice(0, atMessageIndex + 1);
+
+    const branched: Session = {
+      ...original,
+      id: this.generateSessionId(),
+      name: newName || `${original.name} (branch)`,
+      createdAt: new Date(),
+      lastAccessedAt: new Date(),
+      messages: branchedMessages,
+      metadata: {
+        ...original.metadata,
+        branchedFrom: sessionId,
+        branchedAt: atMessageIndex
+      }
+    };
+
+    this.saveSession(branched);
+    return branched;
+  }
+
+  /**
+   * Format help for session commands
+   */
+  formatHelp(): string {
+    return `
+Session Management Commands:
+
+  /sessions           List recent sessions
+  /session <id>       Resume a specific session
+  /session last       Resume the last session
+  /session continue   Continue from last response
+  /session export     Export current session to markdown
+  /session delete <id> Delete a session
+  /session clone <id> Clone a session
+  /session branch <n> Branch at message index n
+  /session search <q> Search sessions by content
+
+CLI Flags:
+  --resume            Resume the last session
+  --continue          Continue from last response
+  --session <id>      Load a specific session
+
+Examples:
+  grok --resume
+  grok --session abc123
+  /session clone abc123 "My experiment"
+`;
+  }
 }
 
 // Singleton instance

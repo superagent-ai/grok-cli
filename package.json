@@ -1,7 +1,7 @@
 {
   "name": "@vibe-kit/grok-cli",
-  "version": "0.0.33",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "version": "0.1.0",
+  "description": "An open-source AI agent that brings the power of Grok directly into your terminal with advanced features inspired by Claude Code, Aider, and Gemini CLI.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -29,7 +29,12 @@
     "agent",
     "text-editor",
     "grok",
-    "ai"
+    "ai",
+    "coding-assistant",
+    "terminal",
+    "developer-tools",
+    "mcp",
+    "hooks"
   ],
   "author": "Your Name",
   "license": "MIT",
@@ -49,6 +54,9 @@
     "react": "^18.3.1",
     "ripgrep-node": "^1.0.0",
     "tiktoken": "^1.0.21"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.2",
