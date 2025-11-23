@@ -1,8 +1,6 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
-
-const execAsync = promisify(exec);
+import path from 'path';
 
 export interface ConfirmationOptions {
   operation: string;
@@ -17,9 +15,61 @@ export interface ConfirmationResult {
   feedback?: string;
 }
 
+/**
+ * Execute a command safely using spawn with separate arguments
+ * This prevents command injection attacks
+ */
+function spawnAsync(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, {
+      stdio: 'ignore',
+      detached: true,
+    });
+
+    proc.on('error', (error) => {
+      reject(error);
+    });
+
+    // Don't wait for VS Code to close
+    proc.unref();
+
+    // Give it a moment to start
+    setTimeout(() => resolve(), 100);
+  });
+}
+
+/**
+ * Check if a command exists in PATH
+ */
+function commandExists(command: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn('which', [command], { stdio: 'pipe' });
+    proc.on('close', (code) => {
+      resolve(code === 0);
+    });
+    proc.on('error', () => {
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Validate and sanitize a filename for safe use
+ */
+function sanitizeFilename(filename: string): string {
+  // Resolve to absolute path to prevent path traversal
+  const resolved = path.resolve(filename);
+
+  // Check for null bytes
+  if (resolved.includes('\0')) {
+    throw new Error('Invalid filename: contains null bytes');
+  }
+
+  return resolved;
+}
+
 export class ConfirmationService extends EventEmitter {
   private static instance: ConfirmationService;
-  private skipConfirmationThisSession = false;
   private pendingConfirmation: Promise<ConfirmationResult> | null = null;
   private resolveConfirmation: ((result: ConfirmationResult) => void) | null = null;
 
@@ -58,7 +108,7 @@ export class ConfirmationService extends EventEmitter {
     if (options.showVSCodeOpen) {
       try {
         await this.openInVSCode(options.filename);
-      } catch (error) {
+      } catch {
         // If VS Code opening fails, continue without it
         options.showVSCodeOpen = false;
       }
@@ -105,16 +155,26 @@ export class ConfirmationService extends EventEmitter {
     }
   }
 
+  /**
+   * Open a file in VS Code safely using spawn with separate arguments
+   * This prevents command injection by not using shell interpolation
+   */
   private async openInVSCode(filename: string): Promise<void> {
+    // Sanitize the filename
+    const sanitizedPath = sanitizeFilename(filename);
+
     // Try different VS Code commands
     const commands = ['code', 'code-insiders', 'codium'];
 
     for (const cmd of commands) {
       try {
-        await execAsync(`which ${cmd}`);
-        await execAsync(`${cmd} "${filename}"`);
-        return;
-      } catch (error) {
+        const exists = await commandExists(cmd);
+        if (exists) {
+          // Use spawn with separate arguments - prevents injection
+          await spawnAsync(cmd, [sanitizedPath]);
+          return;
+        }
+      } catch {
         // Continue to next command
         continue;
       }
