@@ -68,6 +68,78 @@
 - **Scan de Sécurité** : Workflows automatisés avec npm audit et TruffleHog
 - **Gestion d'Erreurs Robuste** : Retry logic et feedback détaillé
 
+### 🚀 Fonctionnalités Avancées (Novembre 2025)
+
+#### ⚡ YOLO Mode
+Mode d'exécution automatique avec guardrails de sécurité intégrés :
+```bash
+/yolo on       # Mode complet (50 edits, 100 commandes max)
+/yolo safe     # Mode sécurisé avec restrictions
+/yolo off      # Désactiver
+```
+
+#### 🔄 Pipelines d'Agents
+Workflows automatisés pour tâches complexes :
+```bash
+/pipeline code-review src/     # Revue de code complète
+/pipeline bug-fix              # Workflow de correction de bugs
+/pipeline security-audit       # Audit de sécurité
+/pipeline documentation        # Génération de documentation
+```
+
+#### 🎯 Système de Skills
+Activation de compétences spécialisées :
+```bash
+/skill typescript-expert    # Expert TypeScript
+/skill react-specialist     # Spécialiste React
+/skill security-auditor     # Auditeur sécurité
+/skill database-expert      # Expert bases de données
+```
+
+#### 💰 Suivi des Coûts
+Dashboard de suivi des coûts API en temps réel :
+```bash
+/cost                    # Afficher le dashboard
+/cost budget 10          # Définir budget session ($10)
+/cost daily 50           # Limite quotidienne ($50)
+```
+
+#### 🌳 Branches de Conversation
+Fork et merge de conversations comme avec Git :
+```bash
+/fork experiment         # Créer une branche
+/branches                # Lister les branches
+/checkout <id>           # Changer de branche
+/merge <id>              # Fusionner une branche
+```
+
+#### 🧠 Mémoire Persistante
+Stockage de contexte entre sessions :
+```bash
+/remember api-key sk-xxx     # Stocker une info
+/memory recall api-key       # Récupérer
+/memory list                 # Lister tout
+```
+
+#### 🔀 Exécution Parallèle
+Subagents parallèles pour tâches intensives :
+```bash
+/parallel analyze all TypeScript files in src/
+```
+
+#### 🧪 Génération de Tests
+Génération automatique de tests :
+```bash
+/generate-tests src/utils/helpers.ts
+```
+
+#### 📝 Détection de Commentaires AI
+Scan et résolution de commentaires `// AI: fix this` :
+```bash
+/scan-todos              # Scanner le projet
+/address-todo 1          # Résoudre le TODO #1
+```
+
 ### ⚡ Modes d'Utilisation
 
 #### Mode Interactif
@@ -83,6 +155,32 @@ grok --prompt "analyze package.json and suggest optimizations"
 - **Instructions Personnalisées** : Fichier `.grok/GROK.md` pour adapter le comportement par projet
 - **Configuration Multi-Niveaux** : User settings + project settings
 - **Git Automation** : Commande spéciale `grok git commit-and-push` avec messages AI-générés
+
+### 📋 Commandes Slash Disponibles
+
+| Commande | Description |
+|----------|-------------|
+| `/help` | Afficher l'aide |
+| `/clear` | Effacer la conversation |
+| `/model` | Changer de modèle AI |
+| `/yolo` | Mode auto-exécution |
+| `/pipeline` | Exécuter un workflow |
+| `/skill` | Gérer les compétences |
+| `/cost` | Dashboard des coûts |
+| `/fork` | Créer une branche de conversation |
+| `/branches` | Lister les branches |
+| `/checkout` | Changer de branche |
+| `/merge` | Fusionner une branche |
+| `/memory` | Gérer la mémoire persistante |
+| `/remember` | Stocker une information |
+| `/workspace` | Détecter la configuration du projet |
+| `/parallel` | Exécuter en parallèle |
+| `/generate-tests` | Générer des tests |
+| `/scan-todos` | Scanner les commentaires AI |
+| `/address-todo` | Résoudre un TODO |
+| `/autonomy` | Configurer le niveau d'autonomie |
+| `/security` | Gérer les modes de sécurité |
+| `/init` | Initialiser un projet Grok |
 
 ---
 
@@ -516,7 +614,22 @@ Contactez-nous directement à : security@example.com
 
 ## 🗺️ Roadmap
 
-### Version 0.1.0 (Court Terme)
+### ✅ Version 0.1.0 (Novembre 2025) - COMPLÉTÉ
+
+- [x] **YOLO Mode** - Mode auto-exécution avec guardrails
+- [x] **Skills System** - 8 compétences spécialisées prédéfinies
+- [x] **Cost Tracking** - Dashboard temps réel des coûts API
+- [x] **Conversation Branching** - Fork/merge comme Git
+- [x] **Persistent Memory** - Mémoire inter-sessions (GROK_MEMORY.md)
+- [x] **Agent Pipelines** - 5 workflows automatisés
+- [x] **Parallel Subagents** - Exécution parallèle (max 10)
+- [x] **Multi-Model Router** - Routage dynamique par type de tâche
+- [x] **Test Generator** - Génération automatique de tests
+- [x] **Comment Watcher** - Détection de `// AI: fix this`
+- [x] **Workspace Detection** - Auto-configuration projet
+- [x] **17 nouvelles commandes slash**
+
+### Version 0.2.0 (Prochain)
 
 - [ ] **Suite de Tests Complète**
   - Tests unitaires (Jest/Vitest)
@@ -524,33 +637,15 @@ Contactez-nous directement à : security@example.com
   - Tests UI (testing-library)
   - Objectif : 80%+ coverage
 
-- [ ] **Documentation Développeur**
-  - JSDoc pour toutes les fonctions publiques
-  - Architecture diagram détaillé
-  - Contributing guide
-  - API documentation
-
 - [ ] **TypeScript Strict Mode**
   - Activation progressive du mode strict
   - Élimination de tous les `any`
   - Types explicites partout
 
-### Version 0.2.0 (Moyen Terme)
-
 - [ ] **Système de Plugins**
   - Architecture extensible
   - Plugin API publique
   - Registry de plugins
-
-- [ ] **Multi-File Operations**
-  - Batch editing
-  - Project-wide refactoring
-  - Atomic transactions
-
-- [ ] **Historique de Conversations**
-  - Sauvegarde persistante
-  - Recherche dans l'historique
-  - Export en Markdown/JSON
 
 - [ ] **Templates System**
   - Templates de code
@@ -564,20 +659,14 @@ Contactez-nous directement à : security@example.com
   - Sidebar dédiée
   - Keyboard shortcuts
 
-- [ ] **Workspace Awareness**
-  - Git branch context
-  - Project type detection
-  - Auto-configuration
-
 - [ ] **Monitoring & Telemetry**
   - Métriques d'usage (anonymes, opt-in)
   - Error tracking
   - Performance analytics
 
-- [ ] **Advanced Features**
-  - Diff approval workflow
-  - Code review assistant
-  - Automated testing generation
+- [ ] **Multi-Language Support**
+  - Interface en plusieurs langues
+  - Documentation localisée
 
 ---
 
