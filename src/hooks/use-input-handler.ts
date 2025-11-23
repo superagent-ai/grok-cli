@@ -7,6 +7,14 @@ import { useEnhancedInput, Key } from "./use-enhanced-input.js";
 import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
 import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
 
+// Import enhanced features
+import { getSlashCommandManager } from "../commands/slash-commands.js";
+import { getPersistentCheckpointManager } from "../checkpoints/persistent-checkpoint-manager.js";
+import { getHookSystem } from "../hooks/hook-system.js";
+import { getSecurityModeManager, SecurityMode } from "../security/security-modes.js";
+import { initGrokProject, formatInitResult } from "../utils/init-project.js";
+import { getBackgroundTaskManager } from "../tasks/background-tasks.js";
+
 interface UseInputHandlerProps {
   agent: GrokAgent;
   chatHistory: ChatEntry[];
@@ -219,13 +227,14 @@ export function useInputHandler({
     handleInputChange(input);
   }, [input]);
 
-  const commandSuggestions: CommandSuggestion[] = [
-    { command: "/help", description: "Show help information" },
-    { command: "/clear", description: "Clear chat history" },
-    { command: "/models", description: "Switch Grok Model" },
-    { command: "/commit-and-push", description: "AI commit & push to remote" },
-    { command: "/exit", description: "Exit the application" },
-  ];
+  // Load commands from SlashCommandManager
+  const commandSuggestions: CommandSuggestion[] = useMemo(() => {
+    const slashManager = getSlashCommandManager();
+    return slashManager.getCommands().map(cmd => ({
+      command: `/${cmd.name}`,
+      description: cmd.description
+    }));
+  }, []);
 
   // Load models from configuration with fallback to defaults
   const availableModels: ModelOption[] = useMemo(() => {
@@ -235,74 +244,199 @@ export function useInputHandler({
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
 
-    if (trimmedInput === "/clear") {
-      // Reset chat history
-      setChatHistory([]);
+    // Handle slash commands via SlashCommandManager
+    if (trimmedInput.startsWith("/")) {
+      const slashManager = getSlashCommandManager();
+      const result = slashManager.execute(trimmedInput);
 
-      // Reset processing states
-      setIsProcessing(false);
-      setIsStreaming(false);
-      setTokenCount(0);
-      setProcessingTime(0);
-      processingStartTime.current = 0;
+      if (result.success && result.prompt) {
+        // Handle special built-in commands
+        if (result.prompt === "__CLEAR_CHAT__") {
+          setChatHistory([]);
+          setIsProcessing(false);
+          setIsStreaming(false);
+          setTokenCount(0);
+          setProcessingTime(0);
+          processingStartTime.current = 0;
+          const confirmationService = ConfirmationService.getInstance();
+          confirmationService.resetSession();
+          clearInput();
+          resetHistory();
+          return true;
+        }
 
-      // Reset confirmation service session flags
-      const confirmationService = ConfirmationService.getInstance();
-      confirmationService.resetSession();
+        if (result.prompt === "__CHANGE_MODEL__") {
+          setShowModelSelection(true);
+          setSelectedModelIndex(0);
+          clearInput();
+          return true;
+        }
 
-      clearInput();
-      resetHistory();
-      return true;
+        if (result.prompt === "__CHANGE_MODE__") {
+          const args = trimmedInput.split(" ").slice(1);
+          const mode = args[0] as any;
+          if (["plan", "code", "ask"].includes(mode)) {
+            agent.setMode(mode);
+            const entry: ChatEntry = {
+              type: "assistant",
+              content: `✓ Switched to ${mode} mode`,
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, entry]);
+          } else {
+            const entry: ChatEntry = {
+              type: "assistant",
+              content: `Invalid mode. Available: plan, code, ask`,
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, entry]);
+          }
+          clearInput();
+          return true;
+        }
+
+        if (result.prompt === "__LIST_CHECKPOINTS__") {
+          const checkpointManager = getPersistentCheckpointManager();
+          const entry: ChatEntry = {
+            type: "assistant",
+            content: checkpointManager.formatCheckpointList(),
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, entry]);
+          clearInput();
+          return true;
+        }
+
+        if (result.prompt === "__RESTORE_CHECKPOINT__") {
+          const checkpointManager = getPersistentCheckpointManager();
+          const args = trimmedInput.split(" ").slice(1);
+
+          if (args.length === 0) {
+            // Show checkpoints list
+            const entry: ChatEntry = {
+              type: "assistant",
+              content: checkpointManager.formatCheckpointList(),
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, entry]);
+          } else {
+            // Restore specific checkpoint
+            const checkpoints = checkpointManager.getCheckpoints();
+            const arg = args[0];
+            let checkpointId = arg;
+
+            // If arg is a number, use it as index
+            const index = parseInt(arg, 10);
+            if (!isNaN(index) && index > 0 && index <= checkpoints.length) {
+              checkpointId = checkpoints[index - 1].id;
+            }
+
+            const restoreResult = checkpointManager.restore(checkpointId);
+            const entry: ChatEntry = {
+              type: "assistant",
+              content: restoreResult.success
+                ? `✅ Restored checkpoint!\n\nFiles restored:\n${restoreResult.restored.map(f => `  • ${f}`).join('\n')}`
+                : `❌ Failed to restore: ${restoreResult.errors.join(', ')}`,
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, entry]);
+          }
+          clearInput();
+          return true;
+        }
+
+        if (result.prompt === "__INIT_GROK__") {
+          const initResult = initGrokProject();
+          const entry: ChatEntry = {
+            type: "assistant",
+            content: formatInitResult(initResult),
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, entry]);
+          clearInput();
+          return true;
+        }
+
+        // Handle /security command
+        if (trimmedInput.startsWith("/security")) {
+          const securityManager = getSecurityModeManager();
+          const args = trimmedInput.split(" ").slice(1);
+
+          if (args.length === 0) {
+            const entry: ChatEntry = {
+              type: "assistant",
+              content: securityManager.formatStatus(),
+              timestamp: new Date(),
+            };
+            setChatHistory((prev) => [...prev, entry]);
+          } else {
+            const mode = args[0] as SecurityMode;
+            if (["suggest", "auto-edit", "full-auto"].includes(mode)) {
+              securityManager.setMode(mode);
+              const entry: ChatEntry = {
+                type: "assistant",
+                content: `✅ Security mode changed to: ${mode.toUpperCase()}\n\n${securityManager.formatStatus()}`,
+                timestamp: new Date(),
+              };
+              setChatHistory((prev) => [...prev, entry]);
+            } else {
+              const entry: ChatEntry = {
+                type: "assistant",
+                content: `Invalid security mode. Available: suggest, auto-edit, full-auto`,
+                timestamp: new Date(),
+              };
+              setChatHistory((prev) => [...prev, entry]);
+            }
+          }
+          clearInput();
+          return true;
+        }
+
+        // Handle /hooks command
+        if (trimmedInput.startsWith("/hooks")) {
+          const hookSystem = getHookSystem();
+          const entry: ChatEntry = {
+            type: "assistant",
+            content: hookSystem.formatStatus(),
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, entry]);
+          clearInput();
+          return true;
+        }
+
+        // Handle /tasks command
+        if (trimmedInput.startsWith("/tasks")) {
+          const taskManager = getBackgroundTaskManager();
+          const entry: ChatEntry = {
+            type: "assistant",
+            content: taskManager.formatTasksList(),
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, entry]);
+          clearInput();
+          return true;
+        }
+
+        // For other slash commands, send the prompt to the AI
+        if (!result.prompt.startsWith("__")) {
+          await processUserMessage(result.prompt);
+          clearInput();
+          return true;
+        }
+      } else if (!result.success) {
+        const entry: ChatEntry = {
+          type: "assistant",
+          content: result.error || "Unknown command",
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, entry]);
+        clearInput();
+        return true;
+      }
     }
 
-    if (trimmedInput === "/help") {
-      const helpEntry: ChatEntry = {
-        type: "assistant",
-        content: `Grok CLI Help:
-
-Built-in Commands:
-  /clear      - Clear chat history
-  /help       - Show this help
-  /models     - Switch between available models
-  /exit       - Exit application
-  exit, quit  - Exit application
-
-Git Commands:
-  /commit-and-push - AI-generated commit + push to remote
-
-Enhanced Input Features:
-  ↑/↓ Arrow   - Navigate command history
-  Ctrl+C      - Clear input (press twice to exit)
-  Ctrl+←/→    - Move by word
-  Ctrl+A/E    - Move to line start/end
-  Ctrl+W      - Delete word before cursor
-  Ctrl+K      - Delete to end of line
-  Ctrl+U      - Delete to start of line
-  Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
-
-Direct Commands (executed immediately):
-  ls [path]   - List directory contents
-  pwd         - Show current directory
-  cd <path>   - Change directory
-  cat <file>  - View file contents
-  mkdir <dir> - Create directory
-  touch <file>- Create empty file
-
-Model Configuration:
-  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
-
-For complex operations, just describe what you want in natural language.
-Examples:
-  "edit package.json and add a new script"
-  "create a new React component called Header"
-  "show me all TypeScript files in this project"`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, helpEntry]);
-      clearInput();
-      return true;
-    }
-
+    // Legacy command handling for backwards compatibility
     if (trimmedInput === "/exit") {
       process.exit(0);
       return true;
@@ -321,7 +455,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
-        updateCurrentModel(modelArg); // Update project current model
+        updateCurrentModel(modelArg);
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -331,9 +465,7 @@ Examples:
       } else {
         const errorEntry: ChatEntry = {
           type: "assistant",
-          content: `Invalid model: ${modelArg}
-
-Available models: ${modelNames.join(", ")}`,
+          content: `Invalid model: ${modelArg}\n\nAvailable models: ${modelNames.join(", ")}`,
           timestamp: new Date(),
         };
         setChatHistory((prev) => [...prev, errorEntry]);
