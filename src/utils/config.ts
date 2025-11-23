@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { PATHS } from '../config/constants';
+import { PATHS } from '../config/constants.js';
 
 export interface UserSettings {
   apiKey?: string;

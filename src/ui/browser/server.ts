@@ -1,7 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { GrokAgent, ChatEntry } from '../../agent/grok-agent';
+import { GrokAgent, ChatEntry } from '../../agent/grok-agent.js';
 
 /**
  * Browser UI Server

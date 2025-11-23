@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ToolResult } from '../types';
+import { ToolResult } from '../types/index.js';
 
 export interface WebSearchOptions {
   maxResults?: number;

@@ -2,8 +2,8 @@
  * Model validation and utility functions
  */
 
-import { SUPPORTED_MODELS } from '../config/constants';
-import { ValidationError } from './errors';
+import { SUPPORTED_MODELS } from '../config/constants.js';
+import { ValidationError } from './errors.js';
 
 export type ModelName = keyof typeof SUPPORTED_MODELS;
 export type ModelProvider = 'xai' | 'anthropic' | 'google' | 'unknown';

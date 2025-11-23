@@ -3,7 +3,7 @@
  * and validate user input
  */
 
-import { ValidationError } from './errors';
+import { ValidationError } from './errors.js';
 
 /**
  * Sanitize a file path to prevent directory traversal attacks

@@ -3,8 +3,8 @@ import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import * as fs from "fs-extra";
 import * as path from "path";
-import { SEARCH_CONFIG } from "../config/constants";
-import { Cache, createCacheKey } from "../utils/cache";
+import { SEARCH_CONFIG } from "../config/constants.js";
+import { Cache, createCacheKey } from "../utils/cache.js";
 
 export interface SearchResult {
   file: string;

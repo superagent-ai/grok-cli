@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
-import { validateModel, getModelInfo } from "../utils/model-utils";
+import { validateModel, getModelInfo } from "../utils/model-utils.js";
 
 export type GrokMessage = ChatCompletionMessageParam;
 

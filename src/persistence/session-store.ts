@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { ChatEntry } from '../agent/grok-agent';
+import { ChatEntry } from '../agent/grok-agent.js';
 
 export interface Session {
   id: string;

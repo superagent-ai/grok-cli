@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { ToolResult } from '../types';
+import { ToolResult } from '../types/index.js';
 
 export interface ImageInput {
   type: 'base64' | 'url' | 'file';
