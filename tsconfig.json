@@ -15,7 +15,8 @@
     "jsx": "react",
     "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "types": ["node", "react", "jest"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

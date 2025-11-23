@@ -8,6 +8,45 @@
  * - Aider (voice input, multi-model)
  */
 
+// Import for local use
+import {
+  PersistentCheckpointManager as PCM,
+  getPersistentCheckpointManager as getPCM,
+  resetPersistentCheckpointManager as resetPCM,
+} from '../checkpoints/persistent-checkpoint-manager.js';
+
+import {
+  SlashCommandManager as SCM,
+  getSlashCommandManager as getSCM,
+  resetSlashCommandManager as resetSCM,
+} from '../commands/slash-commands.js';
+
+import {
+  HookSystem as HS,
+  getHookSystem as getHS,
+  resetHookSystem as resetHS,
+} from '../hooks/hook-system.js';
+
+import {
+  SecurityModeManager as SMM,
+  getSecurityModeManager as getSMM,
+  resetSecurityModeManager as resetSMM,
+} from '../security/security-modes.js';
+
+import {
+  VoiceInputManager as VIM,
+  getVoiceInputManager as getVIM,
+  resetVoiceInputManager as resetVIM,
+} from '../input/voice-input-enhanced.js';
+
+import {
+  BackgroundTaskManager as BTM,
+  getBackgroundTaskManager as getBTM,
+  resetBackgroundTaskManager as resetBTM,
+} from '../tasks/background-tasks.js';
+
+// Re-export everything
+
 // Persistent Checkpoints (inspired by Gemini CLI)
 export {
   PersistentCheckpointManager,
@@ -99,20 +138,20 @@ export {
  * Initialize all enhanced features
  */
 export function initializeEnhancedFeatures(workingDirectory: string = process.cwd()): {
-  checkpoints: ReturnType<typeof getPersistentCheckpointManager>;
-  slashCommands: ReturnType<typeof getSlashCommandManager>;
-  hooks: ReturnType<typeof getHookSystem>;
-  security: ReturnType<typeof getSecurityModeManager>;
-  voiceInput: ReturnType<typeof getVoiceInputManager>;
-  tasks: ReturnType<typeof getBackgroundTaskManager>;
+  checkpoints: ReturnType<typeof getPCM>;
+  slashCommands: ReturnType<typeof getSCM>;
+  hooks: ReturnType<typeof getHS>;
+  security: ReturnType<typeof getSMM>;
+  voiceInput: ReturnType<typeof getVIM>;
+  tasks: ReturnType<typeof getBTM>;
 } {
   return {
-    checkpoints: getPersistentCheckpointManager({ maxCheckpoints: 100 }),
-    slashCommands: getSlashCommandManager(workingDirectory),
-    hooks: getHookSystem(workingDirectory),
-    security: getSecurityModeManager(workingDirectory),
-    voiceInput: getVoiceInputManager(),
-    tasks: getBackgroundTaskManager()
+    checkpoints: getPCM({ maxCheckpoints: 100 }),
+    slashCommands: getSCM(workingDirectory),
+    hooks: getHS(workingDirectory),
+    security: getSMM(workingDirectory),
+    voiceInput: getVIM(),
+    tasks: getBTM()
   };
 }
 
@@ -120,24 +159,24 @@ export function initializeEnhancedFeatures(workingDirectory: string = process.cw
  * Reset all enhanced features (useful for testing)
  */
 export function resetAllEnhancedFeatures(): void {
-  resetPersistentCheckpointManager();
-  resetSlashCommandManager();
-  resetHookSystem();
-  resetSecurityModeManager();
-  resetVoiceInputManager();
-  resetBackgroundTaskManager();
+  resetPCM();
+  resetSCM();
+  resetHS();
+  resetSMM();
+  resetVIM();
+  resetBTM();
 }
 
 /**
  * Get feature status summary
  */
 export function getFeatureStatusSummary(): string {
-  const checkpoints = getPersistentCheckpointManager();
-  const slashCommands = getSlashCommandManager();
-  const hooks = getHookSystem();
-  const security = getSecurityModeManager();
-  const voiceInput = getVoiceInputManager();
-  const tasks = getBackgroundTaskManager();
+  const checkpoints = getPCM();
+  const slashCommands = getSCM();
+  const hooks = getHS();
+  const security = getSMM();
+  const voiceInput = getVIM();
+  const tasks = getBTM();
 
   const checkpointStats = checkpoints.getStats();
   const taskStats = tasks.getStats();
