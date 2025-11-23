@@ -3,6 +3,8 @@ import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
 import * as fs from "fs-extra";
 import * as path from "path";
+import { SEARCH_CONFIG } from "../config/constants";
+import { Cache, createCacheKey } from "../utils/cache";
 
 export interface SearchResult {
   file: string;
@@ -31,6 +33,7 @@ export interface UnifiedSearchResult {
 export class SearchTool {
   private confirmationService = ConfirmationService.getInstance();
   private currentDirectory: string = process.cwd();
+  private searchCache = new Cache<UnifiedSearchResult[]>(SEARCH_CONFIG.CACHE_TTL);
 
   /**
    * Unified search method that can search for text content or find files
@@ -52,6 +55,37 @@ export class SearchTool {
   ): Promise<ToolResult> {
     try {
       const searchType = options.searchType || "both";
+
+      // Create cache key from search parameters
+      const cacheKey = createCacheKey(
+        'search',
+        query,
+        searchType,
+        options.includePattern,
+        options.excludePattern,
+        options.caseSensitive,
+        options.wholeWord,
+        options.regex,
+        options.maxResults,
+        options.fileTypes?.join(','),
+        options.excludeFiles?.join(','),
+        options.includeHidden
+      );
+
+      // Check cache first
+      const cachedResults = this.searchCache.get(cacheKey);
+      if (cachedResults) {
+        const formattedOutput = this.formatUnifiedResults(
+          cachedResults,
+          query,
+          searchType
+        );
+        return {
+          success: true,
+          output: formattedOutput + '\n\n[Cached result]',
+        };
+      }
+
       const results: UnifiedSearchResult[] = [];
 
       // Search for text content if requested
@@ -87,6 +121,9 @@ export class SearchTool {
           output: `No results found for "${query}"`,
         };
       }
+
+      // Cache the results
+      this.searchCache.set(cacheKey, results);
 
       const formattedOutput = this.formatUnifiedResults(
         results,
@@ -269,7 +306,7 @@ export class SearchTool {
     const searchPattern = pattern.toLowerCase();
 
     const walkDir = async (dir: string, depth: number = 0): Promise<void> => {
-      if (depth > 10 || files.length >= maxResults) return; // Prevent infinite recursion and limit results
+      if (depth > SEARCH_CONFIG.MAX_DEPTH || files.length >= maxResults) return; // Prevent infinite recursion and limit results
 
       try {
         const entries = await fs.readdir(dir, { withFileTypes: true });

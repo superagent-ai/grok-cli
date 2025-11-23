@@ -1,5 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
+import React from 'react';
+import { Box, Text } from 'ink';
 
 interface ModelOption {
   model: string;
@@ -28,8 +28,8 @@ export function ModelSelection({
       {models.map((modelOption, index) => (
         <Box key={index} paddingLeft={1}>
           <Text
-            color={index === selectedIndex ? "black" : "white"}
-            backgroundColor={index === selectedIndex ? "cyan" : undefined}
+            color={index === selectedIndex ? 'black' : 'white'}
+            backgroundColor={index === selectedIndex ? 'cyan' : undefined}
           >
             {modelOption.model}
           </Text>

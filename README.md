@@ -1,432 +1,659 @@
-# Grok CLI
+<div align="center">
 
-A conversational AI CLI tool powered by Grok with intelligent text editor capabilities and tool usage.
+# 🤖 Grok CLI
 
-<img width="980" height="435" alt="Screenshot 2025-07-21 at 13 35 41" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
+### Agent AI conversationnel intelligent pour votre terminal
 
-## Features
+[![npm version](https://img.shields.io/npm/v/@vibe-kit/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen?style=flat-square)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-4.9-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![npm downloads](https://img.shields.io/npm/dm/@vibe-kit/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vibe-kit/grok-cli/typecheck.yml?style=flat-square)](https://github.com/vibe-kit/grok-cli/actions)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
-- **🤖 Conversational AI**: Natural language interface powered by Grok-3
-- **📝 Smart File Operations**: AI automatically uses tools to view, create, and edit files
-- **⚡ Bash Integration**: Execute shell commands through natural conversation
-- **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
-- **🚀 Morph Fast Apply**: Optional high-speed code editing at 4,500+ tokens/sec with 98% accuracy
-- **🔌 MCP Tools**: Extend capabilities with Model Context Protocol servers (Linear, GitHub, etc.)
-- **💬 Interactive UI**: Beautiful terminal interface built with Ink
-- **🌍 Global Installation**: Install and use anywhere with `bun add -g @vibe-kit/grok-cli`
+**Un outil CLI puissant propulsé par Grok qui transforme votre terminal en assistant de développement intelligent avec capacités d'édition, recherche avancée et exécution de commandes.**
 
-## Installation
+[Installation](#-installation) •
+[Fonctionnalités](#-fonctionnalités-principales) •
+[Utilisation](#-utilisation) •
+[Documentation](#-documentation) •
+[Contribution](#-contribution)
 
-### Prerequisites
-- Bun 1.0+ (or Node.js 18+ as fallback)
-- Grok API key from X.AI
-- (Optional, Recommended) Morph API key for Fast Apply editing
+</div>
 
-### Global Installation (Recommended)
+---
+
+## 📸 Aperçu
+
+<div align="center">
+
+![Grok CLI Demo](https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78)
+
+*Interface interactive avec streaming en temps réel, comptage de tokens et confirmation visuelle*
+
+</div>
+
+---
+
+## ✨ Fonctionnalités Principales
+
+### 🎯 Agent AI Conversationnel
+- **Boucle Agentic Intelligente** : Jusqu'à 30 rounds d'utilisation d'outils pour résoudre des tâches complexes
+- **Streaming en Temps Réel** : Génération progressive des réponses pour un feedback instantané
+- **Multi-Modèles** : Support de Grok-4, Grok-3, Gemini, Claude et plus via configuration d'endpoint personnalisée
+- **Comptage de Tokens Précis** : Suivi en temps réel avec tiktoken pour maîtriser vos coûts
+
+### 🛠️ 7 Outils Puissants
+
+| Outil | Description | Fonctionnalités |
+|-------|-------------|-----------------|
+| 📄 **view_file** | Visualisation de fichiers et répertoires | Plages de lignes, auto-limitation à 10 lignes |
+| ➕ **create_file** | Création de fichiers | Création automatique de répertoires parents |
+| ✏️ **str_replace_editor** | Édition intelligente de texte | Fuzzy matching, diffs visuels, replace_all |
+| 💻 **bash** | Exécution de commandes shell | Support cd persistent, timeout configurable |
+| 🔍 **search** | Recherche ultra-rapide | Backend ripgrep, glob patterns, regex, scoring fuzzy |
+| ✅ **create_todo_list** | Création de listes de tâches | États, priorités, affichage coloré |
+| 🔄 **update_todo_list** | Mise à jour des todos | Modification dynamique status/contenu/priorité |
+
+### 🎨 Interface Utilisateur Moderne
+- **Terminal Réactif** : Interface Ink/React avec rendu markdown et coloration syntaxique
+- **Confirmations Visuelles** : Preview des diffs avant application avec intégration VS Code
+- **Timer de Traitement** : Suivi en temps réel de la durée des opérations
+- **Mode Auto-Edit** : Toggle rapide avec Shift+Tab
+
+### 🔐 Sécurité & Fiabilité
+- **Système de Confirmation** : Approbation requise avant toute opération destructive
+- **Session Flags** : "Don't ask again this session" pour une meilleure UX
+- **Scan de Sécurité** : Workflows automatisés avec npm audit et TruffleHog
+- **Gestion d'Erreurs Robuste** : Retry logic et feedback détaillé
+
+### ⚡ Modes d'Utilisation
+
+#### Mode Interactif
+Interface conversationnelle complète avec toutes les fonctionnalités
+
+#### Mode Headless
+Parfait pour CI/CD, scripting et automation
 ```bash
-bun add -g @vibe-kit/grok-cli
+grok --prompt "analyze package.json and suggest optimizations"
 ```
 
-Or with npm (fallback):
+### 🎛️ Personnalisation Avancée
+- **Instructions Personnalisées** : Fichier `.grok/GROK.md` pour adapter le comportement par projet
+- **Configuration Multi-Niveaux** : User settings + project settings
+- **Git Automation** : Commande spéciale `grok git commit-and-push` avec messages AI-générés
+
+---
+
+## 🚀 Installation
+
+### Prérequis
+
+- **Node.js** 16.0.0 ou supérieur
+- **ripgrep** (optionnel, recommandé pour performances de recherche optimales)
+  ```bash
+  # macOS
+  brew install ripgrep
+
+  # Ubuntu/Debian
+  sudo apt-get install ripgrep
+
+  # Windows
+  choco install ripgrep
+  ```
+
+### Installation Globale (Recommandée)
+
 ```bash
 npm install -g @vibe-kit/grok-cli
 ```
 
-### Local Development
+### Installation pour Développement
+
 ```bash
-git clone <repository>
+git clone https://github.com/your-org/grok-cli.git
 cd grok-cli
-bun install
-bun run build
-bun link
+npm install
+npm run build
+npm link
 ```
 
-## Setup
+---
 
-1. Get your Grok API key from [X.AI](https://x.ai)
+## ⚙️ Configuration
 
-2. Set up your API key (choose one method):
+### 1. Obtenir une Clé API
 
-**Method 1: Environment Variable**
+Récupérez votre clé API Grok sur [X.AI](https://x.ai)
+
+### 2. Configuration de la Clé API (4 méthodes)
+
+#### Méthode 1 : Variable d'Environnement (Recommandée)
 ```bash
 export GROK_API_KEY=your_api_key_here
 ```
 
-**Method 2: .env File**
+#### Méthode 2 : Fichier .env
 ```bash
 cp .env.example .env
-# Edit .env and add your API key
+# Éditez .env et ajoutez votre clé API
 ```
 
-**Method 3: Command Line Flag**
+#### Méthode 3 : Flag en Ligne de Commande
 ```bash
 grok --api-key your_api_key_here
 ```
 
-**Method 4: User Settings File**
-Create `~/.grok/user-settings.json`:
-```json
-{
-  "apiKey": "your_api_key_here"
-}
-```
-
-3. (Optional, Recommended) Get your Morph API key from [Morph Dashboard](https://morphllm.com/dashboard/api-keys)
-
-4. Set up your Morph API key for Fast Apply editing (choose one method):
-
-**Method 1: Environment Variable**
-```bash
-export MORPH_API_KEY=your_morph_api_key_here
-```
-
-**Method 2: .env File**
-```bash
-# Add to your .env file
-MORPH_API_KEY=your_morph_api_key_here
-```
-
-### Custom Base URL (Optional)
-
-By default, the CLI uses `https://api.x.ai/v1` as the Grok API endpoint. You can configure a custom endpoint if needed (choose one method):
-
-**Method 1: Environment Variable**
-```bash
-export GROK_BASE_URL=https://your-custom-endpoint.com/v1
-```
-
-**Method 2: Command Line Flag**
-```bash
-grok --api-key your_api_key_here --base-url https://your-custom-endpoint.com/v1
-```
-
-**Method 3: User Settings File**
-Add to `~/.grok/user-settings.json`:
-```json
-{
-  "apiKey": "your_api_key_here",
-  "baseURL": "https://your-custom-endpoint.com/v1"
-}
-```
-
-## Configuration Files
-
-Grok CLI uses two types of configuration files to manage settings:
-
-### User-Level Settings (`~/.grok/user-settings.json`)
-
-This file stores **global settings** that apply across all projects. These settings rarely change and include:
-
-- **API Key**: Your Grok API key
-- **Base URL**: Custom API endpoint (if needed)
-- **Default Model**: Your preferred model (e.g., `grok-code-fast-1`)
-- **Available Models**: List of models you can use
-
-**Example:**
+#### Méthode 4 : Fichier de Settings Utilisateur
+Créez `~/.grok/user-settings.json`:
 ```json
 {
   "apiKey": "your_api_key_here",
   "baseURL": "https://api.x.ai/v1",
-  "defaultModel": "grok-code-fast-1",
-  "models": [
-    "grok-code-fast-1",
-    "grok-4-latest",
-    "grok-3-latest",
-    "grok-3-fast",
-    "grok-3-mini-fast"
-  ]
+  "defaultModel": "grok-4-latest"
 }
 ```
 
-### Project-Level Settings (`.grok/settings.json`)
+### 3. Base URL Personnalisée (Optionnel)
 
-This file stores **project-specific settings** in your current working directory. It includes:
+Pour utiliser d'autres modèles AI (Gemini, Claude, etc.) :
 
-- **Current Model**: The model currently in use for this project
-- **MCP Servers**: Model Context Protocol server configurations
-
-**Example:**
-```json
-{
-  "model": "grok-3-fast",
-  "mcpServers": {
-    "linear": {
-      "name": "linear",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["@linear/mcp-server"]
-    }
-  }
-}
-```
-
-### How It Works
-
-1. **Global Defaults**: User-level settings provide your default preferences
-2. **Project Override**: Project-level settings override defaults for specific projects
-3. **Directory-Specific**: When you change directories, project settings are loaded automatically
-4. **Fallback Logic**: Project model → User default model → System default (`grok-code-fast-1`)
-
-This means you can have different models for different projects while maintaining consistent global settings like your API key.
-
-### Using Other API Providers
-
-**Important**: Grok CLI uses **OpenAI-compatible APIs**. You can use any provider that implements the OpenAI chat completions standard.
-
-**Popular Providers**:
-- **X.AI (Grok)**: `https://api.x.ai/v1` (default)
-- **OpenAI**: `https://api.openai.com/v1`
-- **OpenRouter**: `https://openrouter.ai/api/v1`
-- **Groq**: `https://api.groq.com/openai/v1`
-
-**Example with OpenRouter**:
-```json
-{
-  "apiKey": "your_openrouter_key",
-  "baseURL": "https://openrouter.ai/api/v1",
-  "defaultModel": "anthropic/claude-3.5-sonnet",
-  "models": [
-    "anthropic/claude-3.5-sonnet",
-    "openai/gpt-4o",
-    "meta-llama/llama-3.1-70b-instruct"
-  ]
-}
-```
-
-## Usage
-
-### Interactive Mode
-
-Start the conversational AI assistant:
 ```bash
+# Variable d'environnement
+export GROK_BASE_URL=https://your-custom-endpoint.com/v1
+
+# Ligne de commande
+grok --base-url https://your-custom-endpoint.com/v1
+
+# User settings
+{
+  "apiKey": "your_api_key",
+  "baseURL": "https://your-custom-endpoint.com/v1"
+}
+```
+
+---
+
+## 💻 Utilisation
+
+### Mode Interactif
+
+```bash
+# Lancer dans le répertoire courant
 grok
-```
 
-Or specify a working directory:
-```bash
+# Spécifier un répertoire de travail
 grok -d /path/to/project
-```
 
-### Headless Mode
-
-Process a single prompt and exit (useful for scripting and automation):
-```bash
-grok --prompt "show me the package.json file"
-grok -p "create a new file called example.js with a hello world function"
-grok --prompt "run bun test and show me the results" --directory /path/to/project
-grok --prompt "complex task" --max-tool-rounds 50  # Limit tool usage for faster execution
-```
-
-This mode is particularly useful for:
-- **CI/CD pipelines**: Automate code analysis and file operations
-- **Scripting**: Integrate AI assistance into shell scripts
-- **Terminal benchmarks**: Perfect for tools like Terminal Bench that need non-interactive execution
-- **Batch processing**: Process multiple prompts programmatically
-
-### Tool Execution Control
-
-By default, Grok CLI allows up to 400 tool execution rounds to handle complex multi-step tasks. You can control this behavior:
-
-```bash
-# Limit tool rounds for faster execution on simple tasks
-grok --max-tool-rounds 10 --prompt "show me the current directory"
-
-# Increase limit for very complex tasks (use with caution)
-grok --max-tool-rounds 1000 --prompt "comprehensive code refactoring"
-
-# Works with all modes
-grok --max-tool-rounds 20  # Interactive mode
-grok git commit-and-push --max-tool-rounds 30  # Git commands
-```
-
-**Use Cases**:
-- **Fast responses**: Lower limits (10-50) for simple queries
-- **Complex automation**: Higher limits (500+) for comprehensive tasks
-- **Resource control**: Prevent runaway executions in automated environments
-
-### Model Selection
-
-You can specify which AI model to use with the `--model` parameter or `GROK_MODEL` environment variable:
-
-**Method 1: Command Line Flag**
-```bash
-# Use Grok models
-grok --model grok-code-fast-1
+# Avec un modèle spécifique
 grok --model grok-4-latest
-grok --model grok-3-latest
-grok --model grok-3-fast
+```
 
-# Use other models (with appropriate API endpoint)
+### Mode Headless
+
+Parfait pour automation, CI/CD et scripting :
+
+```bash
+# Prompt simple
+grok --prompt "show me the package.json file"
+
+# Avec répertoire spécifique
+grok -p "run tests and show results" -d /path/to/project
+
+# Avec modèle personnalisé
+grok -p "refactor auth.ts for better performance" --model grok-4-latest
+```
+
+**Cas d'usage headless :**
+- ✅ Pipelines CI/CD
+- ✅ Scripts shell automatisés
+- ✅ Benchmarks terminal (Terminal Bench)
+- ✅ Batch processing
+
+### Sélection de Modèle
+
+```bash
+# Modèles Grok
+grok --model grok-4-latest      # Le plus récent et puissant
+grok --model grok-3-latest      # Version stable
+grok --model grok-3-fast        # Optimisé pour la vitesse
+
+# Autres modèles (avec endpoint approprié)
 grok --model gemini-2.5-pro --base-url https://api-endpoint.com/v1
 grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
 ```
 
-**Method 2: Environment Variable**
-```bash
-export GROK_MODEL=grok-code-fast-1
-grok
-```
-
-**Method 3: User Settings File**
-Add to `~/.grok/user-settings.json`:
-```json
-{
-  "apiKey": "your_api_key_here",
-  "defaultModel": "grok-code-fast-1"
-}
-```
-
-**Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-code-fast-1)
-
-### Command Line Options
+### Options en Ligne de Commande
 
 ```bash
 grok [options]
 
 Options:
-  -V, --version          output the version number
-  -d, --directory <dir>  set working directory
-  -k, --api-key <key>    Grok API key (or set GROK_API_KEY env var)
-  -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
-  -m, --model <model>    AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)
-  -p, --prompt <prompt>  process a single prompt and exit (headless mode)
-  --max-tool-rounds <rounds>  maximum number of tool execution rounds (default: 400)
-  -h, --help             display help for command
+  -V, --version          Afficher le numéro de version
+  -d, --directory <dir>  Définir le répertoire de travail
+  -k, --api-key <key>    Clé API Grok (ou variable GROK_API_KEY)
+  -u, --base-url <url>   URL de base API Grok (ou variable GROK_BASE_URL)
+  -m, --model <model>    Modèle AI à utiliser (ex: grok-4-latest)
+  -p, --prompt <prompt>  Traiter un prompt unique et quitter (mode headless)
+  -h, --help             Afficher l'aide
 ```
 
-### Custom Instructions
+---
 
-You can provide custom instructions to tailor Grok's behavior to your project by creating a `.grok/GROK.md` file in your project directory:
+## 📚 Exemples Pratiques
+
+### Exploration de Code
 
 ```bash
-mkdir .grok
+💬 "Montre-moi la structure du projet"
+💬 "Trouve tous les fichiers TypeScript dans src/"
+💬 "Cherche toutes les fonctions exportées dans utils/"
 ```
 
-Create `.grok/GROK.md` with your custom instructions:
+### Édition de Fichiers
+
+```bash
+💬 "Crée un composant React Button avec TypeScript"
+💬 "Remplace toutes les occurrences de 'oldName' par 'newName' dans src/"
+💬 "Ajoute des commentaires JSDoc à toutes les fonctions publiques"
+```
+
+### Opérations Git
+
+```bash
+💬 "Fais un commit avec un message approprié"
+💬 "Montre-moi le git status et suggère les prochaines étapes"
+
+# Commande spéciale
+grok git commit-and-push
+```
+
+### Refactoring & Code Review
+
+```bash
+💬 "Analyse le fichier auth.ts et suggère des améliorations de sécurité"
+💬 "Refactorise cette fonction pour utiliser async/await"
+💬 "Vérifie s'il y a des dépendances non utilisées dans package.json"
+```
+
+### Testing & Build
+
+```bash
+💬 "Lance les tests et montre-moi les résultats"
+💬 "Build le projet et corrige les erreurs TypeScript"
+💬 "Génère des tests unitaires pour la fonction calculateTotal"
+```
+
+### Documentation
+
+```bash
+💬 "Génère un README pour ce module"
+💬 "Ajoute des commentaires explicatifs dans ce fichier"
+💬 "Crée une documentation API pour les endpoints"
+```
+
+---
+
+## 🎓 Instructions Personnalisées
+
+Adaptez le comportement de Grok à votre projet en créant un fichier `.grok/GROK.md` :
+
+```bash
+mkdir -p .grok
+```
+
+Exemple `.grok/GROK.md` :
 ```markdown
-# Custom Instructions for Grok CLI
+# Instructions Personnalisées pour Grok CLI
 
-Always use TypeScript for any new code files.
-When creating React components, use functional components with hooks.
-Prefer const assertions and explicit typing over inference where it improves clarity.
-Always add JSDoc comments for public functions and interfaces.
-Follow the existing code style and patterns in this project.
+## Style de Code
+- Toujours utiliser TypeScript pour les nouveaux fichiers
+- Préférer les composants fonctionnels React avec hooks
+- Utiliser const assertions et typage explicite
+
+## Conventions
+- Ajouter des commentaires JSDoc pour toutes les fonctions publiques
+- Suivre les patterns existants du projet
+- Utiliser Prettier pour le formatage
+
+## Tests
+- Générer des tests Jest pour chaque nouvelle fonction
+- Viser 80%+ de couverture de code
+
+## Git
+- Messages de commit en anglais, format conventional commits
+- Toujours créer une branche feature avant modifications
 ```
 
-Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
+Grok chargera automatiquement ces instructions et les appliquera à toutes ses actions dans le projet.
 
-## Morph Fast Apply (Optional)
+---
 
-Grok CLI supports Morph's Fast Apply model for high-speed code editing at **4,500+ tokens/sec with 98% accuracy**. This is an optional feature that provides lightning-fast file editing capabilities.
+## 🏗️ Architecture
 
-**Setup**: Configure your Morph API key following the [setup instructions](#setup) above.
+```
+grok-cli/
+├── src/
+│   ├── agent/              # 🧠 Logique centrale de l'agent AI
+│   │   └── grok-agent.ts   # Boucle agentic, streaming, historique
+│   │
+│   ├── grok/               # 🔌 Client API et outils
+│   │   ├── client.ts       # Client OpenAI SDK adapté
+│   │   └── tools.ts        # Définitions des 7 outils
+│   │
+│   ├── tools/              # 🛠️ Implémentations des outils
+│   │   ├── bash-tool.ts    # Exécution shell
+│   │   ├── file-tool.ts    # Opérations fichiers
+│   │   ├── search-tool.ts  # Recherche ripgrep
+│   │   └── text-editor.ts  # Édition avec fuzzy matching
+│   │
+│   ├── ui/                 # 🎨 Interface Ink/React
+│   │   ├── components/     # 9 composants réutilisables
+│   │   │   ├── chat-interface.tsx
+│   │   │   ├── confirmation-dialog.tsx
+│   │   │   ├── diff-renderer.tsx
+│   │   │   └── ...
+│   │   └── utils/          # Utilitaires UI
+│   │
+│   ├── utils/              # 🔧 Services
+│   │   ├── confirmation-service.ts  # Système de confirmations
+│   │   ├── settings.ts              # Gestion settings
+│   │   ├── custom-instructions.ts   # .grok/GROK.md loader
+│   │   └── token-counter.ts         # Comptage tiktoken
+│   │
+│   ├── types/              # 📝 Définitions TypeScript
+│   ├── hooks/              # 🎣 React hooks personnalisés
+│   └── index.ts            # 🚪 Point d'entrée CLI
+│
+├── .github/                # ⚙️ CI/CD
+│   └── workflows/
+│       ├── security.yml    # Scan sécurité
+│       └── typecheck.yml   # Vérification types
+│
+├── dist/                   # 📦 Code compilé
+└── Configuration files
+```
 
-### How It Works
+### Flux de Données
 
-When `MORPH_API_KEY` is configured:
-- **`edit_file` tool becomes available** alongside the standard `str_replace_editor`
-- **Optimized for complex edits**: Use for multi-line changes, refactoring, and large modifications
-- **Intelligent editing**: Uses abbreviated edit format with `// ... existing code ...` comments
-- **Fallback support**: Standard tools remain available if Morph is unavailable
+```
+┌─────────────┐
+│  CLI Entry │ (Commander.js)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────┐
+│  Chat Interface │ (Ink/React)
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Grok Agent     │ (Boucle agentic)
+└────────┬─────────┘
+         │
+         ├──▶ ┌──────────────┐
+         │    │ Grok Client  │ (API calls)
+         │    └──────────────┘
+         │
+         ├──▶ ┌──────────────┐
+         │    │    Tools     │ (7 outils)
+         │    └──────────────┘
+         │
+         └──▶ ┌──────────────┐
+              │ Confirmation │ (User approval)
+              └──────────────┘
+```
 
-**When to use each tool:**
-- **`edit_file`** (Morph): Complex edits, refactoring, multi-line changes
-- **`str_replace_editor`**: Simple text replacements, single-line edits
+---
 
-### Example Usage
+## 🧪 Développement
 
-With Morph Fast Apply configured, you can request complex code changes:
+### Scripts Disponibles
 
 ```bash
-grok --prompt "refactor this function to use async/await and add error handling"
-grok -p "convert this class to TypeScript and add proper type annotations"
+# Installation des dépendances
+npm install
+
+# Mode développement avec hot reload
+npm run dev
+
+# Build du projet
+npm run build
+
+# Linting
+npm run lint
+
+# Vérification de types
+npm run typecheck
+
+# Lancer en production
+npm start
 ```
 
-The AI will automatically choose between `edit_file` (Morph) for complex changes or `str_replace_editor` for simple replacements.
+### Stack Technique
 
-## MCP Tools
+| Catégorie | Technologies |
+|-----------|--------------|
+| **Runtime** | Node.js 16+ |
+| **Language** | TypeScript 4.9 |
+| **UI Framework** | React 17 + Ink 3 |
+| **CLI** | Commander.js 11 |
+| **API Client** | OpenAI SDK 5.10 |
+| **Search** | ripgrep-node |
+| **Tokens** | tiktoken |
+| **Testing** | _À venir_ |
 
-Grok CLI supports MCP (Model Context Protocol) servers, allowing you to extend the AI assistant with additional tools and capabilities.
+### Configuration TypeScript
 
-### Adding MCP Tools
-
-#### Add a custom MCP server:
-```bash
-# Add an stdio-based MCP server
-grok mcp add my-server --transport stdio --command "bun" --args server.js
-
-# Add an HTTP-based MCP server
-grok mcp add my-server --transport http --url "http://localhost:3000"
-
-# Add with environment variables
-grok mcp add my-server --transport stdio --command "python" --args "-m" "my_mcp_server" --env "API_KEY=your_key"
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "jsx": "react",
+    "outDir": "./dist",
+    "sourceMap": true,
+    "declaration": true
+  }
+}
 ```
 
-#### Add from JSON configuration:
-```bash
-grok mcp add-json my-server '{"command": "bun", "args": ["server.js"], "env": {"API_KEY": "your_key"}}'
+---
+
+## 🔒 Sécurité
+
+### Bonnes Pratiques Implémentées
+
+✅ **Confirmation avant Actions Destructives**
+- Toutes les opérations de fichiers et bash nécessitent une approbation
+- Preview des diffs avant application
+- Session flags pour contrôle fin
+
+✅ **Scan Automatisé de Sécurité**
+- GitHub Actions avec npm audit (niveau high)
+- TruffleHog pour détection de secrets
+- Exécution hebdomadaire + sur chaque PR
+
+✅ **Gestion Sécurisée des Secrets**
+- Support variables d'environnement
+- Fichiers settings hors version control
+- Jamais de hardcoded secrets
+
+✅ **Validation des Entrées**
+- Timeout pour commandes bash (30s par défaut)
+- Limite de rounds d'outils (30 max)
+- Buffer size limité pour bash (1MB)
+
+### Reporting de Vulnérabilités
+
+Pour signaler une vulnérabilité de sécurité, merci de **NE PAS** ouvrir d'issue publique.
+Contactez-nous directement à : security@example.com
+
+---
+
+## 📊 Performances
+
+### Métriques Clés
+
+| Métrique | Valeur |
+|----------|--------|
+| **Recherche de texte** | < 1 seconde (ripgrep) |
+| **Streaming** | Temps réel |
+| **Timeout API** | 360 secondes |
+| **Max rounds outils** | 30 |
+| **Buffer bash** | 1MB |
+| **Package size** | ~130KB |
+
+### Optimisations
+
+- ⚡ **ripgrep** pour recherche ultra-rapide
+- ⚡ **Streaming** pour feedback instantané
+- ⚡ **Lazy loading** des composants UI
+- ⚡ **Fuzzy matching** optimisé pour édition
+
+---
+
+## 🗺️ Roadmap
+
+### Version 0.1.0 (Court Terme)
+
+- [ ] **Suite de Tests Complète**
+  - Tests unitaires (Jest/Vitest)
+  - Tests d'intégration
+  - Tests UI (testing-library)
+  - Objectif : 80%+ coverage
+
+- [ ] **Documentation Développeur**
+  - JSDoc pour toutes les fonctions publiques
+  - Architecture diagram détaillé
+  - Contributing guide
+  - API documentation
+
+- [ ] **TypeScript Strict Mode**
+  - Activation progressive du mode strict
+  - Élimination de tous les `any`
+  - Types explicites partout
+
+### Version 0.2.0 (Moyen Terme)
+
+- [ ] **Système de Plugins**
+  - Architecture extensible
+  - Plugin API publique
+  - Registry de plugins
+
+- [ ] **Multi-File Operations**
+  - Batch editing
+  - Project-wide refactoring
+  - Atomic transactions
+
+- [ ] **Historique de Conversations**
+  - Sauvegarde persistante
+  - Recherche dans l'historique
+  - Export en Markdown/JSON
+
+- [ ] **Templates System**
+  - Templates de code
+  - Project scaffolding
+  - Snippets personnalisés
+
+### Version 1.0.0 (Long Terme)
+
+- [ ] **VS Code Extension**
+  - Intégration native
+  - Sidebar dédiée
+  - Keyboard shortcuts
+
+- [ ] **Workspace Awareness**
+  - Git branch context
+  - Project type detection
+  - Auto-configuration
+
+- [ ] **Monitoring & Telemetry**
+  - Métriques d'usage (anonymes, opt-in)
+  - Error tracking
+  - Performance analytics
+
+- [ ] **Advanced Features**
+  - Diff approval workflow
+  - Code review assistant
+  - Automated testing generation
+
+---
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! Voici comment participer :
+
+### Workflow de Contribution
+
+1. **Fork** le repository
+2. **Créez** une branche feature (`git checkout -b feature/amazing-feature`)
+3. **Committez** vos changements (`git commit -m 'Add amazing feature'`)
+4. **Pushez** vers la branche (`git push origin feature/amazing-feature`)
+5. **Ouvrez** une Pull Request
+
+### Guidelines
+
+- 📝 Suivez le style de code existant (ESLint)
+- ✅ Ajoutez des tests pour les nouvelles fonctionnalités
+- 📚 Mettez à jour la documentation si nécessaire
+- 🔍 Assurez-vous que `npm run lint` et `npm run typecheck` passent
+- 💬 Utilisez des messages de commit clairs et descriptifs
+
+### Code de Conduite
+
+Ce projet adhère au [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/0/code_of_conduct/).
+
+---
+
+## 📄 License
+
+Ce projet est sous licence **MIT** - voir le fichier [LICENSE](LICENSE) pour plus de détails.
+
+```
+MIT License
+
+Copyright (c) 2025 Grok CLI Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files...
 ```
 
-### Linear Integration Example
+---
 
-To add Linear MCP tools for project management:
+## 🙏 Remerciements
 
-```bash
-# Add Linear MCP server
-grok mcp add linear --transport sse --url "https://mcp.linear.app/sse"
-```
+- **X.AI** pour l'API Grok puissante
+- **OpenAI** pour le SDK compatible
+- **Vadim Demedes** pour [Ink](https://github.com/vadimdemedes/ink)
+- **BurntSushi** pour [ripgrep](https://github.com/BurntSushi/ripgrep)
+- Toute la communauté open-source
 
-This enables Linear tools like:
-- Create and manage Linear issues
-- Search and filter issues
-- Update issue status and assignees
-- Access team and project information
+---
 
-### Managing MCP Servers
+## 📞 Support & Contact
 
-```bash
-# List all configured servers
-grok mcp list
+- 🐛 **Bug Reports** : [GitHub Issues](https://github.com/your-org/grok-cli/issues)
+- 💡 **Feature Requests** : [GitHub Discussions](https://github.com/your-org/grok-cli/discussions)
+- 📧 **Email** : support@example.com
+- 💬 **Discord** : [Join our community](#)
+- 🐦 **Twitter** : [@grok_cli](#)
 
-# Test server connection
-grok mcp test server-name
+---
 
-# Remove a server
-grok mcp remove server-name
-```
+## 📈 Statistiques du Projet
 
-### Available Transport Types
+![GitHub stars](https://img.shields.io/github/stars/your-org/grok-cli?style=social)
+![GitHub forks](https://img.shields.io/github/forks/your-org/grok-cli?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/your-org/grok-cli?style=social)
 
-- **stdio**: Run MCP server as a subprocess (most common)
-- **http**: Connect to HTTP-based MCP server
-- **sse**: Connect via Server-Sent Events
+---
 
-## Development
+<div align="center">
 
-```bash
-# Install dependencies
-bun install
+**Fait avec ❤️ par la communauté Grok CLI**
 
-# Development mode
-bun run dev
+[⬆ Retour en haut](#-grok-cli)
 
-# Build project
-bun run build
-
-# Run linter
-bun run lint
-
-# Type check
-bun run typecheck
-```
-
-## Architecture
-
-- **Agent**: Core command processing and execution logic
-- **Tools**: Text editor and bash tool implementations
-- **UI**: Ink-based terminal interface components
-- **Types**: TypeScript definitions for the entire system
-
-## License
-
-MIT
+</div>

@@ -22,14 +22,14 @@ export class ConfirmationTool {
       if (request.autoAccept) {
         return {
           success: true,
-          output: `Auto-accepted: ${request.operation}(${request.filename})${request.description ? ` - ${request.description}` : ''}`
+          output: `Auto-accepted: ${request.operation}(${request.filename})${request.description ? ` - ${request.description}` : ''}`,
         };
       }
 
       const options: ConfirmationOptions = {
         operation: request.operation,
         filename: request.filename,
-        showVSCodeOpen: request.showVSCodeOpen || false
+        showVSCodeOpen: request.showVSCodeOpen || false,
       };
 
       // Determine operation type based on operation name
@@ -39,18 +39,18 @@ export class ConfirmationTool {
       if (result.confirmed) {
         return {
           success: true,
-          output: `User confirmed: ${request.operation}(${request.filename})${request.description ? ` - ${request.description}` : ''}${result.dontAskAgain ? ' (Don\'t ask again enabled)' : ''}`
+          output: `User confirmed: ${request.operation}(${request.filename})${request.description ? ` - ${request.description}` : ''}${result.dontAskAgain ? " (Don't ask again enabled)" : ''}`,
         };
       } else {
         return {
           success: false,
-          error: result.feedback || `User rejected: ${request.operation}(${request.filename})`
+          error: result.feedback || `User rejected: ${request.operation}(${request.filename})`,
         };
       }
     } catch (error: any) {
       return {
         success: false,
-        error: `Confirmation error: ${error.message}`
+        error: `Confirmation error: ${error.message}`,
       };
     }
   }
@@ -65,13 +65,14 @@ export class ConfirmationTool {
           fileOperationsAccepted: sessionFlags.fileOperations,
           bashCommandsAccepted: sessionFlags.bashCommands,
           allOperationsAccepted: sessionFlags.allOperations,
-          hasAnyAcceptance: sessionFlags.fileOperations || sessionFlags.bashCommands || sessionFlags.allOperations
-        }
+          hasAnyAcceptance:
+            sessionFlags.fileOperations || sessionFlags.bashCommands || sessionFlags.allOperations,
+        },
       };
     } catch (error: any) {
       return {
         success: false,
-        error: `Error checking session acceptance: ${error.message}`
+        error: `Error checking session acceptance: ${error.message}`,
       };
     }
   }

@@ -24,29 +24,31 @@ export class TokenCounter {
   /**
    * Count tokens in messages array (for chat completions)
    */
-  countMessageTokens(messages: Array<{ role: string; content: string | null; [key: string]: any }>): number {
+  countMessageTokens(
+    messages: Array<{ role: string; content: string | null; [key: string]: any }>
+  ): number {
     let totalTokens = 0;
-    
+
     for (const message of messages) {
       // Every message follows <|start|>{role/name}\n{content}<|end|\>\n
       totalTokens += 3; // Base tokens per message
-      
+
       if (message.content && typeof message.content === 'string') {
         totalTokens += this.countTokens(message.content);
       }
-      
+
       if (message.role) {
         totalTokens += this.countTokens(message.role);
       }
-      
+
       // Add extra tokens for tool calls if present
       if (message.tool_calls) {
         totalTokens += this.countTokens(JSON.stringify(message.tool_calls));
       }
     }
-    
+
     totalTokens += 3; // Every reply is primed with <|start|>assistant<|message|>
-    
+
     return totalTokens;
   }
 
@@ -73,12 +75,12 @@ export function formatTokenCount(count: number): string {
   if (count <= 999) {
     return count.toString();
   }
-  
+
   if (count < 1_000_000) {
     const k = count / 1000;
     return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
   }
-  
+
   const m = count / 1_000_000;
   return m % 1 === 0 ? `${m}m` : `${m.toFixed(1)}m`;
 }
@@ -88,4 +90,27 @@ export function formatTokenCount(count: number): string {
  */
 export function createTokenCounter(model?: string): TokenCounter {
   return new TokenCounter(model);
+}
+
+// Singleton instance for simple usage
+let defaultCounter: TokenCounter | null = null;
+
+/**
+ * Count tokens in a string using default encoder
+ * This is a convenience function for simple token counting
+ *
+ * @param text - The text to count tokens for
+ * @returns Number of tokens
+ *
+ * @example
+ * ```typescript
+ * const count = countTokens('Hello, world!');
+ * console.log(count); // 4
+ * ```
+ */
+export function countTokens(text: string): number {
+  if (!defaultCounter) {
+    defaultCounter = new TokenCounter();
+  }
+  return defaultCounter.countTokens(text);
 }

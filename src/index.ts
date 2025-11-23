@@ -331,7 +331,7 @@ program
     "-b, --browser",
     "launch browser UI instead of terminal interface"
   )
-  .action(async (options) => {
+  .option(
     "--max-tool-rounds <rounds>",
     "maximum number of tool execution rounds (default: 400)",
     "400"
@@ -377,24 +377,6 @@ program
           model,
           maxToolRounds
         );
-        return;
-      }
-
-      // Browser mode: launch web UI
-      if (options.browser) {
-        const { BrowserServer } = await import("./ui/browser/server");
-        const agent = new GrokAgent(apiKey, baseURL, model);
-        const server = new BrowserServer({ agent });
-        const url = await server.start();
-        console.log("🌐 Grok CLI Browser UI started!");
-        console.log(`   Open: ${url}`);
-        console.log("   Press Ctrl+C to stop\n");
-
-        // Open browser automatically
-        const open = (await import("child_process")).exec;
-        const platform = process.platform;
-        const openCmd = platform === "darwin" ? "open" : platform === "win32" ? "start" : "xdg-open";
-        open(`${openCmd} ${url}`);
         return;
       }
 

@@ -75,6 +75,15 @@ appveyor.yml
 *.tgz
 *.log
 
+# Coding agents
+.claude/
+.grok/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
 # Include only what's needed for the package
 # The dist/ folder should be included (not ignored)
 # package.json and README.md should be included

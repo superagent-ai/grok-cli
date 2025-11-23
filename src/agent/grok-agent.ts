@@ -16,43 +16,74 @@ import {
   SearchTool,
   WebSearchTool,
   ImageTool,
-} from "../tools";
-import { ToolResult } from "../types";
-import { EventEmitter } from "events";
-import { createTokenCounter, TokenCounter } from "../utils/token-counter";
-import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSetting } from "../utils/settings";
-import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager";
-import { getSessionStore, SessionStore } from "../persistence/session-store";
-import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode";
-import { getSandboxManager, SandboxManager } from "../security/sandbox";
-import { getMCPClient, MCPClient } from "../mcp/mcp-client";
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
+import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager.js";
+import { getSessionStore, SessionStore } from "../persistence/session-store.js";
+import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode.js";
+import { getSandboxManager, SandboxManager } from "../security/sandbox.js";
+import { getMCPClient, MCPClient } from "../mcp/mcp-client.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 
+/**
+ * Represents a single entry in the chat history
+ */
 export interface ChatEntry {
+  /** Type of chat entry */
   type: "user" | "assistant" | "tool_result" | "tool_call";
+  /** Content of the message */
   content: string;
+  /** When this entry was created */
   timestamp: Date;
+  /** Tool calls made by the assistant (if any) */
   toolCalls?: GrokToolCall[];
+  /** Single tool call (for tool_call type) */
   toolCall?: GrokToolCall;
+  /** Result of tool execution (for tool_result type) */
   toolResult?: { success: boolean; output?: string; error?: string };
+  /** Whether this entry is currently being streamed */
   isStreaming?: boolean;
 }
 
+/**
+ * Represents a chunk of data in a streaming response
+ */
 export interface StreamingChunk {
+  /** Type of streaming chunk */
   type: "content" | "tool_calls" | "tool_result" | "done" | "token_count";
+  /** Text content (for content type) */
   content?: string;
+  /** Tool calls made (for tool_calls type) */
   toolCalls?: GrokToolCall[];
+  /** Single tool call (for tool_call type) */
   toolCall?: GrokToolCall;
+  /** Result of tool execution (for tool_result type) */
   toolResult?: ToolResult;
+  /** Current token count (for token_count type) */
   tokenCount?: number;
 }
 
+/**
+ * Main agent class that orchestrates conversation with Grok AI and tool execution
+ *
+ * @example
+ * ```typescript
+ * const agent = new GrokAgent(apiKey, baseURL, model);
+ *
+ * // Process a message with streaming
+ * for await (const chunk of agent.processUserMessageStream("Show me package.json")) {
+ *   if (chunk.type === "content") {
+ *     console.log(chunk.content);
+ *   }
+ * }
+ *
+ * // Clean up when done
+ * agent.dispose();
+ * ```
+ */
 export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
@@ -72,11 +103,17 @@ export class GrokAgent extends EventEmitter {
   private modeManager: AgentModeManager;
   private sandboxManager: SandboxManager;
   private mcpClient: MCPClient;
-
-  constructor(apiKey: string, baseURL?: string, model?: string) {
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
 
+  /**
+   * Create a new GrokAgent instance
+   *
+   * @param apiKey - API key for authentication
+   * @param baseURL - Optional base URL for the API endpoint
+   * @param model - Optional model name (defaults to saved model or grok-code-fast-1)
+   * @param maxToolRounds - Maximum tool execution rounds (default: 400)
+   */
   constructor(
     apiKey: string,
     baseURL?: string,
@@ -423,6 +460,33 @@ Current working directory: ${process.cwd()}`,
     return reduce(previous, item.choices[0]?.delta || {});
   }
 
+  /**
+   * Process a user message with streaming response
+   *
+   * This method runs an agentic loop that can execute multiple tool rounds.
+   * It yields chunks as they arrive, including content, tool calls, and results.
+   *
+   * @param message - The user's message to process
+   * @yields StreamingChunk objects containing different types of data
+   * @throws Error if processing fails
+   *
+   * @example
+   * ```typescript
+   * for await (const chunk of agent.processUserMessageStream("List files")) {
+   *   switch (chunk.type) {
+   *     case "content":
+   *       console.log(chunk.content);
+   *       break;
+   *     case "tool_calls":
+   *       console.log("Tools:", chunk.toolCalls);
+   *       break;
+   *     case "done":
+   *       console.log("Completed");
+   *       break;
+   *   }
+   * }
+   * ```
+   */
   async *processUserMessageStream(
     message: string
   ): AsyncGenerator<StreamingChunk, void, unknown> {
@@ -926,5 +990,26 @@ Current working directory: ${process.cwd()}`,
 
   isImageFile(filePath: string): boolean {
     return this.imageTool.isImage(filePath);
+  }
+
+  /**
+   * Clean up all resources
+   * Should be called when the agent is no longer needed
+   */
+  dispose(): void {
+    // Clean up token counter
+    if (this.tokenCounter) {
+      this.tokenCounter.dispose();
+    }
+
+    // Abort any ongoing operations
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // Clear chat history and messages to free memory
+    this.chatHistory = [];
+    this.messages = [];
   }
 }
