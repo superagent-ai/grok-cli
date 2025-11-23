@@ -1,0 +1,9 @@
+{
+  "apiKey": "your_api_key_here",
+  "baseURL": "https://api.x.ai/v1",
+  "defaultModel": "grok-4-latest",
+  "performanceMonitoring": false,
+  "cacheEnabled": true,
+  "cacheTTL": 60000,
+  "allowDangerousCommands": false
+}

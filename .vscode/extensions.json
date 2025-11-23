@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "firsttris.vscode-jest-runner",
+    "orta.vscode-jest",
+    "ms-vscode.vscode-typescript-next",
+    "editorconfig.editorconfig",
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    "streetsidesoftware.code-spell-checker",
+    "usernamehw.errorlens",
+    "gruntfuggly.todo-tree"
+  ],
+  "unwantedRecommendations": []
+}
