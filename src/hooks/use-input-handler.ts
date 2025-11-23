@@ -4,6 +4,14 @@ import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { updateSetting } from "../utils/settings";
 import { loadCustomCommands, getCustomCommand, processCommandPrompt, CustomCommand } from "../utils/custom-commands";
+import { useState, useMemo, useEffect } from "react";
+import { useInput } from "ink";
+import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
+import { useEnhancedInput, Key } from "./use-enhanced-input.js";
+
+import { filterCommandSuggestions } from "../ui/components/command-suggestions.js";
+import { loadModelConfig, updateCurrentModel } from "../utils/model-config.js";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -26,7 +34,6 @@ interface CommandSuggestion {
 
 interface ModelOption {
   model: string;
-  description: string;
 }
 
 export function useInputHandler({
@@ -42,7 +49,6 @@ export function useInputHandler({
   isStreaming,
   isConfirmationActive = false,
 }: UseInputHandlerProps) {
-  const [input, setInput] = useState("");
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showModelSelection, setShowModelSelection] = useState(false);
@@ -54,6 +60,172 @@ export function useInputHandler({
   });
   const [lastEscapeTime, setLastEscapeTime] = useState(0);
   const { exit } = useApp();
+
+  const handleSpecialKey = (key: Key): boolean => {
+    // Don't handle input if confirmation dialog is active
+    if (isConfirmationActive) {
+      return true; // Prevent default handling
+    }
+
+    // Handle shift+tab to toggle auto-edit mode
+    if (key.shift && key.tab) {
+      const newAutoEditState = !autoEditEnabled;
+      setAutoEditEnabled(newAutoEditState);
+
+      const confirmationService = ConfirmationService.getInstance();
+      if (newAutoEditState) {
+        // Enable auto-edit: set all operations to be accepted
+        confirmationService.setSessionFlag("allOperations", true);
+      } else {
+        // Disable auto-edit: reset session flags
+        confirmationService.resetSession();
+      }
+      return true; // Handled
+    }
+
+    // Handle escape key for closing menus
+    if (key.escape) {
+      if (showCommandSuggestions) {
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return true;
+      }
+      if (showModelSelection) {
+        setShowModelSelection(false);
+        setSelectedModelIndex(0);
+        return true;
+      }
+      if (isProcessing || isStreaming) {
+        agent.abortCurrentOperation();
+        setIsProcessing(false);
+        setIsStreaming(false);
+        setTokenCount(0);
+        setProcessingTime(0);
+        processingStartTime.current = 0;
+        return true;
+      }
+      return false; // Let default escape handling work
+    }
+
+    // Handle command suggestions navigation
+    if (showCommandSuggestions) {
+      const filteredSuggestions = filterCommandSuggestions(
+        commandSuggestions,
+        input
+      );
+
+      if (filteredSuggestions.length === 0) {
+        setShowCommandSuggestions(false);
+        setSelectedCommandIndex(0);
+        return false; // Continue processing
+      } else {
+        if (key.upArrow) {
+          setSelectedCommandIndex((prev) =>
+            prev === 0 ? filteredSuggestions.length - 1 : prev - 1
+          );
+          return true;
+        }
+        if (key.downArrow) {
+          setSelectedCommandIndex(
+            (prev) => (prev + 1) % filteredSuggestions.length
+          );
+          return true;
+        }
+        if (key.tab || key.return) {
+          const safeIndex = Math.min(
+            selectedCommandIndex,
+            filteredSuggestions.length - 1
+          );
+          const selectedCommand = filteredSuggestions[safeIndex];
+          const newInput = selectedCommand.command + " ";
+          setInput(newInput);
+          setCursorPosition(newInput.length);
+          setShowCommandSuggestions(false);
+          setSelectedCommandIndex(0);
+          return true;
+        }
+      }
+    }
+
+    // Handle model selection navigation
+    if (showModelSelection) {
+      if (key.upArrow) {
+        setSelectedModelIndex((prev) =>
+          prev === 0 ? availableModels.length - 1 : prev - 1
+        );
+        return true;
+      }
+      if (key.downArrow) {
+        setSelectedModelIndex((prev) => (prev + 1) % availableModels.length);
+        return true;
+      }
+      if (key.tab || key.return) {
+        const selectedModel = availableModels[selectedModelIndex];
+        agent.setModel(selectedModel.model);
+        updateCurrentModel(selectedModel.model);
+        const confirmEntry: ChatEntry = {
+          type: "assistant",
+          content: `✓ Switched to model: ${selectedModel.model}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, confirmEntry]);
+        setShowModelSelection(false);
+        setSelectedModelIndex(0);
+        return true;
+      }
+    }
+
+    return false; // Let default handling proceed
+  };
+
+  const handleInputSubmit = async (userInput: string) => {
+    if (userInput === "exit" || userInput === "quit") {
+      process.exit(0);
+      return;
+    }
+
+    if (userInput.trim()) {
+      const directCommandResult = await handleDirectCommand(userInput);
+      if (!directCommandResult) {
+        await processUserMessage(userInput);
+      }
+    }
+  };
+
+  const handleInputChange = (newInput: string) => {
+    // Update command suggestions based on input
+    if (newInput.startsWith("/")) {
+      setShowCommandSuggestions(true);
+      setSelectedCommandIndex(0);
+    } else {
+      setShowCommandSuggestions(false);
+      setSelectedCommandIndex(0);
+    }
+  };
+
+  const {
+    input,
+    cursorPosition,
+    setInput,
+    setCursorPosition,
+    clearInput,
+    resetHistory,
+    handleInput,
+  } = useEnhancedInput({
+    onSubmit: handleInputSubmit,
+    onSpecialKey: handleSpecialKey,
+    disabled: isConfirmationActive,
+  });
+
+  // Hook up the actual input handling
+  useInput((inputChar: string, key: Key) => {
+    handleInput(inputChar, key);
+  });
+
+  // Update command suggestions when input changes
+  useEffect(() => {
+    handleInputChange(input);
+  }, [input]);
 
   // Load custom commands
   const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
@@ -99,6 +271,10 @@ export function useInputHandler({
     { model: "grok-3-fast", description: "Fast Grok-3 variant" },
     { model: "grok-3-mini-fast", description: "Fastest Grok-3 variant" },
   ];
+  // Load models from configuration with fallback to defaults
+  const availableModels: ModelOption[] = useMemo(() => {
+    return loadModelConfig(); // Return directly, interface already matches
+  }, []);
 
   const handleDirectCommand = async (input: string): Promise<boolean> => {
     const trimmedInput = input.trim();
@@ -118,7 +294,8 @@ export function useInputHandler({
       const confirmationService = ConfirmationService.getInstance();
       confirmationService.resetSession();
 
-      setInput("");
+      clearInput();
+      resetHistory();
       return true;
     }
 
@@ -138,6 +315,11 @@ Built-in Commands:
   /models      - Switch Grok models
   /exit        - Exit application
   exit, quit   - Exit application
+  /clear      - Clear chat history
+  /help       - Show this help
+  /models     - Switch between available models
+  /exit       - Exit application
+  exit, quit  - Exit application
 
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
@@ -150,6 +332,14 @@ Checkpoint & Session Commands:
   /export [file]    - Export current session to Markdown
 
 Keyboard Shortcuts:
+Enhanced Input Features:
+  ↑/↓ Arrow   - Navigate command history
+  Ctrl+C      - Clear input (press twice to exit)
+  Ctrl+←/→    - Move by word
+  Ctrl+A/E    - Move to line start/end
+  Ctrl+W      - Delete word before cursor
+  Ctrl+K      - Delete to end of line
+  Ctrl+U      - Delete to start of line
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
   Esc Esc     - Rewind to last checkpoint
 
@@ -161,6 +351,9 @@ Direct Commands (executed immediately):
   mkdir <dir> - Create directory
   touch <file>- Create empty file${customCmdsHelp}
 
+Model Configuration:
+  Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
+
 For complex operations, just describe what you want in natural language.
 Examples:
   "edit package.json and add a new script"
@@ -169,14 +362,19 @@ Examples:
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
-      setInput("");
+      clearInput();
+      return true;
+    }
+
+    if (trimmedInput === "/exit") {
+      process.exit(0);
       return true;
     }
 
     if (trimmedInput === "/models") {
       setShowModelSelection(true);
       setSelectedModelIndex(0);
-      setInput("");
+      clearInput();
       return true;
     }
 
@@ -186,7 +384,7 @@ Examples:
 
       if (modelNames.includes(modelArg)) {
         agent.setModel(modelArg);
-        updateSetting('selectedModel', modelArg);
+        updateCurrentModel(modelArg); // Update project current model
         const confirmEntry: ChatEntry = {
           type: "assistant",
           content: `✓ Switched to model: ${modelArg}`,
@@ -204,7 +402,7 @@ Available models: ${modelNames.join(", ")}`,
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
-      setInput("");
+      clearInput();
       return true;
     }
 
@@ -484,9 +682,14 @@ Available models: ${modelNames.join(", ")}`,
 
       try {
         // First check if there are any changes at all
-        const initialStatusResult = await agent.executeBashCommand("git status --porcelain");
-        
-        if (!initialStatusResult.success || !initialStatusResult.output?.trim()) {
+        const initialStatusResult = await agent.executeBashCommand(
+          "git status --porcelain"
+        );
+
+        if (
+          !initialStatusResult.success ||
+          !initialStatusResult.output?.trim()
+        ) {
           const noChangesEntry: ChatEntry = {
             type: "assistant",
             content: "No changes to commit. Working directory is clean.",
@@ -501,11 +704,13 @@ Available models: ${modelNames.join(", ")}`,
 
         // Add all changes
         const addResult = await agent.executeBashCommand("git add .");
-        
+
         if (!addResult.success) {
           const addErrorEntry: ChatEntry = {
             type: "assistant",
-            content: `Failed to stage changes: ${addResult.error || 'Unknown error'}`,
+            content: `Failed to stage changes: ${
+              addResult.error || "Unknown error"
+            }`,
             timestamp: new Date(),
           };
           setChatHistory((prev) => [...prev, addErrorEntry]);
@@ -550,7 +755,9 @@ Respond with ONLY the commit message, no additional text.`;
         let commitMessage = "";
         let streamingEntry: ChatEntry | null = null;
 
-        for await (const chunk of agent.processUserMessageStream(commitPrompt)) {
+        for await (const chunk of agent.processUserMessageStream(
+          commitPrompt
+        )) {
           if (chunk.type === "content" && chunk.content) {
             if (!streamingEntry) {
               const newEntry = {
@@ -567,7 +774,10 @@ Respond with ONLY the commit message, no additional text.`;
               setChatHistory((prev) =>
                 prev.map((entry, idx) =>
                   idx === prev.length - 1 && entry.isStreaming
-                    ? { ...entry, content: `Generating commit message...\n\n${commitMessage}` }
+                    ? {
+                        ...entry,
+                        content: `Generating commit message...\n\n${commitMessage}`,
+                      }
                     : entry
                 )
               );
@@ -576,8 +786,12 @@ Respond with ONLY the commit message, no additional text.`;
             if (streamingEntry) {
               setChatHistory((prev) =>
                 prev.map((entry) =>
-                  entry.isStreaming 
-                    ? { ...entry, content: `Generated commit message: "${commitMessage.trim()}"`, isStreaming: false }
+                  entry.isStreaming
+                    ? {
+                        ...entry,
+                        content: `Generated commit message: "${commitMessage.trim()}"`,
+                        isStreaming: false,
+                      }
                     : entry
                 )
               );
@@ -587,7 +801,9 @@ Respond with ONLY the commit message, no additional text.`;
         }
 
         // Execute the commit
-        const cleanCommitMessage = commitMessage.trim().replace(/^["']|["']$/g, '');
+        const cleanCommitMessage = commitMessage
+          .trim()
+          .replace(/^["']|["']$/g, "");
         const commitCommand = `git commit -m "${cleanCommitMessage}"`;
         const commitResult = await agent.executeBashCommand(commitCommand);
 
@@ -614,8 +830,11 @@ Respond with ONLY the commit message, no additional text.`;
           // First try regular push, if it fails try with upstream setup
           let pushResult = await agent.executeBashCommand("git push");
           let pushCommand = "git push";
-          
-          if (!pushResult.success && pushResult.error?.includes("no upstream branch")) {
+
+          if (
+            !pushResult.success &&
+            pushResult.error?.includes("no upstream branch")
+          ) {
             pushCommand = "git push -u origin HEAD";
             pushResult = await agent.executeBashCommand(pushCommand);
           }
@@ -638,7 +857,6 @@ Respond with ONLY the commit message, no additional text.`;
           };
           setChatHistory((prev) => [...prev, pushEntry]);
         }
-
       } catch (error: any) {
         const errorEntry: ChatEntry = {
           type: "assistant",
@@ -650,7 +868,7 @@ Respond with ONLY the commit message, no additional text.`;
 
       setIsProcessing(false);
       setIsStreaming(false);
-      setInput("");
+      clearInput();
       return true;
     }
 
@@ -707,7 +925,7 @@ Respond with ONLY the commit message, no additional text.`;
         setChatHistory((prev) => [...prev, errorEntry]);
       }
 
-      setInput("");
+      clearInput();
       return true;
     }
 
@@ -723,7 +941,7 @@ Respond with ONLY the commit message, no additional text.`;
     setChatHistory((prev) => [...prev, userEntry]);
 
     setIsProcessing(true);
-    setInput("");
+    clearInput();
 
     try {
       setIsStreaming(true);
@@ -1013,6 +1231,7 @@ Respond with ONLY the commit message, no additional text.`;
 
   return {
     input,
+    cursorPosition,
     showCommandSuggestions,
     selectedCommandIndex,
     showModelSelection,

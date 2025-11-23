@@ -1,4 +1,4 @@
-import { ToolResult } from '../types';
+import { ToolResult } from '../types/index.js';
 
 interface TodoItem {
   id: string;

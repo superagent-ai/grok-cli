@@ -1,26 +1,34 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
-import { GrokAgent, ChatEntry } from "../../agent/grok-agent";
-import { useInputHandler } from "../../hooks/use-input-handler";
-import { LoadingSpinner } from "./loading-spinner";
-import { CommandSuggestions } from "./command-suggestions";
-import { ModelSelection } from "./model-selection";
-import { ChatHistory } from "./chat-history";
-import { ChatInput } from "./chat-input";
-import ConfirmationDialog from "./confirmation-dialog";
+import { GrokAgent, ChatEntry } from "../../agent/grok-agent.js";
+import { useInputHandler } from "../../hooks/use-input-handler.js";
+import { LoadingSpinner } from "./loading-spinner.js";
+import { CommandSuggestions } from "./command-suggestions.js";
+import { ModelSelection } from "./model-selection.js";
+import { ChatHistory } from "./chat-history.js";
+import { ChatInput } from "./chat-input.js";
+import { MCPStatus } from "./mcp-status.js";
+import ConfirmationDialog from "./confirmation-dialog.js";
 import {
   ConfirmationService,
   ConfirmationOptions,
-} from "../../utils/confirmation-service";
-import ApiKeyInput from "./api-key-input";
+} from "../../utils/confirmation-service.js";
+import ApiKeyInput from "./api-key-input.js";
 import cfonts from "cfonts";
 
 interface ChatInterfaceProps {
   agent?: GrokAgent;
+  initialMessage?: string;
 }
 
 // Main chat component that handles input when agent is available
-function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
+function ChatInterfaceWithAgent({
+  agent,
+  initialMessage,
+}: {
+  agent: GrokAgent;
+  initialMessage?: string;
+}) {
   const [chatHistory, setChatHistory] = useState<ChatEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingTime, setProcessingTime] = useState(0);
@@ -35,6 +43,7 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
   const {
     input,
+    cursorPosition,
     showCommandSuggestions,
     selectedCommandIndex,
     showModelSelection,
@@ -98,6 +107,135 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
     setChatHistory([]);
   }, []);
+
+  // Process initial message if provided (streaming for faster feedback)
+  useEffect(() => {
+    if (initialMessage && agent) {
+      const userEntry: ChatEntry = {
+        type: "user",
+        content: initialMessage,
+        timestamp: new Date(),
+      };
+      setChatHistory([userEntry]);
+
+      const processInitialMessage = async () => {
+        setIsProcessing(true);
+        setIsStreaming(true);
+
+        try {
+          let streamingEntry: ChatEntry | null = null;
+          for await (const chunk of agent.processUserMessageStream(initialMessage)) {
+            switch (chunk.type) {
+              case "content":
+                if (chunk.content) {
+                  if (!streamingEntry) {
+                    const newStreamingEntry = {
+                      type: "assistant" as const,
+                      content: chunk.content,
+                      timestamp: new Date(),
+                      isStreaming: true,
+                    };
+                    setChatHistory((prev) => [...prev, newStreamingEntry]);
+                    streamingEntry = newStreamingEntry;
+                  } else {
+                    setChatHistory((prev) =>
+                      prev.map((entry, idx) =>
+                        idx === prev.length - 1 && entry.isStreaming
+                          ? { ...entry, content: entry.content + chunk.content }
+                          : entry
+                      )
+                    );
+                  }
+                }
+                break;
+              case "token_count":
+                if (chunk.tokenCount !== undefined) {
+                  setTokenCount(chunk.tokenCount);
+                }
+                break;
+              case "tool_calls":
+                if (chunk.toolCalls) {
+                  // Stop streaming for the current assistant message
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming
+                        ? {
+                            ...entry,
+                            isStreaming: false,
+                            toolCalls: chunk.toolCalls,
+                          }
+                        : entry
+                    )
+                  );
+                  streamingEntry = null;
+
+                  // Add individual tool call entries to show tools are being executed
+                  chunk.toolCalls.forEach((toolCall) => {
+                    const toolCallEntry: ChatEntry = {
+                      type: "tool_call",
+                      content: "Executing...",
+                      timestamp: new Date(),
+                      toolCall: toolCall,
+                    };
+                    setChatHistory((prev) => [...prev, toolCallEntry]);
+                  });
+                }
+                break;
+              case "tool_result":
+                if (chunk.toolCall && chunk.toolResult) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) => {
+                      if (entry.isStreaming) {
+                        return { ...entry, isStreaming: false };
+                      }
+                      if (
+                        entry.type === "tool_call" &&
+                        entry.toolCall?.id === chunk.toolCall?.id
+                      ) {
+                        return {
+                          ...entry,
+                          type: "tool_result",
+                          content: chunk.toolResult.success
+                            ? chunk.toolResult.output || "Success"
+                            : chunk.toolResult.error || "Error occurred",
+                          toolResult: chunk.toolResult,
+                        };
+                      }
+                      return entry;
+                    })
+                  );
+                  streamingEntry = null;
+                }
+                break;
+              case "done":
+                if (streamingEntry) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming ? { ...entry, isStreaming: false } : entry
+                    )
+                  );
+                }
+                setIsStreaming(false);
+                break;
+            }
+          }
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          setIsStreaming(false);
+        }
+
+        setIsProcessing(false);
+        processingStartTime.current = 0;
+      };
+
+      processInitialMessage();
+    }
+  }, [initialMessage, agent]);
 
   useEffect(() => {
     const handleConfirmationRequest = (options: ConfirmationOptions) => {
@@ -175,8 +313,9 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
       )}
 
       <Box flexDirection="column" marginBottom={1}>
-        <Text dimColor>
-          Type your request in natural language. Type 'exit' or Ctrl+C to quit.
+        <Text color="gray">
+          Type your request in natural language. Ctrl+C to clear, 'exit' to
+          quit.
         </Text>
       </Box>
 
@@ -209,21 +348,26 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 
           <ChatInput
             input={input}
+            cursorPosition={cursorPosition}
             isProcessing={isProcessing}
             isStreaming={isStreaming}
           />
 
-          <Box flexDirection="row">
-            <Text color="cyan">
-              {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
-              {autoEditEnabled ? "on" : "off"}
-            </Text>
-            <Box marginLeft={1}>
-              <Text dimColor>(shift + tab)</Text>
+          <Box flexDirection="row" marginTop={1}>
+            <Box marginRight={2}>
+              <Text color="cyan">
+                {autoEditEnabled ? "▶" : "⏸"} auto-edit:{" "}
+                {autoEditEnabled ? "on" : "off"}
+              </Text>
+              <Text color="gray" dimColor>
+                {" "}
+                (shift + tab)
+              </Text>
             </Box>
-            <Box marginLeft={2}>
-              <Text color="yellow">⚡{agent.getCurrentModel()}</Text>
+            <Box marginRight={2}>
+              <Text color="yellow">≋ {agent.getCurrentModel()}</Text>
             </Box>
+            <MCPStatus />
           </Box>
 
           <CommandSuggestions
@@ -246,7 +390,10 @@ function ChatInterfaceWithAgent({ agent }: { agent: GrokAgent }) {
 }
 
 // Main component that handles API key input or chat interface
-export default function ChatInterface({ agent }: ChatInterfaceProps) {
+export default function ChatInterface({
+  agent,
+  initialMessage,
+}: ChatInterfaceProps) {
   const [currentAgent, setCurrentAgent] = useState<GrokAgent | null>(
     agent || null
   );
@@ -259,5 +406,10 @@ export default function ChatInterface({ agent }: ChatInterfaceProps) {
     return <ApiKeyInput onApiKeySet={handleApiKeySet} />;
   }
 
-  return <ChatInterfaceWithAgent agent={currentAgent} />;
+  return (
+    <ChatInterfaceWithAgent
+      agent={currentAgent}
+      initialMessage={initialMessage}
+    />
+  );
 }

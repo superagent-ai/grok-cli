@@ -4,10 +4,10 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../utils/colors';
+import { Colors } from '../utils/colors.js';
 import crypto from 'crypto';
-import { colorizeCode } from '../utils/code-colorizer';
-import { MaxSizedBox } from '../shared/max-sized-box';
+import { colorizeCode } from '../utils/code-colorizer.js';
+import { MaxSizedBox } from '../shared/max-sized-box.js';
 
 interface DiffLine {
   type: 'add' | 'del' | 'context' | 'hunk' | 'other';

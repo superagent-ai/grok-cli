@@ -1,16 +1,10 @@
 import React, { useState } from "react";
 import { Box, Text, useInput, useApp } from "ink";
-import { GrokAgent } from "../../agent/grok-agent";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
+import { GrokAgent } from "../../agent/grok-agent.js";
+import { getSettingsManager } from "../../utils/settings-manager.js";
 
 interface ApiKeyInputProps {
   onApiKeySet: (agent: GrokAgent) => void;
-}
-
-interface UserSettings {
-  apiKey?: string;
 }
 
 export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
@@ -60,33 +54,10 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
       // Set environment variable for current process
       process.env.GROK_API_KEY = apiKey;
       
-      // Save to .grok/user-settings.json
+      // Save to user settings
       try {
-        const homeDir = os.homedir();
-        const grokDir = path.join(homeDir, '.grok');
-        const settingsFile = path.join(grokDir, 'user-settings.json');
-        
-        // Create .grok directory if it doesn't exist
-        if (!fs.existsSync(grokDir)) {
-          fs.mkdirSync(grokDir, { mode: 0o700 });
-        }
-        
-        // Load existing settings or create new
-        let settings: UserSettings = {};
-        if (fs.existsSync(settingsFile)) {
-          try {
-            settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-          } catch {
-            settings = {};
-          }
-        }
-        
-        // Update API key
-        settings.apiKey = apiKey;
-        
-        // Save settings
-        fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
-        
+        const manager = getSettingsManager();
+        manager.updateUserSetting('apiKey', apiKey);
         console.log(`\n✅ API key saved to ~/.grok/user-settings.json`);
       } catch (error) {
         console.log('\n⚠️ Could not save API key to settings file');

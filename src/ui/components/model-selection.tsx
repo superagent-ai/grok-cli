@@ -3,7 +3,6 @@ import { Box, Text } from "ink";
 
 interface ModelOption {
   model: string;
-  description: string;
 }
 
 interface ModelSelectionProps {
@@ -34,9 +33,6 @@ export function ModelSelection({
           >
             {modelOption.model}
           </Text>
-          <Box marginLeft={1}>
-            <Text color="gray">{modelOption.description}</Text>
-          </Box>
         </Box>
       ))}
       <Box marginTop={1}>

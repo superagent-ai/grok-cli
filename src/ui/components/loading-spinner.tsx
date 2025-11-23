@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { formatTokenCount } from "../../utils/token-counter";
+import { formatTokenCount } from "../../utils/token-counter.js";
 
 interface LoadingSpinnerProps {
   isActive: boolean;
