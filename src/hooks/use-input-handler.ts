@@ -1,9 +1,3 @@
-import { useState, useRef, useEffect } from "react";
-import { useInput, useApp } from "ink";
-import { GrokAgent, ChatEntry } from "../agent/grok-agent";
-import { ConfirmationService } from "../utils/confirmation-service";
-import { updateSetting } from "../utils/settings";
-import { loadCustomCommands, getCustomCommand, processCommandPrompt, CustomCommand } from "../utils/custom-commands";
 import { useState, useMemo, useEffect } from "react";
 import { useInput } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent.js";
@@ -58,8 +52,6 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
-  const [lastEscapeTime, setLastEscapeTime] = useState(0);
-  const { exit } = useApp();
 
   const handleSpecialKey = (key: Key): boolean => {
     // Don't handle input if confirmation dialog is active
@@ -227,50 +219,14 @@ export function useInputHandler({
     handleInputChange(input);
   }, [input]);
 
-  // Load custom commands
-  const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
-
-  useEffect(() => {
-    const commands = loadCustomCommands();
-    setCustomCommands(commands);
-  }, []);
-
-  // Build command suggestions including custom commands
-  const baseCommandSuggestions: CommandSuggestion[] = [
+  const commandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
-    { command: "/checkpoint", description: "Create a checkpoint" },
-    { command: "/rewind", description: "Rewind to last checkpoint" },
-    { command: "/checkpoints", description: "List all checkpoints" },
-    { command: "/sessions", description: "List saved sessions" },
-    { command: "/export", description: "Export current session to Markdown" },
-    { command: "/plan", description: "Switch to planning mode (read-only)" },
-    { command: "/code", description: "Switch to code mode (default)" },
-    { command: "/ask", description: "Switch to ask mode (no tools)" },
-    { command: "/mcp", description: "Show MCP server status" },
-    { command: "/sandbox", description: "Show sandbox status" },
     { command: "/exit", description: "Exit the application" },
   ];
 
-  // Add custom commands to suggestions
-  const customCommandSuggestions: CommandSuggestion[] = customCommands.map(cmd => ({
-    command: `/project:${cmd.name}`,
-    description: cmd.description
-  }));
-
-  const commandSuggestions = [...baseCommandSuggestions, ...customCommandSuggestions];
-
-  const availableModels: ModelOption[] = [
-    {
-      model: "grok-4-latest",
-      description: "Latest Grok-4 model (most capable)",
-    },
-    { model: "grok-3-latest", description: "Latest Grok-3 model" },
-    { model: "grok-3-fast", description: "Fast Grok-3 variant" },
-    { model: "grok-3-mini-fast", description: "Fastest Grok-3 variant" },
-  ];
   // Load models from configuration with fallback to defaults
   const availableModels: ModelOption[] = useMemo(() => {
     return loadModelConfig(); // Return directly, interface already matches
@@ -300,21 +256,11 @@ export function useInputHandler({
     }
 
     if (trimmedInput === "/help") {
-      // Build custom commands help
-      const customCmdsHelp = customCommands.length > 0
-        ? `\n\nCustom Commands (from .grok/commands/):\n${customCommands.map(c => `  /project:${c.name} - ${c.description}`).join('\n')}`
-        : '';
-
       const helpEntry: ChatEntry = {
         type: "assistant",
         content: `Grok CLI Help:
 
 Built-in Commands:
-  /clear       - Clear chat history
-  /help        - Show this help
-  /models      - Switch Grok models
-  /exit        - Exit application
-  exit, quit   - Exit application
   /clear      - Clear chat history
   /help       - Show this help
   /models     - Switch between available models
@@ -324,14 +270,6 @@ Built-in Commands:
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
 
-Checkpoint & Session Commands:
-  /checkpoint [name] - Create a checkpoint with optional description
-  /rewind           - Rewind to the last checkpoint (or press Esc twice)
-  /checkpoints      - List all checkpoints
-  /sessions         - List saved sessions
-  /export [file]    - Export current session to Markdown
-
-Keyboard Shortcuts:
 Enhanced Input Features:
   ↑/↓ Arrow   - Navigate command history
   Ctrl+C      - Clear input (press twice to exit)
@@ -341,7 +279,6 @@ Enhanced Input Features:
   Ctrl+K      - Delete to end of line
   Ctrl+U      - Delete to start of line
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
-  Esc Esc     - Rewind to last checkpoint
 
 Direct Commands (executed immediately):
   ls [path]   - List directory contents
@@ -349,7 +286,7 @@ Direct Commands (executed immediately):
   cd <path>   - Change directory
   cat <file>  - View file contents
   mkdir <dir> - Create directory
-  touch <file>- Create empty file${customCmdsHelp}
+  touch <file>- Create empty file
 
 Model Configuration:
   Edit ~/.grok/models.json to add custom models (Claude, GPT, Gemini, etc.)
@@ -358,7 +295,7 @@ For complex operations, just describe what you want in natural language.
 Examples:
   "edit package.json and add a new script"
   "create a new React component called Header"
-  "search the web for React best practices 2025"`,
+  "show me all TypeScript files in this project"`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
@@ -406,268 +343,6 @@ Available models: ${modelNames.join(", ")}`,
       return true;
     }
 
-    // Checkpoint commands
-    if (trimmedInput === "/checkpoint" || trimmedInput.startsWith("/checkpoint ")) {
-      const description = trimmedInput.replace("/checkpoint", "").trim() || `Manual checkpoint at ${new Date().toLocaleTimeString()}`;
-      agent.createCheckpoint(description);
-      const checkpointEntry: ChatEntry = {
-        type: "assistant",
-        content: `✓ Checkpoint created: "${description}"`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, checkpointEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/rewind") {
-      const result = agent.rewindToLastCheckpoint();
-      const rewindEntry: ChatEntry = {
-        type: "assistant",
-        content: result.success
-          ? `✓ ${result.message}`
-          : `✗ ${result.message}`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, rewindEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/checkpoints") {
-      const checkpointList = agent.getCheckpointList();
-      const listEntry: ChatEntry = {
-        type: "assistant",
-        content: checkpointList,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, listEntry]);
-      setInput("");
-      return true;
-    }
-
-    // Session commands
-    if (trimmedInput === "/sessions") {
-      const sessionList = agent.getSessionList();
-      const listEntry: ChatEntry = {
-        type: "assistant",
-        content: sessionList,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, listEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/export" || trimmedInput.startsWith("/export ")) {
-      const outputPath = trimmedInput.replace("/export", "").trim() || undefined;
-      const filePath = agent.exportCurrentSession(outputPath);
-      const exportEntry: ChatEntry = {
-        type: "assistant",
-        content: filePath
-          ? `✓ Session exported to: ${filePath}`
-          : "✗ No active session to export",
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, exportEntry]);
-      setInput("");
-      return true;
-    }
-
-    // Mode commands
-    if (trimmedInput === "/plan") {
-      agent.setMode('plan');
-      const modeEntry: ChatEntry = {
-        type: "assistant",
-        content: `📋 Switched to PLAN mode\nI will only analyze and plan - no file modifications or commands will be executed.\nUse /code to switch back to execution mode.`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, modeEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/code") {
-      agent.setMode('code');
-      const modeEntry: ChatEntry = {
-        type: "assistant",
-        content: `💻 Switched to CODE mode\nFull tool access enabled - I can now edit files, run commands, and make changes.`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, modeEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/ask") {
-      agent.setMode('ask');
-      const modeEntry: ChatEntry = {
-        type: "assistant",
-        content: `❓ Switched to ASK mode\nI will only answer questions - no tools will be used.\nUse /code to switch back to execution mode.`,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, modeEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/mcp") {
-      const mcpStatus = agent.getMCPStatus();
-      const mcpEntry: ChatEntry = {
-        type: "assistant",
-        content: mcpStatus,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, mcpEntry]);
-      setInput("");
-      return true;
-    }
-
-    if (trimmedInput === "/sandbox") {
-      const sandboxStatus = agent.getSandboxStatus();
-      const sandboxEntry: ChatEntry = {
-        type: "assistant",
-        content: sandboxStatus,
-        timestamp: new Date(),
-      };
-      setChatHistory((prev) => [...prev, sandboxEntry]);
-      setInput("");
-      return true;
-    }
-
-    // Custom commands (/project:command-name)
-    if (trimmedInput.startsWith("/project:")) {
-      const parts = trimmedInput.slice(9).split(" ");
-      const commandName = parts[0];
-      const commandArgs = parts.slice(1);
-
-      const customCommand = getCustomCommand(commandName);
-      if (customCommand) {
-        const processedPrompt = processCommandPrompt(customCommand, commandArgs);
-
-        // Process the custom command as a user message
-        const userEntry: ChatEntry = {
-          type: "user",
-          content: `[${customCommand.name}] ${commandArgs.join(" ")}`.trim(),
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, userEntry]);
-
-        setIsProcessing(true);
-        setInput("");
-
-        // Process through agent
-        try {
-          setIsStreaming(true);
-          let streamingEntry: ChatEntry | null = null;
-
-          for await (const chunk of agent.processUserMessageStream(processedPrompt)) {
-            switch (chunk.type) {
-              case "content":
-                if (chunk.content) {
-                  if (!streamingEntry) {
-                    const newStreamingEntry = {
-                      type: "assistant" as const,
-                      content: chunk.content,
-                      timestamp: new Date(),
-                      isStreaming: true,
-                    };
-                    setChatHistory((prev) => [...prev, newStreamingEntry]);
-                    streamingEntry = newStreamingEntry;
-                  } else {
-                    setChatHistory((prev) =>
-                      prev.map((entry, idx) =>
-                        idx === prev.length - 1 && entry.isStreaming
-                          ? { ...entry, content: entry.content + chunk.content }
-                          : entry
-                      )
-                    );
-                  }
-                }
-                break;
-              case "token_count":
-                if (chunk.tokenCount !== undefined) {
-                  setTokenCount(chunk.tokenCount);
-                }
-                break;
-              case "tool_calls":
-                if (chunk.toolCalls) {
-                  setChatHistory((prev) =>
-                    prev.map((entry) =>
-                      entry.isStreaming
-                        ? { ...entry, isStreaming: false, toolCalls: chunk.toolCalls }
-                        : entry
-                    )
-                  );
-                  streamingEntry = null;
-                  chunk.toolCalls.forEach((toolCall) => {
-                    const toolCallEntry: ChatEntry = {
-                      type: "tool_call",
-                      content: "Executing...",
-                      timestamp: new Date(),
-                      toolCall: toolCall,
-                    };
-                    setChatHistory((prev) => [...prev, toolCallEntry]);
-                  });
-                }
-                break;
-              case "tool_result":
-                if (chunk.toolCall && chunk.toolResult) {
-                  setChatHistory((prev) =>
-                    prev.map((entry) => {
-                      if (entry.isStreaming) return { ...entry, isStreaming: false };
-                      if (entry.type === "tool_call" && entry.toolCall?.id === chunk.toolCall?.id) {
-                        return {
-                          ...entry,
-                          type: "tool_result",
-                          content: chunk.toolResult.success
-                            ? chunk.toolResult.output || "Success"
-                            : chunk.toolResult.error || "Error occurred",
-                          toolResult: chunk.toolResult,
-                        };
-                      }
-                      return entry;
-                    })
-                  );
-                  streamingEntry = null;
-                }
-                break;
-              case "done":
-                if (streamingEntry) {
-                  setChatHistory((prev) =>
-                    prev.map((entry) =>
-                      entry.isStreaming ? { ...entry, isStreaming: false } : entry
-                    )
-                  );
-                }
-                setIsStreaming(false);
-                break;
-            }
-          }
-        } catch (error: any) {
-          const errorEntry: ChatEntry = {
-            type: "assistant",
-            content: `Error executing custom command: ${error.message}`,
-            timestamp: new Date(),
-          };
-          setChatHistory((prev) => [...prev, errorEntry]);
-          setIsStreaming(false);
-        }
-
-        setIsProcessing(false);
-        processingStartTime.current = 0;
-        return true;
-      } else {
-        const errorEntry: ChatEntry = {
-          type: "assistant",
-          content: `Unknown custom command: ${commandName}\nCreate it by adding .grok/commands/${commandName}.md`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, errorEntry]);
-        setInput("");
-        return true;
-      }
-    }
 
     if (trimmedInput === "/commit-and-push") {
       const userEntry: ChatEntry = {
@@ -1061,173 +736,6 @@ Respond with ONLY the commit message, no additional text.`;
     processingStartTime.current = 0;
   };
 
-  useInput(async (inputChar: string, key: any) => {
-    // Don't handle input if confirmation dialog is active
-    if (isConfirmationActive) {
-      return;
-    }
-
-    if (key.ctrl && inputChar === "c") {
-      exit();
-      return;
-    }
-
-    // Handle shift+tab to toggle auto-edit mode
-    if (key.shift && key.tab) {
-      const newAutoEditState = !autoEditEnabled;
-      setAutoEditEnabled(newAutoEditState);
-
-      const confirmationService = ConfirmationService.getInstance();
-      if (newAutoEditState) {
-        // Enable auto-edit: set all operations to be accepted
-        confirmationService.setSessionFlag("allOperations", true);
-      } else {
-        // Disable auto-edit: reset session flags
-        confirmationService.resetSession();
-      }
-
-      return;
-    }
-
-    if (key.escape) {
-      if (showCommandSuggestions) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        return;
-      }
-      if (showModelSelection) {
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return;
-      }
-      if (isProcessing || isStreaming) {
-        agent.abortCurrentOperation();
-        setIsProcessing(false);
-        setIsStreaming(false);
-        setTokenCount(0);
-        setProcessingTime(0);
-        processingStartTime.current = 0;
-        return;
-      }
-
-      // Double-tap Escape to rewind
-      const now = Date.now();
-      if (now - lastEscapeTime < 500) {
-        // Double-tap detected - rewind to last checkpoint
-        const result = agent.rewindToLastCheckpoint();
-        const rewindEntry: ChatEntry = {
-          type: "assistant",
-          content: result.success
-            ? `⏪ ${result.message}`
-            : `✗ ${result.message}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, rewindEntry]);
-        setLastEscapeTime(0);
-        return;
-      }
-      setLastEscapeTime(now);
-    }
-
-    if (showCommandSuggestions) {
-      if (key.upArrow) {
-        setSelectedCommandIndex((prev) =>
-          prev === 0 ? commandSuggestions.length - 1 : prev - 1
-        );
-        return;
-      }
-      if (key.downArrow) {
-        setSelectedCommandIndex(
-          (prev) => (prev + 1) % commandSuggestions.length
-        );
-        return;
-      }
-      if (key.tab || key.return) {
-        const selectedCommand = commandSuggestions[selectedCommandIndex];
-        setInput(selectedCommand.command + " ");
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-        return;
-      }
-    }
-
-    if (showModelSelection) {
-      if (key.upArrow) {
-        setSelectedModelIndex((prev) =>
-          prev === 0 ? availableModels.length - 1 : prev - 1
-        );
-        return;
-      }
-      if (key.downArrow) {
-        setSelectedModelIndex((prev) => (prev + 1) % availableModels.length);
-        return;
-      }
-      if (key.tab || key.return) {
-        const selectedModel = availableModels[selectedModelIndex];
-        agent.setModel(selectedModel.model);
-        updateSetting('selectedModel', selectedModel.model);
-        const confirmEntry: ChatEntry = {
-          type: "assistant",
-          content: `✓ Switched to model: ${selectedModel.model}`,
-          timestamp: new Date(),
-        };
-        setChatHistory((prev) => [...prev, confirmEntry]);
-        setShowModelSelection(false);
-        setSelectedModelIndex(0);
-        return;
-      }
-    }
-
-    if (key.return) {
-      const userInput = input.trim();
-      if (userInput === "exit" || userInput === "quit") {
-        exit();
-        return;
-      }
-
-      if (userInput) {
-        const directCommandResult = await handleDirectCommand(userInput);
-        if (!directCommandResult) {
-          await processUserMessage(userInput);
-        }
-      }
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      const newInput = input.slice(0, -1);
-      setInput(newInput);
-
-      if (!newInput.startsWith("/")) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-      }
-      return;
-    }
-
-    if (inputChar && !key.ctrl && !key.meta) {
-      const newInput = input + inputChar;
-      setInput(newInput);
-
-      if (
-        newInput === "/" ||
-        ["ls", "pwd", "cd", "cat", "mkdir", "touch"].some((cmd) =>
-          cmd.startsWith(newInput)
-        )
-      ) {
-        setShowCommandSuggestions(true);
-        setSelectedCommandIndex(0);
-      } else if (
-        !newInput.startsWith("/") &&
-        !["ls", "pwd", "cd", "cat", "mkdir", "touch"].some((cmd) =>
-          cmd.startsWith(newInput)
-        )
-      ) {
-        setShowCommandSuggestions(false);
-        setSelectedCommandIndex(0);
-      }
-    }
-  });
 
   return {
     input,

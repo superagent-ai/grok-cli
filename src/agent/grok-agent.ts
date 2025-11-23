@@ -16,22 +16,16 @@ import {
   SearchTool,
   WebSearchTool,
   ImageTool,
-} from "../tools";
-import { ToolResult } from "../types";
-import { EventEmitter } from "events";
-import { createTokenCounter, TokenCounter } from "../utils/token-counter";
-import { loadCustomInstructions } from "../utils/custom-instructions";
-import { getSetting } from "../utils/settings";
-import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager";
-import { getSessionStore, SessionStore } from "../persistence/session-store";
-import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode";
-import { getSandboxManager, SandboxManager } from "../security/sandbox";
-import { getMCPClient, MCPClient } from "../mcp/mcp-client";
 } from "../tools/index.js";
 import { ToolResult } from "../types/index.js";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
+import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager.js";
+import { getSessionStore, SessionStore } from "../persistence/session-store.js";
+import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode.js";
+import { getSandboxManager, SandboxManager } from "../security/sandbox.js";
+import { getMCPClient, MCPClient } from "../mcp/mcp-client.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
 
 export interface ChatEntry {
@@ -72,8 +66,6 @@ export class GrokAgent extends EventEmitter {
   private modeManager: AgentModeManager;
   private sandboxManager: SandboxManager;
   private mcpClient: MCPClient;
-
-  constructor(apiKey: string, baseURL?: string, model?: string) {
   private mcpInitialized: boolean = false;
   private maxToolRounds: number;
 
