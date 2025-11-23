@@ -1,17 +1,38 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client";
-import { GROK_TOOLS } from "../grok/tools";
+import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import {
+  GROK_TOOLS,
+  addMCPToolsToGrokTools,
+  getAllGrokTools,
+  getMCPManager,
+  initializeMCPServers,
+} from "../grok/tools.js";
+import { loadMCPConfig } from "../mcp/config.js";
 import {
   TextEditorTool,
+  MorphEditorTool,
   BashTool,
   TodoTool,
   ConfirmationTool,
   SearchTool,
+  WebSearchTool,
+  ImageTool,
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSetting } from "../utils/settings";
+import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager";
+import { getSessionStore, SessionStore } from "../persistence/session-store";
+import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode";
+import { getSandboxManager, SandboxManager } from "../security/sandbox";
+import { getMCPClient, MCPClient } from "../mcp/mcp-client";
+} from "../tools/index.js";
+import { ToolResult } from "../types/index.js";
+import { EventEmitter } from "events";
+import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
+import { loadCustomInstructions } from "../utils/custom-instructions.js";
+import { getSettingsManager } from "../utils/settings-manager.js";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -35,27 +56,56 @@ export interface StreamingChunk {
 export class GrokAgent extends EventEmitter {
   private grokClient: GrokClient;
   private textEditor: TextEditorTool;
+  private morphEditor: MorphEditorTool | null;
   private bash: BashTool;
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
+  private webSearch: WebSearchTool;
+  private imageTool: ImageTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  private checkpointManager: CheckpointManager;
+  private sessionStore: SessionStore;
+  private modeManager: AgentModeManager;
+  private sandboxManager: SandboxManager;
+  private mcpClient: MCPClient;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
+  private mcpInitialized: boolean = false;
+  private maxToolRounds: number;
+
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    model?: string,
+    maxToolRounds?: number
+  ) {
     super();
-    // Use saved model if no model is explicitly provided
-    const savedModel = getSetting('selectedModel');
-    const modelToUse = model || savedModel || 'grok-4-latest';
+    const manager = getSettingsManager();
+    const savedModel = manager.getCurrentModel();
+    const modelToUse = model || savedModel || "grok-code-fast-1";
+    this.maxToolRounds = maxToolRounds || 400;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
+    this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
+    this.webSearch = new WebSearchTool();
+    this.imageTool = new ImageTool();
     this.tokenCounter = createTokenCounter(modelToUse);
+    this.checkpointManager = getCheckpointManager();
+    this.sessionStore = getSessionStore();
+    this.modeManager = getAgentModeManager();
+    this.sandboxManager = getSandboxManager();
+    this.mcpClient = getMCPClient();
+
+    // Initialize MCP servers if configured
+    this.initializeMCP();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -71,11 +121,17 @@ export class GrokAgent extends EventEmitter {
 You have access to these tools:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
-- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)
+- str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
+        this.morphEditor
+          ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
+          : ""
+      }
 - bash: Execute bash commands (use for searching, file discovery, navigation, and system operations)
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+- web_search: Search the web for current information, documentation, or answers
+- web_fetch: Fetch and read the content of a specific web page URL
 
 REAL-TIME INFORMATION:
 You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
@@ -126,6 +182,55 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
+  private async initializeMCP(): Promise<void> {
+    // Initialize MCP in the background without blocking
+    Promise.resolve().then(async () => {
+      try {
+        const config = loadMCPConfig();
+        if (config.servers.length > 0) {
+          await initializeMCPServers();
+        }
+      } catch (error) {
+        console.warn("MCP initialization failed:", error);
+      } finally {
+        this.mcpInitialized = true;
+      }
+    });
+  }
+
+  private isGrokModel(): boolean {
+    const currentModel = this.grokClient.getCurrentModel();
+    return currentModel.toLowerCase().includes("grok");
+  }
+
+  // Heuristic: enable web search only when likely needed
+  private shouldUseSearchFor(message: string): boolean {
+    const q = message.toLowerCase();
+    const keywords = [
+      "today",
+      "latest",
+      "news",
+      "trending",
+      "breaking",
+      "current",
+      "now",
+      "recent",
+      "x.com",
+      "twitter",
+      "tweet",
+      "what happened",
+      "as of",
+      "update on",
+      "release notes",
+      "changelog",
+      "price",
+    ];
+    if (keywords.some((k) => q.includes(k))) return true;
+    // crude date pattern (e.g., 2024/2025) may imply recency
+    if (/(20\d{2})/.test(q)) return true;
+    return false;
+  }
+
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -137,15 +242,18 @@ Current working directory: ${process.cwd()}`,
     this.messages.push({ role: "user", content: message });
 
     const newEntries: ChatEntry[] = [userEntry];
-    const maxToolRounds = 10; // Prevent infinite loops
+    const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
 
     try {
+      const tools = await getAllGrokTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        GROK_TOOLS,
+        tools,
         undefined,
-        { search_parameters: { mode: "auto" } }
+        this.isGrokModel() && this.shouldUseSearchFor(message)
+          ? { search_parameters: { mode: "auto" } }
+          : { search_parameters: { mode: "off" } }
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -237,9 +345,11 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            GROK_TOOLS,
+            tools,
             undefined,
-            { search_parameters: { mode: "auto" } }
+            this.isGrokModel() && this.shouldUseSearchFor(message)
+              ? { search_parameters: { mode: "auto" } }
+              : { search_parameters: { mode: "off" } }
           );
         } else {
           // No more tool calls, add final response
@@ -337,9 +447,10 @@ Current working directory: ${process.cwd()}`,
       tokenCount: inputTokens,
     };
 
-    const maxToolRounds = 30; // Prevent infinite loops
+    const maxToolRounds = this.maxToolRounds; // Prevent infinite loops
     let toolRounds = 0;
     let totalOutputTokens = 0;
+    let lastTokenUpdate = 0;
 
     try {
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -355,11 +466,14 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
+        const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          GROK_TOOLS,
+          tools,
           undefined,
-          { search_parameters: { mode: "auto" } }
+          this.isGrokModel() && this.shouldUseSearchFor(message)
+            ? { search_parameters: { mode: "auto" } }
+            : { search_parameters: { mode: "off" } }
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
@@ -401,8 +515,13 @@ Current working directory: ${process.cwd()}`,
             accumulatedContent += chunk.choices[0].delta.content;
 
             // Update token count in real-time including accumulated content and any tool calls
-            const currentOutputTokens = this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
-              (accumulatedMessage.tool_calls ? this.tokenCounter.countTokens(JSON.stringify(accumulatedMessage.tool_calls)) : 0);
+            const currentOutputTokens =
+              this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
+              (accumulatedMessage.tool_calls
+                ? this.tokenCounter.countTokens(
+                    JSON.stringify(accumulatedMessage.tool_calls)
+                  )
+                : 0);
             totalOutputTokens = currentOutputTokens;
 
             yield {
@@ -411,12 +530,16 @@ Current working directory: ${process.cwd()}`,
             };
 
             // Emit token count update
-            yield {
-              type: "token_count",
-              tokenCount: inputTokens + totalOutputTokens,
-            };
-          }
+            const now = Date.now();
+            if (now - lastTokenUpdate > 250) {
+              lastTokenUpdate = now;
+              yield {
+                type: "token_count",
+                tokenCount: inputTokens + totalOutputTokens,
+              };
+            }
         }
+      }
 
         // Add assistant entry to history
         const assistantEntry: ChatEntry = {
@@ -488,7 +611,10 @@ Current working directory: ${process.cwd()}`,
           }
 
           // Update token count after processing all tool calls to include tool results
-          inputTokens = this.tokenCounter.countMessageTokens(this.messages as any);
+          inputTokens = this.tokenCounter.countMessageTokens(
+            this.messages as any
+          );
+          // Final token update after tools processed
           yield {
             type: "token_count",
             tokenCount: inputTokens + totalOutputTokens,
@@ -551,14 +677,32 @@ Current working directory: ${process.cwd()}`,
           return await this.textEditor.view(args.path, range);
 
         case "create_file":
+          // Create checkpoint before creating file
+          this.checkpointManager.checkpointBeforeCreate(args.path);
           return await this.textEditor.create(args.path, args.content);
 
         case "str_replace_editor":
+          // Create checkpoint before editing file
+          this.checkpointManager.checkpointBeforeEdit(args.path);
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
             args.new_str,
             args.replace_all
+          );
+
+        case "edit_file":
+          if (!this.morphEditor) {
+            return {
+              success: false,
+              error:
+                "Morph Fast Apply not available. Please set MORPH_API_KEY environment variable to use this feature.",
+            };
+          }
+          return await this.morphEditor.editFile(
+            args.target_file,
+            args.instructions,
+            args.code_edit
           );
 
         case "bash":
@@ -583,7 +727,20 @@ Current working directory: ${process.cwd()}`,
             includeHidden: args.include_hidden,
           });
 
+        case "web_search":
+          return await this.webSearch.search(args.query, {
+            maxResults: args.max_results,
+          });
+
+        case "web_fetch":
+          return await this.webSearch.fetchPage(args.url);
+
         default:
+          // Check if this is an MCP tool
+          if (toolCall.function.name.startsWith("mcp__")) {
+            return await this.executeMCPTool(toolCall);
+          }
+
           return {
             success: false,
             error: `Unknown tool: ${toolCall.function.name}`,
@@ -593,6 +750,44 @@ Current working directory: ${process.cwd()}`,
       return {
         success: false,
         error: `Tool execution error: ${error.message}`,
+      };
+    }
+  }
+
+  private async executeMCPTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const mcpManager = getMCPManager();
+
+      const result = await mcpManager.callTool(toolCall.function.name, args);
+
+      if (result.isError) {
+        return {
+          success: false,
+          error: (result.content[0] as any)?.text || "MCP tool error",
+        };
+      }
+
+      // Extract content from result
+      const output = result.content
+        .map((item) => {
+          if (item.type === "text") {
+            return item.text;
+          } else if (item.type === "resource") {
+            return `Resource: ${item.resource?.uri || "Unknown"}`;
+          }
+          return String(item);
+        })
+        .join("\n");
+
+      return {
+        success: true,
+        output: output || "Success",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `MCP tool execution error: ${error.message}`,
       };
     }
   }
@@ -624,5 +819,112 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  // Checkpoint methods
+  createCheckpoint(description: string): void {
+    this.checkpointManager.createCheckpoint(description);
+  }
+
+  rewindToLastCheckpoint(): { success: boolean; message: string } {
+    const result = this.checkpointManager.rewindToLast();
+    if (result.success) {
+      return {
+        success: true,
+        message: result.checkpoint
+          ? `Rewound to: ${result.checkpoint.description}\nRestored: ${result.restored.join(', ')}`
+          : 'No checkpoint found'
+      };
+    }
+    return {
+      success: false,
+      message: result.errors.join('\n') || 'Failed to rewind'
+    };
+  }
+
+  getCheckpointList(): string {
+    return this.checkpointManager.formatCheckpointList();
+  }
+
+  getCheckpointManager(): CheckpointManager {
+    return this.checkpointManager;
+  }
+
+  // Session methods
+  getSessionStore(): SessionStore {
+    return this.sessionStore;
+  }
+
+  saveCurrentSession(): void {
+    this.sessionStore.updateCurrentSession(this.chatHistory);
+  }
+
+  getSessionList(): string {
+    return this.sessionStore.formatSessionList();
+  }
+
+  exportCurrentSession(outputPath?: string): string | null {
+    const currentId = this.sessionStore.getCurrentSessionId();
+    if (!currentId) return null;
+    return this.sessionStore.exportSessionToFile(currentId, outputPath);
+  }
+
+  // Clear chat and reset
+  clearChat(): void {
+    this.chatHistory = [];
+    // Keep only the system message
+    this.messages = this.messages.slice(0, 1);
+  }
+
+  // Mode methods
+  getMode(): AgentMode {
+    return this.modeManager.getMode();
+  }
+
+  setMode(mode: AgentMode): void {
+    this.modeManager.setMode(mode);
+  }
+
+  getModeStatus(): string {
+    return this.modeManager.formatModeStatus();
+  }
+
+  isToolAllowedInCurrentMode(toolName: string): boolean {
+    return this.modeManager.isToolAllowed(toolName);
+  }
+
+  // Sandbox methods
+  getSandboxStatus(): string {
+    return this.sandboxManager.formatStatus();
+  }
+
+  validateCommand(command: string): { valid: boolean; reason?: string } {
+    return this.sandboxManager.validateCommand(command);
+  }
+
+  // MCP methods
+  async connectMCPServers(): Promise<void> {
+    await this.mcpClient.connectAll();
+  }
+
+  getMCPStatus(): string {
+    return this.mcpClient.formatStatus();
+  }
+
+  async getMCPTools(): Promise<Map<string, any[]>> {
+    return this.mcpClient.getAllTools();
+  }
+
+  getMCPClient(): MCPClient {
+    return this.mcpClient;
+  }
+
+  // Image methods
+  async processImage(imagePath: string): Promise<ToolResult> {
+    return this.imageTool.processImage({ type: 'file', data: imagePath });
+  }
+
+  isImageFile(filePath: string): boolean {
+    return this.imageTool.isImage(filePath);
   }
 }

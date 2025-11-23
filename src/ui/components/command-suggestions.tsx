@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 
 interface CommandSuggestion {
@@ -13,6 +13,18 @@ interface CommandSuggestionsProps {
   isVisible: boolean;
 }
 
+export const MAX_SUGGESTIONS = 8;
+
+export function filterCommandSuggestions<T extends { command: string }>(
+  suggestions: T[],
+  input: string
+): T[] {
+  const lowerInput = input.toLowerCase();
+  return suggestions
+    .filter((s) => s.command.toLowerCase().startsWith(lowerInput))
+    .slice(0, MAX_SUGGESTIONS);
+}
+
 export function CommandSuggestions({
   suggestions,
   input,
@@ -21,13 +33,10 @@ export function CommandSuggestions({
 }: CommandSuggestionsProps) {
   if (!isVisible) return null;
 
-  const filteredSuggestions = suggestions
-    .filter((suggestion) =>
-      input.startsWith("/")
-        ? suggestion.command.startsWith("/")
-        : suggestion.command.toLowerCase().startsWith(input.toLowerCase())
-    )
-    .slice(0, 8);
+  const filteredSuggestions = useMemo(
+    () => filterCommandSuggestions(suggestions, input),
+    [suggestions, input]
+  );
 
   return (
     <Box marginTop={1} flexDirection="column">

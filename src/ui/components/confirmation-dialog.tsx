@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { DiffRenderer } from "./diff-renderer";
+import { DiffRenderer } from "./diff-renderer.js";
 
 interface ConfirmationDialogProps {
   operation: string;

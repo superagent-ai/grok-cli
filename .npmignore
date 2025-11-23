@@ -2,6 +2,9 @@
 src/
 tsconfig.json
 
+# Lock files from other package managers
+yarn.lock
+
 # Development and build tools
 .gitignore
 .eslintrc*
@@ -30,6 +33,12 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+bun-debug.log*
+
+# Bun specific files
+bun.lockb
+bun.lock
+.bun/
 
 # Environment files
 .env*
