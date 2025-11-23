@@ -10,6 +10,11 @@ import { ConfirmationService } from "./utils/confirmation-service.js";
 import { createMCPCommand } from "./commands/mcp.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat";
 
+// Import enhanced features
+import { initGrokProject, formatInitResult } from "./utils/init-project.js";
+import { getSecurityModeManager, SecurityMode } from "./security/security-modes.js";
+import { createHeadlessResult, formatOutput, OutputFormat } from "./utils/headless-output.js";
+
 // Load environment variables
 dotenv.config();
 
@@ -336,7 +341,25 @@ program
     "maximum number of tool execution rounds (default: 400)",
     "400"
   )
+  .option(
+    "-s, --security-mode <mode>",
+    "security mode: suggest (default), auto-edit, or full-auto"
+  )
+  .option(
+    "-o, --output-format <format>",
+    "output format for headless mode: json, stream-json, text, markdown"
+  )
+  .option(
+    "--init",
+    "initialize .grok directory with templates and exit"
+  )
   .action(async (message, options) => {
+    // Handle --init flag
+    if (options.init) {
+      const result = initGrokProject();
+      console.log(formatInitResult(result));
+      process.exit(result.success ? 0 : 1);
+    }
     if (options.directory) {
       try {
         process.chdir(options.directory);
@@ -382,6 +405,19 @@ program
 
       // Interactive mode: launch UI
       const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+
+      // Configure security mode if specified
+      if (options.securityMode) {
+        const validModes: SecurityMode[] = ["suggest", "auto-edit", "full-auto"];
+        if (validModes.includes(options.securityMode)) {
+          const securityManager = getSecurityModeManager();
+          securityManager.setMode(options.securityMode);
+          console.log(`🛡️ Security mode: ${options.securityMode.toUpperCase()}`);
+        } else {
+          console.warn(`⚠️ Invalid security mode: ${options.securityMode}. Using default (suggest).`);
+        }
+      }
+
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");
 
       ensureUserSettingsDirectory();
