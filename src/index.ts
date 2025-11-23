@@ -281,6 +281,10 @@ program
     "-p, --prompt <prompt>",
     "process a single prompt and exit (headless mode)"
   )
+  .option(
+    "-b, --browser",
+    "launch browser UI instead of terminal interface"
+  )
   .action(async (options) => {
     if (options.directory) {
       try {
@@ -310,6 +314,24 @@ program
       // Headless mode: process prompt and exit
       if (options.prompt) {
         await processPromptHeadless(options.prompt, apiKey, baseURL, model);
+        return;
+      }
+
+      // Browser mode: launch web UI
+      if (options.browser) {
+        const { BrowserServer } = await import("./ui/browser/server");
+        const agent = new GrokAgent(apiKey, baseURL, model);
+        const server = new BrowserServer({ agent });
+        const url = await server.start();
+        console.log("🌐 Grok CLI Browser UI started!");
+        console.log(`   Open: ${url}`);
+        console.log("   Press Ctrl+C to stop\n");
+
+        // Open browser automatically
+        const open = (await import("child_process")).exec;
+        const platform = process.platform;
+        const openCmd = platform === "darwin" ? "open" : platform === "win32" ? "start" : "xdg-open";
+        open(`${openCmd} ${url}`);
         return;
       }
 

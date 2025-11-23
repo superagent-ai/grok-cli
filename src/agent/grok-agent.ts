@@ -7,6 +7,7 @@ import {
   ConfirmationTool,
   SearchTool,
   WebSearchTool,
+  ImageTool,
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
@@ -15,6 +16,9 @@ import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSetting } from "../utils/settings";
 import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager";
 import { getSessionStore, SessionStore } from "../persistence/session-store";
+import { getAgentModeManager, AgentModeManager, AgentMode } from "./agent-mode";
+import { getSandboxManager, SandboxManager } from "../security/sandbox";
+import { getMCPClient, MCPClient } from "../mcp/mcp-client";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -43,12 +47,16 @@ export class GrokAgent extends EventEmitter {
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
   private webSearch: WebSearchTool;
+  private imageTool: ImageTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
   private checkpointManager: CheckpointManager;
   private sessionStore: SessionStore;
+  private modeManager: AgentModeManager;
+  private sandboxManager: SandboxManager;
+  private mcpClient: MCPClient;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
@@ -62,9 +70,13 @@ export class GrokAgent extends EventEmitter {
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.webSearch = new WebSearchTool();
+    this.imageTool = new ImageTool();
     this.tokenCounter = createTokenCounter(modelToUse);
     this.checkpointManager = getCheckpointManager();
     this.sessionStore = getSessionStore();
+    this.modeManager = getAgentModeManager();
+    this.sandboxManager = getSandboxManager();
+    this.mcpClient = getMCPClient();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -702,5 +714,57 @@ Current working directory: ${process.cwd()}`,
     this.chatHistory = [];
     // Keep only the system message
     this.messages = this.messages.slice(0, 1);
+  }
+
+  // Mode methods
+  getMode(): AgentMode {
+    return this.modeManager.getMode();
+  }
+
+  setMode(mode: AgentMode): void {
+    this.modeManager.setMode(mode);
+  }
+
+  getModeStatus(): string {
+    return this.modeManager.formatModeStatus();
+  }
+
+  isToolAllowedInCurrentMode(toolName: string): boolean {
+    return this.modeManager.isToolAllowed(toolName);
+  }
+
+  // Sandbox methods
+  getSandboxStatus(): string {
+    return this.sandboxManager.formatStatus();
+  }
+
+  validateCommand(command: string): { valid: boolean; reason?: string } {
+    return this.sandboxManager.validateCommand(command);
+  }
+
+  // MCP methods
+  async connectMCPServers(): Promise<void> {
+    await this.mcpClient.connectAll();
+  }
+
+  getMCPStatus(): string {
+    return this.mcpClient.formatStatus();
+  }
+
+  async getMCPTools(): Promise<Map<string, any[]>> {
+    return this.mcpClient.getAllTools();
+  }
+
+  getMCPClient(): MCPClient {
+    return this.mcpClient;
+  }
+
+  // Image methods
+  async processImage(imagePath: string): Promise<ToolResult> {
+    return this.imageTool.processImage({ type: 'file', data: imagePath });
+  }
+
+  isImageFile(filePath: string): boolean {
+    return this.imageTool.isImage(filePath);
   }
 }

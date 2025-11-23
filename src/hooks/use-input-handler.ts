@@ -74,6 +74,11 @@ export function useInputHandler({
     { command: "/checkpoints", description: "List all checkpoints" },
     { command: "/sessions", description: "List saved sessions" },
     { command: "/export", description: "Export current session to Markdown" },
+    { command: "/plan", description: "Switch to planning mode (read-only)" },
+    { command: "/code", description: "Switch to code mode (default)" },
+    { command: "/ask", description: "Switch to ask mode (no tools)" },
+    { command: "/mcp", description: "Show MCP server status" },
+    { command: "/sandbox", description: "Show sandbox status" },
     { command: "/exit", description: "Exit the application" },
   ];
 
@@ -267,6 +272,67 @@ Available models: ${modelNames.join(", ")}`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, exportEntry]);
+      setInput("");
+      return true;
+    }
+
+    // Mode commands
+    if (trimmedInput === "/plan") {
+      agent.setMode('plan');
+      const modeEntry: ChatEntry = {
+        type: "assistant",
+        content: `📋 Switched to PLAN mode\nI will only analyze and plan - no file modifications or commands will be executed.\nUse /code to switch back to execution mode.`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, modeEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/code") {
+      agent.setMode('code');
+      const modeEntry: ChatEntry = {
+        type: "assistant",
+        content: `💻 Switched to CODE mode\nFull tool access enabled - I can now edit files, run commands, and make changes.`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, modeEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/ask") {
+      agent.setMode('ask');
+      const modeEntry: ChatEntry = {
+        type: "assistant",
+        content: `❓ Switched to ASK mode\nI will only answer questions - no tools will be used.\nUse /code to switch back to execution mode.`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, modeEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/mcp") {
+      const mcpStatus = agent.getMCPStatus();
+      const mcpEntry: ChatEntry = {
+        type: "assistant",
+        content: mcpStatus,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, mcpEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/sandbox") {
+      const sandboxStatus = agent.getSandboxStatus();
+      const sandboxEntry: ChatEntry = {
+        type: "assistant",
+        content: sandboxStatus,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, sandboxEntry]);
       setInput("");
       return true;
     }
