@@ -1,30 +1,10 @@
-# Dependencies
 node_modules/
-
-# Build outputs
 dist/
-build/
 coverage/
-
-# Package files
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Git
-.git/
-
-# Editor
-.vscode/
-.idea/
-
-# Cache
-.cache/
-.nyc_output/
-*.tsbuildinfo
-
-# Logs
+build/
+.github/
+*.min.js
 *.log
-
-# OS
-.DS_Store
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
