@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useInput, useApp } from "ink";
 import { GrokAgent, ChatEntry } from "../agent/grok-agent";
 import { ConfirmationService } from "../utils/confirmation-service";
 import { updateSetting } from "../utils/settings";
+import { loadCustomCommands, getCustomCommand, processCommandPrompt, CustomCommand } from "../utils/custom-commands";
 
 interface UseInputHandlerProps {
   agent: GrokAgent;
@@ -51,15 +52,38 @@ export function useInputHandler({
     const sessionFlags = confirmationService.getSessionFlags();
     return sessionFlags.allOperations;
   });
+  const [lastEscapeTime, setLastEscapeTime] = useState(0);
   const { exit } = useApp();
 
-  const commandSuggestions: CommandSuggestion[] = [
+  // Load custom commands
+  const [customCommands, setCustomCommands] = useState<CustomCommand[]>([]);
+
+  useEffect(() => {
+    const commands = loadCustomCommands();
+    setCustomCommands(commands);
+  }, []);
+
+  // Build command suggestions including custom commands
+  const baseCommandSuggestions: CommandSuggestion[] = [
     { command: "/help", description: "Show help information" },
     { command: "/clear", description: "Clear chat history" },
     { command: "/models", description: "Switch Grok Model" },
     { command: "/commit-and-push", description: "AI commit & push to remote" },
+    { command: "/checkpoint", description: "Create a checkpoint" },
+    { command: "/rewind", description: "Rewind to last checkpoint" },
+    { command: "/checkpoints", description: "List all checkpoints" },
+    { command: "/sessions", description: "List saved sessions" },
+    { command: "/export", description: "Export current session to Markdown" },
     { command: "/exit", description: "Exit the application" },
   ];
+
+  // Add custom commands to suggestions
+  const customCommandSuggestions: CommandSuggestion[] = customCommands.map(cmd => ({
+    command: `/project:${cmd.name}`,
+    description: cmd.description
+  }));
+
+  const commandSuggestions = [...baseCommandSuggestions, ...customCommandSuggestions];
 
   const availableModels: ModelOption[] = [
     {
@@ -94,36 +118,49 @@ export function useInputHandler({
     }
 
     if (trimmedInput === "/help") {
+      // Build custom commands help
+      const customCmdsHelp = customCommands.length > 0
+        ? `\n\nCustom Commands (from .grok/commands/):\n${customCommands.map(c => `  /project:${c.name} - ${c.description}`).join('\n')}`
+        : '';
+
       const helpEntry: ChatEntry = {
         type: "assistant",
         content: `Grok CLI Help:
 
 Built-in Commands:
-  /clear      - Clear chat history
-  /help       - Show this help
-  /models     - Switch Grok models
-  /exit       - Exit application
-  exit, quit  - Exit application
-  
+  /clear       - Clear chat history
+  /help        - Show this help
+  /models      - Switch Grok models
+  /exit        - Exit application
+  exit, quit   - Exit application
+
 Git Commands:
   /commit-and-push - AI-generated commit + push to remote
-  
+
+Checkpoint & Session Commands:
+  /checkpoint [name] - Create a checkpoint with optional description
+  /rewind           - Rewind to the last checkpoint (or press Esc twice)
+  /checkpoints      - List all checkpoints
+  /sessions         - List saved sessions
+  /export [file]    - Export current session to Markdown
+
 Keyboard Shortcuts:
   Shift+Tab   - Toggle auto-edit mode (bypass confirmations)
+  Esc Esc     - Rewind to last checkpoint
 
 Direct Commands (executed immediately):
   ls [path]   - List directory contents
-  pwd         - Show current directory  
+  pwd         - Show current directory
   cd <path>   - Change directory
   cat <file>  - View file contents
   mkdir <dir> - Create directory
-  touch <file>- Create empty file
+  touch <file>- Create empty file${customCmdsHelp}
 
 For complex operations, just describe what you want in natural language.
 Examples:
   "edit package.json and add a new script"
   "create a new React component called Header"
-  "show me all TypeScript files in this project"`,
+  "search the web for React best practices 2025"`,
         timestamp: new Date(),
       };
       setChatHistory((prev) => [...prev, helpEntry]);
@@ -164,6 +201,208 @@ Available models: ${modelNames.join(", ")}`,
 
       setInput("");
       return true;
+    }
+
+    // Checkpoint commands
+    if (trimmedInput === "/checkpoint" || trimmedInput.startsWith("/checkpoint ")) {
+      const description = trimmedInput.replace("/checkpoint", "").trim() || `Manual checkpoint at ${new Date().toLocaleTimeString()}`;
+      agent.createCheckpoint(description);
+      const checkpointEntry: ChatEntry = {
+        type: "assistant",
+        content: `✓ Checkpoint created: "${description}"`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, checkpointEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/rewind") {
+      const result = agent.rewindToLastCheckpoint();
+      const rewindEntry: ChatEntry = {
+        type: "assistant",
+        content: result.success
+          ? `✓ ${result.message}`
+          : `✗ ${result.message}`,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, rewindEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/checkpoints") {
+      const checkpointList = agent.getCheckpointList();
+      const listEntry: ChatEntry = {
+        type: "assistant",
+        content: checkpointList,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, listEntry]);
+      setInput("");
+      return true;
+    }
+
+    // Session commands
+    if (trimmedInput === "/sessions") {
+      const sessionList = agent.getSessionList();
+      const listEntry: ChatEntry = {
+        type: "assistant",
+        content: sessionList,
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, listEntry]);
+      setInput("");
+      return true;
+    }
+
+    if (trimmedInput === "/export" || trimmedInput.startsWith("/export ")) {
+      const outputPath = trimmedInput.replace("/export", "").trim() || undefined;
+      const filePath = agent.exportCurrentSession(outputPath);
+      const exportEntry: ChatEntry = {
+        type: "assistant",
+        content: filePath
+          ? `✓ Session exported to: ${filePath}`
+          : "✗ No active session to export",
+        timestamp: new Date(),
+      };
+      setChatHistory((prev) => [...prev, exportEntry]);
+      setInput("");
+      return true;
+    }
+
+    // Custom commands (/project:command-name)
+    if (trimmedInput.startsWith("/project:")) {
+      const parts = trimmedInput.slice(9).split(" ");
+      const commandName = parts[0];
+      const commandArgs = parts.slice(1);
+
+      const customCommand = getCustomCommand(commandName);
+      if (customCommand) {
+        const processedPrompt = processCommandPrompt(customCommand, commandArgs);
+
+        // Process the custom command as a user message
+        const userEntry: ChatEntry = {
+          type: "user",
+          content: `[${customCommand.name}] ${commandArgs.join(" ")}`.trim(),
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, userEntry]);
+
+        setIsProcessing(true);
+        setInput("");
+
+        // Process through agent
+        try {
+          setIsStreaming(true);
+          let streamingEntry: ChatEntry | null = null;
+
+          for await (const chunk of agent.processUserMessageStream(processedPrompt)) {
+            switch (chunk.type) {
+              case "content":
+                if (chunk.content) {
+                  if (!streamingEntry) {
+                    const newStreamingEntry = {
+                      type: "assistant" as const,
+                      content: chunk.content,
+                      timestamp: new Date(),
+                      isStreaming: true,
+                    };
+                    setChatHistory((prev) => [...prev, newStreamingEntry]);
+                    streamingEntry = newStreamingEntry;
+                  } else {
+                    setChatHistory((prev) =>
+                      prev.map((entry, idx) =>
+                        idx === prev.length - 1 && entry.isStreaming
+                          ? { ...entry, content: entry.content + chunk.content }
+                          : entry
+                      )
+                    );
+                  }
+                }
+                break;
+              case "token_count":
+                if (chunk.tokenCount !== undefined) {
+                  setTokenCount(chunk.tokenCount);
+                }
+                break;
+              case "tool_calls":
+                if (chunk.toolCalls) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming
+                        ? { ...entry, isStreaming: false, toolCalls: chunk.toolCalls }
+                        : entry
+                    )
+                  );
+                  streamingEntry = null;
+                  chunk.toolCalls.forEach((toolCall) => {
+                    const toolCallEntry: ChatEntry = {
+                      type: "tool_call",
+                      content: "Executing...",
+                      timestamp: new Date(),
+                      toolCall: toolCall,
+                    };
+                    setChatHistory((prev) => [...prev, toolCallEntry]);
+                  });
+                }
+                break;
+              case "tool_result":
+                if (chunk.toolCall && chunk.toolResult) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) => {
+                      if (entry.isStreaming) return { ...entry, isStreaming: false };
+                      if (entry.type === "tool_call" && entry.toolCall?.id === chunk.toolCall?.id) {
+                        return {
+                          ...entry,
+                          type: "tool_result",
+                          content: chunk.toolResult.success
+                            ? chunk.toolResult.output || "Success"
+                            : chunk.toolResult.error || "Error occurred",
+                          toolResult: chunk.toolResult,
+                        };
+                      }
+                      return entry;
+                    })
+                  );
+                  streamingEntry = null;
+                }
+                break;
+              case "done":
+                if (streamingEntry) {
+                  setChatHistory((prev) =>
+                    prev.map((entry) =>
+                      entry.isStreaming ? { ...entry, isStreaming: false } : entry
+                    )
+                  );
+                }
+                setIsStreaming(false);
+                break;
+            }
+          }
+        } catch (error: any) {
+          const errorEntry: ChatEntry = {
+            type: "assistant",
+            content: `Error executing custom command: ${error.message}`,
+            timestamp: new Date(),
+          };
+          setChatHistory((prev) => [...prev, errorEntry]);
+          setIsStreaming(false);
+        }
+
+        setIsProcessing(false);
+        processingStartTime.current = 0;
+        return true;
+      } else {
+        const errorEntry: ChatEntry = {
+          type: "assistant",
+          content: `Unknown custom command: ${commandName}\nCreate it by adding .grok/commands/${commandName}.md`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, errorEntry]);
+        setInput("");
+        return true;
+      }
     }
 
     if (trimmedInput === "/commit-and-push") {
@@ -586,6 +825,24 @@ Respond with ONLY the commit message, no additional text.`;
         processingStartTime.current = 0;
         return;
       }
+
+      // Double-tap Escape to rewind
+      const now = Date.now();
+      if (now - lastEscapeTime < 500) {
+        // Double-tap detected - rewind to last checkpoint
+        const result = agent.rewindToLastCheckpoint();
+        const rewindEntry: ChatEntry = {
+          type: "assistant",
+          content: result.success
+            ? `⏪ ${result.message}`
+            : `✗ ${result.message}`,
+          timestamp: new Date(),
+        };
+        setChatHistory((prev) => [...prev, rewindEntry]);
+        setLastEscapeTime(0);
+        return;
+      }
+      setLastEscapeTime(now);
     }
 
     if (showCommandSuggestions) {

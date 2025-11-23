@@ -238,4 +238,42 @@ export const GROK_TOOLS: GrokTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Search the web for current information, documentation, or answers to questions",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query to execute",
+          },
+          max_results: {
+            type: "number",
+            description: "Maximum number of results to return (default: 5)",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_fetch",
+      description: "Fetch and read the content of a web page URL",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "The URL of the web page to fetch",
+          },
+        },
+        required: ["url"],
+      },
+    },
+  },
 ];

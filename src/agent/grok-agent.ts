@@ -6,12 +6,15 @@ import {
   TodoTool,
   ConfirmationTool,
   SearchTool,
+  WebSearchTool,
 } from "../tools";
 import { ToolResult } from "../types";
 import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter";
 import { loadCustomInstructions } from "../utils/custom-instructions";
 import { getSetting } from "../utils/settings";
+import { getCheckpointManager, CheckpointManager } from "../checkpoints/checkpoint-manager";
+import { getSessionStore, SessionStore } from "../persistence/session-store";
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -39,10 +42,13 @@ export class GrokAgent extends EventEmitter {
   private todoTool: TodoTool;
   private confirmationTool: ConfirmationTool;
   private search: SearchTool;
+  private webSearch: WebSearchTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
+  private checkpointManager: CheckpointManager;
+  private sessionStore: SessionStore;
 
   constructor(apiKey: string, baseURL?: string, model?: string) {
     super();
@@ -55,7 +61,10 @@ export class GrokAgent extends EventEmitter {
     this.todoTool = new TodoTool();
     this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
+    this.webSearch = new WebSearchTool();
     this.tokenCounter = createTokenCounter(modelToUse);
+    this.checkpointManager = getCheckpointManager();
+    this.sessionStore = getSessionStore();
 
     // Load custom instructions
     const customInstructions = loadCustomInstructions();
@@ -76,6 +85,8 @@ You have access to these tools:
 - search: Unified search tool for finding text content or files (similar to Cursor's search functionality)
 - create_todo_list: Create a visual todo list for planning and tracking tasks
 - update_todo_list: Update existing todos in your todo list
+- web_search: Search the web for current information, documentation, or answers
+- web_fetch: Fetch and read the content of a specific web page URL
 
 REAL-TIME INFORMATION:
 You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
@@ -551,9 +562,13 @@ Current working directory: ${process.cwd()}`,
           return await this.textEditor.view(args.path, range);
 
         case "create_file":
+          // Create checkpoint before creating file
+          this.checkpointManager.checkpointBeforeCreate(args.path);
           return await this.textEditor.create(args.path, args.content);
 
         case "str_replace_editor":
+          // Create checkpoint before editing file
+          this.checkpointManager.checkpointBeforeEdit(args.path);
           return await this.textEditor.strReplace(
             args.path,
             args.old_str,
@@ -582,6 +597,14 @@ Current working directory: ${process.cwd()}`,
             fileTypes: args.file_types,
             includeHidden: args.include_hidden,
           });
+
+        case "web_search":
+          return await this.webSearch.search(args.query, {
+            maxResults: args.max_results,
+          });
+
+        case "web_fetch":
+          return await this.webSearch.fetchPage(args.url);
 
         default:
           return {
@@ -624,5 +647,60 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  // Checkpoint methods
+  createCheckpoint(description: string): void {
+    this.checkpointManager.createCheckpoint(description);
+  }
+
+  rewindToLastCheckpoint(): { success: boolean; message: string } {
+    const result = this.checkpointManager.rewindToLast();
+    if (result.success) {
+      return {
+        success: true,
+        message: result.checkpoint
+          ? `Rewound to: ${result.checkpoint.description}\nRestored: ${result.restored.join(', ')}`
+          : 'No checkpoint found'
+      };
+    }
+    return {
+      success: false,
+      message: result.errors.join('\n') || 'Failed to rewind'
+    };
+  }
+
+  getCheckpointList(): string {
+    return this.checkpointManager.formatCheckpointList();
+  }
+
+  getCheckpointManager(): CheckpointManager {
+    return this.checkpointManager;
+  }
+
+  // Session methods
+  getSessionStore(): SessionStore {
+    return this.sessionStore;
+  }
+
+  saveCurrentSession(): void {
+    this.sessionStore.updateCurrentSession(this.chatHistory);
+  }
+
+  getSessionList(): string {
+    return this.sessionStore.formatSessionList();
+  }
+
+  exportCurrentSession(outputPath?: string): string | null {
+    const currentId = this.sessionStore.getCurrentSessionId();
+    if (!currentId) return null;
+    return this.sessionStore.exportSessionToFile(currentId, outputPath);
+  }
+
+  // Clear chat and reset
+  clearChat(): void {
+    this.chatHistory = [];
+    // Keep only the system message
+    this.messages = this.messages.slice(0, 1);
   }
 }
