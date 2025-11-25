@@ -424,7 +424,6 @@ export interface ParallelExecutionResult {
 export class ParallelSubagentRunner extends EventEmitter {
   private manager: SubagentManager;
   private maxConcurrent: number;
-  private runningCount: number = 0;
   private queue: ParallelTask[] = [];
   private isRunning: boolean = false;
 

@@ -194,7 +194,6 @@ export class PipelineRunner extends EventEmitter {
   private manager: SubagentManager;
   private customPipelines: Map<string, AgentPipeline> = new Map();
   private isRunning: boolean = false;
-  private currentPipeline: string | null = null;
 
   constructor(apiKey: string, baseURL?: string) {
     super();
@@ -252,7 +251,6 @@ export class PipelineRunner extends EventEmitter {
 
     const startTime = Date.now();
     this.isRunning = true;
-    this.currentPipeline = pipelineName;
 
     const stageResults = new Map<string, StageResult>();
     const variables: Record<string, string> = {
@@ -364,7 +362,6 @@ export class PipelineRunner extends EventEmitter {
       };
     } finally {
       this.isRunning = false;
-      this.currentPipeline = null;
     }
 
     const totalDuration = Date.now() - startTime;

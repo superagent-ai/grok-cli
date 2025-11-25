@@ -15,4 +15,4 @@ export { InteractiveBashTool, getInteractiveBash } from "./interactive-bash.js";
 
 // Enhanced competitor features
 export { CommentWatcher, getCommentWatcher, resetCommentWatcher } from "./comment-watcher.js";
-export { TestGeneratorTool, getTestGeneratorTool, resetTestGeneratorTool } from "./test-generator.js";
+export { TestGeneratorTool, testGeneratorToolDefinition } from "./test-generator.js";
