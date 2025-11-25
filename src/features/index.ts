@@ -9,69 +9,117 @@
  */
 
 // Persistent Checkpoints (inspired by Gemini CLI)
+import {
+  PersistentCheckpointManager as _PersistentCheckpointManager,
+  getPersistentCheckpointManager as _getPersistentCheckpointManager,
+  resetPersistentCheckpointManager as _resetPersistentCheckpointManager,
+} from '../checkpoints/persistent-checkpoint-manager.js';
+
 export {
-  PersistentCheckpointManager,
-  getPersistentCheckpointManager,
-  resetPersistentCheckpointManager,
-  type PersistentCheckpoint,
-  type FileSnapshot,
-  type CheckpointIndex,
-  type PersistentCheckpointManagerOptions
+  _PersistentCheckpointManager as PersistentCheckpointManager,
+  _getPersistentCheckpointManager as getPersistentCheckpointManager,
+  _resetPersistentCheckpointManager as resetPersistentCheckpointManager,
+};
+export type {
+  PersistentCheckpoint,
+  FileSnapshot,
+  CheckpointIndex,
+  PersistentCheckpointManagerOptions
 } from '../checkpoints/persistent-checkpoint-manager.js';
 
 // Slash Commands (inspired by Claude Code)
+import {
+  SlashCommandManager as _SlashCommandManager,
+  getSlashCommandManager as _getSlashCommandManager,
+  resetSlashCommandManager as _resetSlashCommandManager,
+} from '../commands/slash-commands.js';
+
 export {
-  SlashCommandManager,
-  getSlashCommandManager,
-  resetSlashCommandManager,
-  type SlashCommand,
-  type SlashCommandArgument,
-  type SlashCommandResult
+  _SlashCommandManager as SlashCommandManager,
+  _getSlashCommandManager as getSlashCommandManager,
+  _resetSlashCommandManager as resetSlashCommandManager,
+};
+export type {
+  SlashCommand,
+  SlashCommandArgument,
+  SlashCommandResult
 } from '../commands/slash-commands.js';
 
 // Hook System (inspired by Claude Code)
+import {
+  HookSystem as _HookSystem,
+  getHookSystem as _getHookSystem,
+  resetHookSystem as _resetHookSystem,
+} from '../hooks/hook-system.js';
+
 export {
-  HookSystem,
-  getHookSystem,
-  resetHookSystem,
-  type Hook,
-  type HookType,
-  type HooksConfig,
-  type HookResult,
-  type HookContext
+  _HookSystem as HookSystem,
+  _getHookSystem as getHookSystem,
+  _resetHookSystem as resetHookSystem,
+};
+export type {
+  Hook,
+  HookType,
+  HooksConfig,
+  HookResult,
+  HookContext
 } from '../hooks/hook-system.js';
 
 // Security Modes (inspired by Codex CLI)
+import {
+  SecurityModeManager as _SecurityModeManager,
+  getSecurityModeManager as _getSecurityModeManager,
+  resetSecurityModeManager as _resetSecurityModeManager,
+} from '../security/security-modes.js';
+
 export {
-  SecurityModeManager,
-  getSecurityModeManager,
-  resetSecurityModeManager,
-  type SecurityMode,
-  type SecurityModeConfig,
-  type ApprovalRequest,
-  type ApprovalResult
+  _SecurityModeManager as SecurityModeManager,
+  _getSecurityModeManager as getSecurityModeManager,
+  _resetSecurityModeManager as resetSecurityModeManager,
+};
+export type {
+  SecurityMode,
+  SecurityModeConfig,
+  ApprovalRequest,
+  ApprovalResult
 } from '../security/security-modes.js';
 
 // Voice Input (inspired by Aider)
+import {
+  VoiceInputManager as _VoiceInputManager,
+  getVoiceInputManager as _getVoiceInputManager,
+  resetVoiceInputManager as _resetVoiceInputManager,
+} from '../input/voice-input-enhanced.js';
+
 export {
-  VoiceInputManager,
-  getVoiceInputManager,
-  resetVoiceInputManager,
-  type VoiceInputConfig,
-  type TranscriptionResult,
-  type VoiceInputState
+  _VoiceInputManager as VoiceInputManager,
+  _getVoiceInputManager as getVoiceInputManager,
+  _resetVoiceInputManager as resetVoiceInputManager,
+};
+export type {
+  VoiceInputConfig,
+  TranscriptionResult,
+  VoiceInputState
 } from '../input/voice-input-enhanced.js';
 
 // Background Tasks (inspired by Codex CLI Cloud)
+import {
+  BackgroundTaskManager as _BackgroundTaskManager,
+  getBackgroundTaskManager as _getBackgroundTaskManager,
+  resetBackgroundTaskManager as _resetBackgroundTaskManager,
+} from '../tasks/background-tasks.js';
+
 export {
-  BackgroundTaskManager,
-  getBackgroundTaskManager,
-  resetBackgroundTaskManager,
-  type BackgroundTask,
-  type TaskResult,
-  type TaskStatus,
-  type TaskPriority,
-  type TaskListOptions
+  _BackgroundTaskManager as BackgroundTaskManager,
+  _getBackgroundTaskManager as getBackgroundTaskManager,
+  _resetBackgroundTaskManager as resetBackgroundTaskManager,
+};
+export type {
+  BackgroundTask,
+  TaskResult,
+  TaskStatus,
+  TaskPriority,
+  TaskListOptions
 } from '../tasks/background-tasks.js';
 
 // Project Initialization
@@ -99,20 +147,20 @@ export {
  * Initialize all enhanced features
  */
 export function initializeEnhancedFeatures(workingDirectory: string = process.cwd()): {
-  checkpoints: ReturnType<typeof getPersistentCheckpointManager>;
-  slashCommands: ReturnType<typeof getSlashCommandManager>;
-  hooks: ReturnType<typeof getHookSystem>;
-  security: ReturnType<typeof getSecurityModeManager>;
-  voiceInput: ReturnType<typeof getVoiceInputManager>;
-  tasks: ReturnType<typeof getBackgroundTaskManager>;
+  checkpoints: ReturnType<typeof _getPersistentCheckpointManager>;
+  slashCommands: ReturnType<typeof _getSlashCommandManager>;
+  hooks: ReturnType<typeof _getHookSystem>;
+  security: ReturnType<typeof _getSecurityModeManager>;
+  voiceInput: ReturnType<typeof _getVoiceInputManager>;
+  tasks: ReturnType<typeof _getBackgroundTaskManager>;
 } {
   return {
-    checkpoints: getPersistentCheckpointManager({ maxCheckpoints: 100 }),
-    slashCommands: getSlashCommandManager(workingDirectory),
-    hooks: getHookSystem(workingDirectory),
-    security: getSecurityModeManager(workingDirectory),
-    voiceInput: getVoiceInputManager(),
-    tasks: getBackgroundTaskManager()
+    checkpoints: _getPersistentCheckpointManager({ maxCheckpoints: 100 }),
+    slashCommands: _getSlashCommandManager(workingDirectory),
+    hooks: _getHookSystem(workingDirectory),
+    security: _getSecurityModeManager(workingDirectory),
+    voiceInput: _getVoiceInputManager(),
+    tasks: _getBackgroundTaskManager()
   };
 }
 
@@ -120,24 +168,24 @@ export function initializeEnhancedFeatures(workingDirectory: string = process.cw
  * Reset all enhanced features (useful for testing)
  */
 export function resetAllEnhancedFeatures(): void {
-  resetPersistentCheckpointManager();
-  resetSlashCommandManager();
-  resetHookSystem();
-  resetSecurityModeManager();
-  resetVoiceInputManager();
-  resetBackgroundTaskManager();
+  _resetPersistentCheckpointManager();
+  _resetSlashCommandManager();
+  _resetHookSystem();
+  _resetSecurityModeManager();
+  _resetVoiceInputManager();
+  _resetBackgroundTaskManager();
 }
 
 /**
  * Get feature status summary
  */
 export function getFeatureStatusSummary(): string {
-  const checkpoints = getPersistentCheckpointManager();
-  const slashCommands = getSlashCommandManager();
-  const hooks = getHookSystem();
-  const security = getSecurityModeManager();
-  const voiceInput = getVoiceInputManager();
-  const tasks = getBackgroundTaskManager();
+  const checkpoints = _getPersistentCheckpointManager();
+  const slashCommands = _getSlashCommandManager();
+  const hooks = _getHookSystem();
+  const security = _getSecurityModeManager();
+  const voiceInput = _getVoiceInputManager();
+  const tasks = _getBackgroundTaskManager();
 
   const checkpointStats = checkpoints.getStats();
   const taskStats = tasks.getStats();

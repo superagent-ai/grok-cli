@@ -191,8 +191,8 @@ export class VoiceInputManager extends EventEmitter {
       '-c', '1',  // Mono
       '-b', '16',  // 16-bit
       audioFile,
-      'silence', '1', '0.1', `${this.config.silenceThreshold}%`,  // Start on sound
-      '1', `${this.config.silenceDuration / 1000}`, `${this.config.silenceThreshold}%`  // Stop on silence
+      'silence', '1', '0.1', `${this.config.silenceThreshold ?? 0.01}%`,  // Start on sound
+      '1', `${(this.config.silenceDuration ?? 1500) / 1000}`, `${this.config.silenceThreshold ?? 0.01}%`  // Stop on silence
     ]);
 
     this.recordingProcess.on('close', async () => {

@@ -1,4 +1,4 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import { GrokClient, GrokMessage } from "../grok/client.js";
 import { EventEmitter } from "events";
 
 export interface ArchitectProposal {

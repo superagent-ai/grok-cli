@@ -1,7 +1,5 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
-  GROK_TOOLS,
-  addMCPToolsToGrokTools,
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
@@ -12,7 +10,6 @@ import {
   MorphEditorTool,
   BashTool,
   TodoTool,
-  ConfirmationTool,
   SearchTool,
   WebSearchTool,
   ImageTool,
@@ -90,7 +87,6 @@ export class GrokAgent extends EventEmitter {
   private morphEditor: MorphEditorTool | null;
   private bash: BashTool;
   private todoTool: TodoTool;
-  private confirmationTool: ConfirmationTool;
   private search: SearchTool;
   private webSearch: WebSearchTool;
   private imageTool: ImageTool;
@@ -103,7 +99,6 @@ export class GrokAgent extends EventEmitter {
   private modeManager: AgentModeManager;
   private sandboxManager: SandboxManager;
   private mcpClient: MCPClient;
-  private mcpInitialized: boolean = false;
   private maxToolRounds: number;
 
   /**
@@ -130,7 +125,6 @@ export class GrokAgent extends EventEmitter {
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
     this.bash = new BashTool();
     this.todoTool = new TodoTool();
-    this.confirmationTool = new ConfirmationTool();
     this.search = new SearchTool();
     this.webSearch = new WebSearchTool();
     this.imageTool = new ImageTool();
@@ -229,8 +223,6 @@ Current working directory: ${process.cwd()}`,
         }
       } catch (error) {
         console.warn("MCP initialization failed:", error);
-      } finally {
-        this.mcpInitialized = true;
       }
     });
   }

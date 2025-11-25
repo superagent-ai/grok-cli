@@ -127,7 +127,7 @@ export class MCPManager extends EventEmitter {
     return await client.callTool({
       name: originalToolName,
       arguments: arguments_
-    });
+    }) as CallToolResult;
   }
 
   getTools(): MCPTool[] {

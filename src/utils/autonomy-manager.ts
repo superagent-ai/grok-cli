@@ -490,6 +490,7 @@ export class AutonomyManager {
       confirm: "Standard confirmation for all operations",
       auto: "Auto-execute safe operations, confirm dangerous ones",
       full: "Full autonomy, minimal confirmations",
+      yolo: "YOLO mode - auto-execute with guardrails",
     };
 
     let output = `Autonomy Level: ${this.config.level.toUpperCase()}\n`;
