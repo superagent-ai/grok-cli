@@ -192,6 +192,7 @@ export async function withRetry<T>(
     initialDelay?: number;
     maxDelay?: number;
     shouldRetry?: (error: unknown) => boolean;
+    onRetry?: (error: unknown, attempt: number) => void;
   } = {}
 ): Promise<T> {
   const {
@@ -199,6 +200,7 @@ export async function withRetry<T>(
     initialDelay = 1000,
     maxDelay = 10000,
     shouldRetry = () => true,
+    onRetry,
   } = options;
 
   let lastError: unknown;
@@ -214,6 +216,11 @@ export async function withRetry<T>(
         throw error;
       }
 
+      // Notify about retry if callback provided
+      if (onRetry) {
+        onRetry(error, attempt + 1);
+      }
+
       // Wait before retrying with exponential backoff
       await new Promise((resolve) => setTimeout(resolve, delay));
       delay = Math.min(delay * 2, maxDelay);
@@ -221,4 +228,200 @@ export async function withRetry<T>(
   }
 
   throw lastError;
+}
+
+/**
+ * Error thrown when security validation fails
+ */
+export class SecurityError extends GrokError {
+  constructor(message: string, public operation?: string) {
+    super(message, 'SECURITY_ERROR', { operation });
+  }
+}
+
+/**
+ * Error thrown when rate limit is exceeded
+ */
+export class RateLimitError extends GrokError {
+  constructor(message: string, public retryAfter?: number) {
+    super(message, 'RATE_LIMIT_ERROR', { retryAfter });
+  }
+}
+
+/**
+ * Error thrown when permission is denied
+ */
+export class PermissionError extends GrokError {
+  constructor(message: string, public resource?: string) {
+    super(message, 'PERMISSION_ERROR', { resource });
+  }
+}
+
+/**
+ * Error thrown when a feature is not supported
+ */
+export class NotSupportedError extends GrokError {
+  constructor(message: string, public feature?: string) {
+    super(message, 'NOT_SUPPORTED_ERROR', { feature });
+  }
+}
+
+/**
+ * Error thrown when operation is cancelled
+ */
+export class CancellationError extends GrokError {
+  constructor(message: string = 'Operation cancelled') {
+    super(message, 'CANCELLATION_ERROR');
+  }
+}
+
+/**
+ * Wraps an async function to catch and transform errors
+ */
+export function wrapAsync<T extends (...args: Parameters<T>) => Promise<ReturnType<T>>>(
+  fn: T,
+  errorTransformer?: (error: unknown) => Error
+): T {
+  return (async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    try {
+      return await fn(...args);
+    } catch (error) {
+      if (errorTransformer) {
+        throw errorTransformer(error);
+      }
+      throw error;
+    }
+  }) as T;
+}
+
+/**
+ * Creates a formatted error message with context
+ */
+export function formatErrorWithContext(
+  error: unknown,
+  context: Record<string, unknown>
+): string {
+  const message = getErrorMessage(error);
+  const contextStr = Object.entries(context)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(', ');
+  return `${message} [${contextStr}]`;
+}
+
+/**
+ * Extracts error code from various error types
+ */
+export function getErrorCode(error: unknown): string {
+  if (isGrokError(error) && error.code) {
+    return error.code;
+  }
+  if (error instanceof Error && 'code' in error) {
+    return String((error as Error & { code: unknown }).code);
+  }
+  return 'UNKNOWN_ERROR';
+}
+
+/**
+ * Creates a user-friendly error message
+ */
+export function getUserFriendlyMessage(error: unknown): string {
+  if (isGrokError(error)) {
+    switch (error.code) {
+      case 'API_KEY_ERROR':
+        return 'Please set your API key using GROK_API_KEY environment variable or run `grok init`';
+      case 'API_ERROR':
+        return 'The API request failed. Please check your connection and try again.';
+      case 'NETWORK_ERROR':
+        return 'Network connection failed. Please check your internet connection.';
+      case 'TIMEOUT_ERROR':
+        return 'The operation took too long. Please try again.';
+      case 'FILE_NOT_FOUND':
+        return `File not found: ${(error as FileNotFoundError).filePath}`;
+      case 'INVALID_COMMAND':
+        return 'This command is blocked for security reasons.';
+      case 'SECURITY_ERROR':
+        return 'This operation was blocked for security reasons.';
+      case 'RATE_LIMIT_ERROR':
+        return 'Rate limit exceeded. Please wait a moment before trying again.';
+      case 'PERMISSION_ERROR':
+        return 'Permission denied. You may not have access to this resource.';
+      default:
+        return error.message;
+    }
+  }
+  return getErrorMessage(error);
+}
+
+/**
+ * Determines if an error is retryable
+ */
+export function isRetryableError(error: unknown): boolean {
+  if (error instanceof NetworkError) {
+    return true;
+  }
+  if (error instanceof TimeoutError) {
+    return true;
+  }
+  if (error instanceof RateLimitError) {
+    return true;
+  }
+  if (error instanceof APIError) {
+    // Retry on 5xx errors and 429
+    const status = error.statusCode;
+    return status !== undefined && (status >= 500 || status === 429);
+  }
+  return false;
+}
+
+/**
+ * Safely runs a function and returns a result object
+ */
+export async function safeExecute<T>(
+  fn: () => Promise<T>
+): Promise<{ success: true; data: T } | { success: false; error: Error }> {
+  try {
+    const data = await fn();
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error : new Error(getErrorMessage(error)),
+    };
+  }
+}
+
+/**
+ * Asserts a condition and throws a GrokError if false
+ */
+export function assertCondition(
+  condition: boolean,
+  message: string,
+  ErrorClass: typeof GrokError = GrokError
+): asserts condition {
+  if (!condition) {
+    throw new ErrorClass(message);
+  }
+}
+
+/**
+ * Creates an error boundary for async operations
+ */
+export function createErrorBoundary<T>(
+  operation: string,
+  handler?: (error: unknown) => T | Promise<T>
+): (fn: () => Promise<T>) => Promise<T> {
+  return async (fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (error) {
+      if (handler) {
+        return handler(error);
+      }
+      throw new GrokError(
+        `Error in ${operation}: ${getErrorMessage(error)}`,
+        'OPERATION_ERROR',
+        { operation, originalError: error }
+      );
+    }
+  };
 }
