@@ -197,9 +197,9 @@ description: ${name} - A custom command
 This is a custom command template. Edit this file to customize the behavior.
 
 ## Arguments
-Use \$ARGUMENTS[0], \$ARGUMENTS[1], etc. to reference command arguments.
+Use $ARGUMENTS[0], $ARGUMENTS[1], etc. to reference command arguments.
 Or use {{0}}, {{1}}, etc.
-Use \$ARGS or {{args}} to get all arguments as a string.
+Use $ARGS or {{args}} to get all arguments as a string.
 
 ## Your prompt here
 Replace this with instructions for Grok when this command is invoked.

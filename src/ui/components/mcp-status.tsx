@@ -3,9 +3,7 @@ import { Box, Text } from "ink";
 import { getMCPManager } from "../../grok/tools.js";
 import { MCPTool } from "../../mcp/client.js";
 
-interface MCPStatusProps {}
-
-export function MCPStatus({}: MCPStatusProps) {
+export function MCPStatus() {
   const [connectedServers, setConnectedServers] = useState<string[]>([]);
   const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
 

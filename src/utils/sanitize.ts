@@ -272,6 +272,7 @@ export function removeControlCharacters(str: string): string {
   }
 
   // Remove all control characters except \n, \r, \t
+  // eslint-disable-next-line no-control-regex -- Intentionally matching control characters for sanitization
   return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 }
 
