@@ -135,10 +135,11 @@ export class SearchTool {
         success: true,
         output: formattedOutput,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Search error: ${error.message}`,
+        error: `Search error: ${errorMessage}`,
       };
     }
   }
@@ -281,7 +282,7 @@ export class SearchTool {
             match: data.submatches[0]?.match?.text || "",
           });
         }
-      } catch (e) {
+      } catch (_e) {
         // Skip invalid JSON lines
         continue;
       }
@@ -364,7 +365,7 @@ export class SearchTool {
             await walkDir(fullPath, depth + 1);
           }
         }
-      } catch (error) {
+      } catch (_error) {
         // Skip directories we can't read
       }
     };
@@ -419,7 +420,7 @@ export class SearchTool {
   private formatUnifiedResults(
     results: UnifiedSearchResult[],
     query: string,
-    searchType: string
+    _searchType: string
   ): string {
     if (results.length === 0) {
       return `No results found for "${query}"`;

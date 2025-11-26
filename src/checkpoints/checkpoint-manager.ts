@@ -115,7 +115,7 @@ export class CheckpointManager extends EventEmitter {
             existed: false
           });
         }
-      } catch (error) {
+      } catch (_error) {
         // Skip files that can't be read
       }
     }

@@ -1,6 +1,6 @@
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess } from "child_process";
 import { EventEmitter } from "events";
 import axios, { AxiosInstance } from "axios";
 
@@ -93,7 +93,7 @@ export class HttpTransport extends EventEmitter implements MCPTransport {
     try {
       await this.client.get('/health');
       this.connected = true;
-    } catch (error) {
+    } catch (_error) {
       // If health endpoint doesn't exist, try a basic request
       this.connected = true;
     }

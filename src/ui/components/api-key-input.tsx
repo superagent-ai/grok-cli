@@ -59,13 +59,13 @@ export default function ApiKeyInput({ onApiKeySet }: ApiKeyInputProps) {
         const manager = getSettingsManager();
         manager.updateUserSetting('apiKey', apiKey);
         console.log(`\n✅ API key saved to ~/.grok/user-settings.json`);
-      } catch (error) {
+      } catch (_error) {
         console.log('\n⚠️ Could not save API key to settings file');
         console.log('API key set for current session only');
       }
-      
+
       onApiKeySet(agent);
-    } catch (error: any) {
+    } catch (_error: unknown) {
       setError("Invalid API key format");
       setIsSubmitting(false);
     }

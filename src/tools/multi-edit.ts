@@ -77,14 +77,12 @@ export class MultiEditTool {
     }
 
     // Create checkpoint before making any changes
-    const checkpointId = `multi-edit-${Date.now()}`;
     for (const edit of edits) {
       this.checkpointManager.checkpointBeforeEdit(edit.file_path);
     }
 
     // Execute all edits
     const results: MultiEditResult["results"] = [];
-    let successCount = 0;
     let failCount = 0;
 
     for (const edit of edits) {
@@ -94,16 +92,15 @@ export class MultiEditTool {
           file_path: edit.file_path,
           ...result,
         });
-        if (result.success) {
-          successCount++;
-        } else {
+        if (!result.success) {
           failCount++;
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         results.push({
           file_path: edit.file_path,
           success: false,
-          error: error.message,
+          error: errorMessage,
         });
         failCount++;
       }

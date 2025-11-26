@@ -283,7 +283,7 @@ export class PersistentCheckpointManager extends EventEmitter {
             hash: ''
           });
         }
-      } catch (error) {
+      } catch (_error) {
         // Skip files that can't be read
       }
     }
@@ -325,8 +325,9 @@ export class PersistentCheckpointManager extends EventEmitter {
             restored.push(`Deleted: ${snapshot.path}`);
           }
         }
-      } catch (error: any) {
-        errors.push(`Failed to restore ${snapshot.path}: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Failed to restore ${snapshot.path}: ${errorMessage}`);
       }
     }
 
@@ -498,7 +499,7 @@ export class PersistentCheckpointManager extends EventEmitter {
         const stat = fs.statSync(path.join(this.projectHistoryDir, file));
         storageSize += stat.size;
       }
-    } catch (error) {
+    } catch (_error) {
       // Ignore errors
     }
 

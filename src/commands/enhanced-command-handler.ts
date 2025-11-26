@@ -1,7 +1,7 @@
 import { ChatEntry } from "../agent/grok-agent.js";
 import { getAutonomyManager, AutonomyLevel } from "../utils/autonomy-manager.js";
-import { getMemoryManager, PersistentMemoryManager } from "../memory/persistent-memory.js";
-import { getSkillManager, Skill } from "../skills/skill-manager.js";
+import { getMemoryManager } from "../memory/persistent-memory.js";
+import { getSkillManager } from "../skills/skill-manager.js";
 import { getCostTracker } from "../utils/cost-tracker.js";
 import { getWorkspaceDetector } from "../utils/workspace-detector.js";
 import { getBranchManager } from "../persistence/conversation-branches.js";
@@ -31,7 +31,7 @@ export class EnhancedCommandHandler {
   async handleCommand(
     token: string,
     args: string[],
-    fullInput: string
+    _fullInput: string
   ): Promise<CommandHandlerResult> {
     switch (token) {
       case "__YOLO_MODE__":
@@ -637,7 +637,7 @@ Run /scan-todos first to see available items`,
   private async handleWorkspace(): Promise<CommandHandlerResult> {
     const detector = getWorkspaceDetector();
 
-    const info = await detector.detect();
+    await detector.detect();
     const content = detector.formatDetectionResults();
 
     return {

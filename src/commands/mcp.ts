@@ -111,7 +111,7 @@ export function createMCPCommand(): Command {
         let config;
         try {
           config = JSON.parse(jsonConfig);
-        } catch (error) {
+        } catch (_error) {
           console.error(chalk.red('Error: Invalid JSON configuration'));
           process.exit(1);
         }

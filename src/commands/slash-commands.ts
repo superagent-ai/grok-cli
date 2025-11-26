@@ -482,7 +482,7 @@ Be systematic and thorough in your analysis.`,
             console.warn(`Failed to load custom command ${commandName}:`, error);
           }
         }
-      } catch (error) {
+      } catch (_error) {
         // Directory doesn't exist or can't be read
       }
     }

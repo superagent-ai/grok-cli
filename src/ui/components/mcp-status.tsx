@@ -5,7 +5,8 @@ import { MCPTool } from "../../mcp/client.js";
 
 export function MCPStatus() {
   const [connectedServers, setConnectedServers] = useState<string[]>([]);
-  const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
+  // Track available tools for potential future UI display
+  const [, setAvailableTools] = useState<MCPTool[]>([]);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -16,7 +17,7 @@ export function MCPStatus() {
 
         setConnectedServers(servers);
         setAvailableTools(tools);
-      } catch (error) {
+      } catch (_error) {
         // MCP manager not initialized yet
         setConnectedServers([]);
         setAvailableTools([]);
