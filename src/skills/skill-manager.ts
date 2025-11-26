@@ -253,10 +253,10 @@ export class SkillManager extends EventEmitter {
             config.description = value;
             break;
           case "triggers":
-            config.triggers = value.replace(/[\[\]"']/g, "").split(",").map((t) => t.trim());
+            config.triggers = value.replace(/[[\]"']/g, "").split(",").map((t) => t.trim());
             break;
           case "tools":
-            config.tools = value.replace(/[\[\]"']/g, "").split(",").map((t) => t.trim());
+            config.tools = value.replace(/[[\]"']/g, "").split(",").map((t) => t.trim());
             break;
           case "model":
             config.model = value;

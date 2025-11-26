@@ -292,7 +292,7 @@ export class VoiceInputManager extends EventEmitter {
           const txtFile = audioFile.replace('.wav', '.txt');
           if (fs.existsSync(txtFile)) {
             const text = fs.readFileSync(txtFile, 'utf-8').trim();
-            try { fs.unlinkSync(txtFile); } catch {}
+            try { fs.unlinkSync(txtFile); } catch (_e) { /* ignore cleanup errors */ }
             resolve({ success: true, text });
           } else {
             resolve({ success: false, error: 'Transcription file not found' });

@@ -9,7 +9,7 @@ import os from 'os';
  * Dangerous command patterns that are always blocked
  */
 const BLOCKED_PATTERNS: RegExp[] = [
-  /rm\s+(-rf?|--recursive)\s+[\/~]/i,  // rm -rf / or ~
+  /rm\s+(-rf?|--recursive)\s+[/~]/i,  // rm -rf / or ~
   /rm\s+.*\/\s*$/i,                      // rm something/
   />\s*\/dev\/sd[a-z]/i,                 // Write to disk device
   /dd\s+.*if=.*of=\/dev/i,              // dd to device

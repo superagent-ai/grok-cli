@@ -67,7 +67,7 @@ describe('sanitizeCommandArg', () => {
   });
 
   it('should reject arguments with $( )', () => {
-    expect(() => sanitizeCommandArg('$(rm -rf /)')).toThrow('command substitution');
+    expect(() => sanitizeCommandArg('$(rm -rf /)')).toThrow('dangerous character');
   });
 
   it('should reject arguments with ${ }', () => {
@@ -94,7 +94,7 @@ describe('sanitizeURL', () => {
   });
 
   it('should reject javascript: URLs', () => {
-    expect(() => sanitizeURL('javascript:alert(1)')).toThrow('JavaScript URLs');
+    expect(() => sanitizeURL('javascript:alert(1)')).toThrow('not allowed');
   });
 
   it('should accept custom allowed protocols', () => {
