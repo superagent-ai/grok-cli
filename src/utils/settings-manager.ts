@@ -3,6 +3,12 @@ import * as path from "path";
 import * as os from "os";
 
 /**
+ * Current settings version - increment this when adding new models or changing settings structure
+ * This triggers automatic migration for existing users
+ */
+const SETTINGS_VERSION = 2;
+
+/**
  * User-level settings stored in ~/.grok/user-settings.json
  * These are global settings that apply across all projects
  */
@@ -11,6 +17,7 @@ export interface UserSettings {
   baseURL?: string; // API base URL
   defaultModel?: string; // User's preferred default model
   models?: string[]; // Available models list
+  settingsVersion?: number; // Version for migration tracking
 }
 
 /**
@@ -29,10 +36,22 @@ const DEFAULT_USER_SETTINGS: Partial<UserSettings> = {
   baseURL: "https://api.x.ai/v1",
   defaultModel: "grok-code-fast-1",
   models: [
-    "grok-code-fast-1",
+    // Grok 4.1 Fast models (2M context, latest - November 2025)
+    "grok-4-1-fast-reasoning",
+    "grok-4-1-fast-non-reasoning",
+    // Grok 4 Fast models (2M context)
+    "grok-4-fast-reasoning",
+    "grok-4-fast-non-reasoning",
+    // Grok 4 flagship (256K context)
+    "grok-4",
     "grok-4-latest",
+    // Grok Code (optimized for coding, 256K context)
+    "grok-code-fast-1",
+    // Grok 3 models (131K context)
+    "grok-3",
     "grok-3-latest",
     "grok-3-fast",
+    "grok-3-mini",
     "grok-3-mini-fast",
   ],
 };
@@ -96,12 +115,21 @@ export class SettingsManager {
     try {
       if (!fs.existsSync(this.userSettingsPath)) {
         // Create default user settings if file doesn't exist
-        this.saveUserSettings(DEFAULT_USER_SETTINGS);
-        return { ...DEFAULT_USER_SETTINGS };
+        const newSettings = { ...DEFAULT_USER_SETTINGS, settingsVersion: SETTINGS_VERSION };
+        this.saveUserSettings(newSettings);
+        return newSettings;
       }
 
       const content = fs.readFileSync(this.userSettingsPath, "utf-8");
       const settings = JSON.parse(content);
+
+      // Check if migration is needed
+      const currentVersion = settings.settingsVersion || 1;
+      if (currentVersion < SETTINGS_VERSION) {
+        const migratedSettings = this.migrateSettings(settings, currentVersion);
+        this.saveUserSettings(migratedSettings);
+        return migratedSettings;
+      }
 
       // Merge with defaults to ensure all required fields exist
       return { ...DEFAULT_USER_SETTINGS, ...settings };
@@ -112,6 +140,31 @@ export class SettingsManager {
       );
       return { ...DEFAULT_USER_SETTINGS };
     }
+  }
+
+  /**
+   * Migrate settings from an older version to the current version
+   */
+  private migrateSettings(settings: UserSettings, fromVersion: number): UserSettings {
+    let migrated = { ...settings };
+
+    // Migration from version 1 to 2: Add new Grok 4.1 and Grok 4 Fast models
+    if (fromVersion < 2) {
+      const defaultModels = DEFAULT_USER_SETTINGS.models || [];
+      const existingModels = new Set(migrated.models || []);
+      
+      // Add any new models that don't exist in user's current list
+      const newModels = defaultModels.filter(model => !existingModels.has(model));
+      
+      // Prepend new models to the list (newest models first)
+      migrated.models = [...newModels, ...(migrated.models || [])];
+    }
+
+    // Add future migrations here:
+    // if (fromVersion < 3) { ... }
+
+    migrated.settingsVersion = SETTINGS_VERSION;
+    return migrated;
   }
 
   /**
