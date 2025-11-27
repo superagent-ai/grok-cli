@@ -296,15 +296,19 @@ Options:
 
 ### Custom Instructions
 
-You can provide custom instructions to tailor Grok's behavior to your project by creating a `.grok/GROK.md` file in your project directory:
+You can provide custom instructions to tailor Grok's behavior to your project or globally. Grok CLI supports both project-level and global custom instructions.
+
+#### Project-Level Instructions
+
+Create a `.grok/GROK.md` file in your project directory to provide instructions specific to that project:
 
 ```bash
 mkdir .grok
 ```
 
-Create `.grok/GROK.md` with your custom instructions:
+Create `.grok/GROK.md` with your project-specific instructions:
 ```markdown
-# Custom Instructions for Grok CLI
+# Custom Instructions for This Project
 
 Always use TypeScript for any new code files.
 When creating React components, use functional components with hooks.
@@ -313,7 +317,33 @@ Always add JSDoc comments for public functions and interfaces.
 Follow the existing code style and patterns in this project.
 ```
 
-Grok will automatically load and follow these instructions when working in your project directory. The custom instructions are added to Grok's system prompt and take priority over default behavior.
+#### Global Instructions
+
+For instructions that apply across all projects, create `~/.grok/GROK.md` in your home directory:
+
+```bash
+mkdir -p ~/.grok
+```
+
+Create `~/.grok/GROK.md` with your global instructions:
+```markdown
+# Global Custom Instructions for Grok CLI
+
+Always prioritize code readability and maintainability.
+Use descriptive variable names and add comments for complex logic.
+Follow best practices for the programming language being used.
+When suggesting code changes, consider performance implications.
+```
+
+#### Priority Order
+
+Grok will load custom instructions in the following priority order:
+1. **Project-level** (`.grok/GROK.md` in current directory) - takes highest priority
+2. **Global** (`~/.grok/GROK.md` in home directory) - fallback if no project instructions exist
+
+If both files exist, project instructions will be used. If neither exists, Grok operates with its default behavior.
+
+The custom instructions are added to Grok's system prompt and influence its responses across all interactions in the respective context.
 
 ## Morph Fast Apply (Optional)
 
