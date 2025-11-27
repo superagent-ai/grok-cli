@@ -111,8 +111,6 @@ export class CodebaseMapper {
   }
 
   async buildMap(options: { deep?: boolean } = {}): Promise<CodebaseMap> {
-    const startTime = Date.now();
-
     const files = new Map<string, FileInfo>();
     const symbols = new Map<string, SymbolInfo[]>();
     const dependencies: DependencyEdge[] = [];
@@ -139,7 +137,7 @@ export class CodebaseMapper {
           const fileDeps = await this.extractDependencies(filePath);
           dependencies.push(...fileDeps);
         }
-      } catch (error) {
+      } catch (_error) {
         // Skip files that can't be processed
       }
     }
@@ -168,7 +166,7 @@ export class CodebaseMapper {
         { maxBuffer: 10 * 1024 * 1024 }
       );
       return stdout.trim().split("\n").filter(Boolean);
-    } catch (error) {
+    } catch (_error) {
       // Fallback to simpler find
       const { stdout } = await execAsync(
         `find "${this.rootDir}" -type f -not -path "*/node_modules/*" -not -path "*/.git/*" | head -${this.maxFiles}`,
@@ -333,7 +331,7 @@ export class CodebaseMapper {
           });
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Skip files that can't be parsed
     }
 
@@ -375,7 +373,7 @@ export class CodebaseMapper {
           deps.push({ from: relativePath, to: resolved, type: "dynamic" });
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Skip files that can't be parsed
     }
 
@@ -441,7 +439,7 @@ export class CodebaseMapper {
     return this.map;
   }
 
-  async getRelevantContext(query: string, maxTokens: number = 4000): Promise<string> {
+  async getRelevantContext(query: string, _maxTokens: number = 4000): Promise<string> {
     if (!this.map) {
       await this.buildMap({ deep: false });
     }

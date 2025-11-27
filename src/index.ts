@@ -13,7 +13,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 // Import enhanced features
 import { initGrokProject, formatInitResult } from "./utils/init-project.js";
 import { getSecurityModeManager, SecurityMode } from "./security/security-modes.js";
-import { createHeadlessResult, formatOutput, OutputFormat } from "./utils/headless-output.js";
+// Headless output utilities available for future use
+// import { createHeadlessResult, formatOutput, OutputFormat } from "./utils/headless-output.js";
 
 // Load environment variables
 dotenv.config();
@@ -26,7 +27,7 @@ process.on("SIGTERM", () => {
   if (process.stdin.isTTY && process.stdin.setRawMode) {
     try {
       process.stdin.setRawMode(false);
-    } catch (e) {
+    } catch (_e) {
       // Ignore errors when setting raw mode
     }
   }
@@ -51,7 +52,7 @@ function ensureUserSettingsDirectory(): void {
     const manager = getSettingsManager();
     // This will create default settings if they don't exist
     manager.loadUserSettings();
-  } catch (error) {
+  } catch (_error) {
     // Silently ignore errors during setup
   }
 }
@@ -103,7 +104,7 @@ function loadModel(): string | undefined {
     try {
       const manager = getSettingsManager();
       model = manager.getCurrentModel();
-    } catch (error) {
+    } catch (_error) {
       // Ignore errors, model will remain undefined
     }
   }
@@ -226,8 +227,9 @@ Respond with ONLY the commit message, no additional text.`;
       console.log(`❌ git commit: ${commitResult.error || "Commit failed"}`);
       process.exit(1);
     }
-  } catch (error: any) {
-    console.error("❌ Error during commit and push:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("❌ Error during commit and push:", errorMessage);
     process.exit(1);
   }
 }
@@ -299,12 +301,13 @@ async function processPromptHeadless(
     for (const message of messages) {
       console.log(JSON.stringify(message));
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Output error in OpenAI compatible format
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.log(
       JSON.stringify({
         role: "assistant",
-        content: `Error: ${error.message}`,
+        content: `Error: ${errorMessage}`,
       })
     );
     process.exit(1);
@@ -363,10 +366,11 @@ program
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          errorMessage
         );
         process.exit(1);
       }
@@ -428,8 +432,9 @@ program
         : message;
 
       render(React.createElement(ChatInterface, { agent, initialMessage }));
-    } catch (error: any) {
-      console.error("❌ Error initializing Grok CLI:", error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ Error initializing Grok CLI:", errorMessage);
       process.exit(1);
     }
   });
@@ -461,10 +466,11 @@ gitCommand
     if (options.directory) {
       try {
         process.chdir(options.directory);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(
           `Error changing directory to ${options.directory}:`,
-          error.message
+          errorMessage
         );
         process.exit(1);
       }
@@ -490,8 +496,9 @@ gitCommand
       }
 
       await handleCommitAndPushHeadless(apiKey, baseURL, model, maxToolRounds);
-    } catch (error: any) {
-      console.error("❌ Error during git commit-and-push:", error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ Error during git commit-and-push:", errorMessage);
       process.exit(1);
     }
   });

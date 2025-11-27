@@ -21,8 +21,9 @@ export interface TestTemplate {
   template: string;
 }
 
-// Test templates for different frameworks
-const TEST_TEMPLATES: Record<string, TestTemplate> = {
+// Test templates for different frameworks - stored for future template-based generation
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _TEST_TEMPLATES: Record<string, TestTemplate> = {
   "jest-ts": {
     name: "Jest TypeScript",
     language: "typescript",
@@ -376,15 +377,16 @@ export class TestGeneratorTool {
         success: true,
         output: `Test Results:\n\n${stdout}${stderr ? `\nStderr:\n${stderr}` : ""}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Tests may fail but still produce output
-      const output = error.stdout || "";
-      const stderr = error.stderr || "";
+      const execError = error as { stdout?: string; stderr?: string; message?: string };
+      const output = execError.stdout || "";
+      const stderr = execError.stderr || "";
 
       return {
         success: false,
         output: `Test Results (some tests failed):\n\n${output}${stderr ? `\nErrors:\n${stderr}` : ""}`,
-        error: error.message,
+        error: execError.message || String(error),
       };
     }
   }
@@ -426,11 +428,12 @@ export class TestGeneratorTool {
         success: true,
         output: stdout + (stderr || ""),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const execError = error as { stdout?: string; stderr?: string; message?: string };
       return {
         success: false,
-        output: (error.stdout || "") + (error.stderr || ""),
-        error: error.message,
+        output: (execError.stdout || "") + (execError.stderr || ""),
+        error: execError.message || String(error),
       };
     }
   }
@@ -439,7 +442,6 @@ export class TestGeneratorTool {
    * Get coverage report
    */
   async getCoverageReport(): Promise<ToolResult> {
-    const framework = await this.detectFramework();
     const coverageDir = path.join(this.projectRoot, "coverage");
 
     if (!(await fs.pathExists(coverageDir))) {

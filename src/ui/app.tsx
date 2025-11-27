@@ -4,7 +4,6 @@ import { Agent } from '../agent/index.js';
 import { ToolResult } from '../types/index.js';
 import { ConfirmationService, ConfirmationOptions } from '../utils/confirmation-service.js';
 import ConfirmationDialog from './components/confirmation-dialog.js';
-import chalk from 'chalk';
 
 interface Props {
   agent: Agent;

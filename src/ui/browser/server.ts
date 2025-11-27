@@ -1,6 +1,4 @@
 import http from 'http';
-import fs from 'fs';
-import path from 'path';
 import { GrokAgent, ChatEntry } from '../../agent/grok-agent';
 
 /**
@@ -38,7 +36,7 @@ export class BrowserServer {
         this.handleRequest(req, res);
       });
 
-      this.server.on('error', (error: any) => {
+      this.server.on('error', (error: NodeJS.ErrnoException) => {
         if (error.code === 'EADDRINUSE') {
           // Try next port
           this.port++;
@@ -137,9 +135,10 @@ export class BrowserServer {
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ entries }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: error.message }));
+      res.end(JSON.stringify({ error: errorMessage }));
     }
   }
 
@@ -178,8 +177,9 @@ export class BrowserServer {
 
       res.write('data: [DONE]\n\n');
       res.end();
-    } catch (error: any) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`);
       res.end();
     }
   }
@@ -206,9 +206,10 @@ export class BrowserServer {
         this.agent.setModel(model);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, model }));
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: error.message }));
+        res.end(JSON.stringify({ error: errorMessage }));
       }
     }
   }

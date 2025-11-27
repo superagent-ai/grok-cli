@@ -278,7 +278,7 @@ export class PipelineRunner extends EventEmitter {
               this.emit("pipeline:stage-skipped", { stage: stage.name, reason: "Condition not met" });
               continue;
             }
-          } catch (error) {
+          } catch (_error) {
             // If condition evaluation fails, run the stage anyway
           }
         }

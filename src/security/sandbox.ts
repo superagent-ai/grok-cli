@@ -96,7 +96,7 @@ export class SandboxManager {
    * Validate a command before execution
    */
   validateCommand(command: string): { valid: boolean; reason?: string } {
-    const lowerCommand = command.toLowerCase();
+    // Note: lowerCommand reserved for case-insensitive pattern matching if needed
 
     // Check for dangerous patterns
     for (const pattern of DANGEROUS_COMMANDS) {

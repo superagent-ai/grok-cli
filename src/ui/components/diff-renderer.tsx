@@ -6,7 +6,6 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { Colors } from '../utils/colors.js';
 import crypto from 'crypto';
-import { colorizeCode } from '../utils/code-colorizer.js';
 import { MaxSizedBox } from '../shared/max-sized-box.js';
 
 interface DiffLine {
@@ -263,7 +262,9 @@ const renderDiffContent = (
   );
 };
 
-const getLanguageFromExtension = (extension: string): string | null => {
+// Language detection utility for potential future syntax highlighting
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _getLanguageFromExtension = (extension: string): string | null => {
   const languageMap: { [key: string]: string } = {
     js: 'javascript',
     ts: 'typescript',
