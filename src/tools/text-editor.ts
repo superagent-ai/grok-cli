@@ -1,4 +1,4 @@
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
 import { writeFile as writeFilePromise } from "fs/promises";
 import { ToolResult, EditorCommand } from "../types/index.js";

@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { ToolResult } from "../types/index.js";
 import { ConfirmationService } from "../utils/confirmation-service.js";
-import * as fs from "fs-extra";
+import fs from "fs-extra";
 import * as path from "path";
 
 export interface SearchResult {
