@@ -6,7 +6,9 @@ import {
   initializeMCPServers,
   classifyQuery,
   ToolSelectionResult,
+  getToolSelector,
 } from "../grok/tools.js";
+import { recordToolRequest, formatToolSelectionMetrics } from "../tools/tool-selector.js";
 import { loadMCPConfig } from "../mcp/config.js";
 import {
   TextEditorTool,
@@ -106,6 +108,8 @@ export class GrokAgent extends EventEmitter {
   private useRAGToolSelection: boolean;
   private lastToolSelection: ToolSelectionResult | null = null;
   private parallelToolExecution: boolean = true;
+  private lastSelectedToolNames: string[] = [];
+  private lastQueryForToolSelection: string = '';
 
   /**
    * Create a new GrokAgent instance
@@ -378,6 +382,8 @@ Current working directory: ${process.cwd()}`,
     tools: import("../grok/client.js").GrokTool[];
     selection: ToolSelectionResult | null;
   }> {
+    this.lastQueryForToolSelection = query;
+
     if (this.useRAGToolSelection) {
       const selection = await getRelevantTools(query, {
         maxTools: 15,
@@ -385,10 +391,25 @@ Current working directory: ${process.cwd()}`,
         alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor']
       });
       this.lastToolSelection = selection;
+      this.lastSelectedToolNames = selection.selectedTools.map(t => t.function.name);
       return { tools: selection.selectedTools, selection };
     } else {
       const tools = await getAllGrokTools();
+      this.lastSelectedToolNames = tools.map(t => t.function.name);
       return { tools, selection: null };
+    }
+  }
+
+  /**
+   * Record tool request for metrics (called when LLM requests a tool)
+   */
+  private recordToolRequestMetric(toolName: string): void {
+    if (this.useRAGToolSelection && this.lastQueryForToolSelection) {
+      recordToolRequest(
+        toolName,
+        this.lastSelectedToolNames,
+        this.lastQueryForToolSelection
+      );
     }
   }
 
@@ -857,6 +878,9 @@ Current working directory: ${process.cwd()}`,
   }
 
   private async executeTool(toolCall: GrokToolCall): Promise<ToolResult> {
+    // Record this tool request for metrics tracking
+    this.recordToolRequestMetric(toolCall.function.name);
+
     try {
       const args = JSON.parse(toolCall.function.arguments);
 
@@ -1186,6 +1210,48 @@ Current working directory: ${process.cwd()}`,
    */
   classifyUserQuery(query: string) {
     return classifyQuery(query);
+  }
+
+  /**
+   * Get tool selection metrics (success rates, missed tools, etc.)
+   */
+  getToolSelectionMetrics() {
+    return getToolSelector().getMetrics();
+  }
+
+  /**
+   * Format tool selection metrics as a readable string
+   */
+  formatToolSelectionMetrics(): string {
+    return formatToolSelectionMetrics();
+  }
+
+  /**
+   * Get most frequently missed tools for debugging
+   */
+  getMostMissedTools(limit: number = 10) {
+    return getToolSelector().getMostMissedTools(limit);
+  }
+
+  /**
+   * Reset tool selection metrics
+   */
+  resetToolSelectionMetrics(): void {
+    getToolSelector().resetMetrics();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return getToolSelector().getCacheStats();
+  }
+
+  /**
+   * Clear all caches
+   */
+  clearCaches(): void {
+    getToolSelector().clearAllCaches();
   }
 
   // Parallel Tool Execution methods
