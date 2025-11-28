@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "@vibe-kit/grok-cli",
+      "name": "@phuetz/grok-cli",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.17.0",
         "axios": "^1.7.0",

@@ -1,7 +1,16 @@
 {
-  "name": "@vibe-kit/grok-cli",
-  "version": "0.1.0",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal with advanced features inspired by Claude Code, Aider, and Gemini CLI.",
+  "name": "@phuetz/grok-cli",
+  "version": "1.0.0",
+  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "author": "Patrice Huetz <ton-email@example.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phuetz/grok-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/phuetz/grok-cli/issues"
+  },
+  "homepage": "https://github.com/phuetz/grok-cli#readme",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -46,7 +55,6 @@
     "mcp",
     "hooks"
   ],
-  "author": "Your Name",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

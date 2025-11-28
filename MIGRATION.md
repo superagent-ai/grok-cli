@@ -15,10 +15,10 @@ This guide helps you migrate between major versions of Grok CLI.
 
 ```bash
 # Update to latest version
-npm update -g @vibe-kit/grok-cli
+npm update -g @phuetz/grok-cli
 
 # Or update to specific version
-npm install -g @vibe-kit/grok-cli@x.x.x
+npm install -g @phuetz/grok-cli@x.x.x
 
 # Verify installation
 grok --version
@@ -28,10 +28,10 @@ grok --version
 
 ```bash
 # Update to latest
-npm update @vibe-kit/grok-cli
+npm update @phuetz/grok-cli
 
 # Or specific version
-npm install @vibe-kit/grok-cli@x.x.x
+npm install @phuetz/grok-cli@x.x.x
 ```
 
 ### Backup Your Configuration
@@ -140,8 +140,8 @@ Breaking changes will be documented here when they occur.
 **Solution**:
 ```bash
 # Reinstall globally
-npm uninstall -g @vibe-kit/grok-cli
-npm install -g @vibe-kit/grok-cli
+npm uninstall -g @phuetz/grok-cli
+npm install -g @phuetz/grok-cli
 
 # Or fix npm global path
 npm config get prefix
@@ -204,10 +204,10 @@ If you need to rollback to a previous version:
 
 ```bash
 # Global installation
-npm install -g @vibe-kit/grok-cli@0.0.11
+npm install -g @phuetz/grok-cli@0.0.11
 
 # Local installation
-npm install @vibe-kit/grok-cli@0.0.11
+npm install @phuetz/grok-cli@0.0.11
 
 # Restore backup config
 cp ~/.grok/user-settings.json.backup ~/.grok/user-settings.json
@@ -219,7 +219,7 @@ If you encounter issues during migration:
 
 1. **Check the CHANGELOG**: See [CHANGELOG.md](CHANGELOG.md) for detailed changes
 2. **Review documentation**: Check updated [README.md](README.md)
-3. **Search issues**: Look for similar problems in [GitHub Issues](https://github.com/vibe-kit/grok-cli/issues)
+3. **Search issues**: Look for similar problems in [GitHub Issues](https://github.com/phuetz/grok-cli/issues)
 4. **Ask for help**: Create a new issue with the `help` label
 
 ## Automated Migration Scripts
@@ -228,7 +228,7 @@ For complex migrations, we may provide migration scripts:
 
 ```bash
 # Future: Run migration script (when available)
-npx @vibe-kit/grok-cli migrate
+npx @phuetz/grok-cli migrate
 ```
 
 ## Testing Your Migration
@@ -261,9 +261,9 @@ Current deprecations: None
 
 ## Stay Updated
 
-- **Watch releases**: Click "Watch" → "Releases only" on [GitHub](https://github.com/vibe-kit/grok-cli)
+- **Watch releases**: Click "Watch" → "Releases only" on [GitHub](https://github.com/phuetz/grok-cli)
 - **Read CHANGELOG**: Check [CHANGELOG.md](CHANGELOG.md) before updating
-- **Follow announcements**: Subscribe to [GitHub Discussions](https://github.com/vibe-kit/grok-cli/discussions)
+- **Follow announcements**: Subscribe to [GitHub Discussions](https://github.com/phuetz/grok-cli/discussions)
 
 ---
 
