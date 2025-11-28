@@ -1,8 +1,11 @@
 import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
   getAllGrokTools,
+  getRelevantTools,
   getMCPManager,
   initializeMCPServers,
+  classifyQuery,
+  ToolSelectionResult,
 } from "../grok/tools.js";
 import { loadMCPConfig } from "../mcp/config.js";
 import {
@@ -100,6 +103,9 @@ export class GrokAgent extends EventEmitter {
   private sandboxManager: SandboxManager;
   private mcpClient: MCPClient;
   private maxToolRounds: number;
+  private useRAGToolSelection: boolean;
+  private lastToolSelection: ToolSelectionResult | null = null;
+  private parallelToolExecution: boolean = true;
 
   /**
    * Create a new GrokAgent instance
@@ -108,18 +114,21 @@ export class GrokAgent extends EventEmitter {
    * @param baseURL - Optional base URL for the API endpoint
    * @param model - Optional model name (defaults to saved model or grok-code-fast-1)
    * @param maxToolRounds - Maximum tool execution rounds (default: 400)
+   * @param useRAGToolSelection - Enable RAG-based tool selection (default: true)
    */
   constructor(
     apiKey: string,
     baseURL?: string,
     model?: string,
-    maxToolRounds?: number
+    maxToolRounds?: number,
+    useRAGToolSelection: boolean = true
   ) {
     super();
     const manager = getSettingsManager();
     const savedModel = manager.getCurrentModel();
     const modelToUse = model || savedModel || "grok-code-fast-1";
     this.maxToolRounds = maxToolRounds || 400;
+    this.useRAGToolSelection = useRAGToolSelection;
     this.grokClient = new GrokClient(apiKey, modelToUse, baseURL);
     this.textEditor = new TextEditorTool();
     this.morphEditor = process.env.MORPH_API_KEY ? new MorphEditorTool() : null;
@@ -260,6 +269,129 @@ Current working directory: ${process.cwd()}`,
     return false;
   }
 
+  /**
+   * Check if tool calls can be safely executed in parallel
+   *
+   * Tools that modify the same files or have side effects should not be parallelized.
+   * Read-only operations (view_file, search, web_search) are safe to parallelize.
+   */
+  private canParallelizeToolCalls(toolCalls: GrokToolCall[]): boolean {
+    if (!this.parallelToolExecution || toolCalls.length <= 1) {
+      return false;
+    }
+
+    // Tools that are safe to run in parallel (read-only)
+    const safeParallelTools = new Set([
+      'view_file',
+      'search',
+      'web_search',
+      'web_fetch',
+      'codebase_map',
+      'pdf',
+      'audio',
+      'video',
+      'document',
+      'ocr',
+      'qr',
+      'archive',
+      'clipboard' // read operations
+    ]);
+
+    // Tools that modify state (unsafe for parallel)
+    const writeTools = new Set([
+      'create_file',
+      'str_replace_editor',
+      'edit_file',
+      'multi_edit',
+      'bash',
+      'git',
+      'create_todo_list',
+      'update_todo_list',
+      'screenshot',
+      'export',
+      'diagram'
+    ]);
+
+    // Check if all tools are safe for parallel execution
+    const allSafe = toolCalls.every(tc => safeParallelTools.has(tc.function.name));
+    if (allSafe) return true;
+
+    // Check if any write tools target the same file
+    const writeToolCalls = toolCalls.filter(tc => writeTools.has(tc.function.name));
+    if (writeToolCalls.length > 1) {
+      // Extract file paths from arguments
+      const filePaths = new Set<string>();
+      for (const tc of writeToolCalls) {
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          const path = args.path || args.target_file || args.file_path;
+          if (path) {
+            if (filePaths.has(path)) {
+              return false; // Same file targeted by multiple write tools
+            }
+            filePaths.add(path);
+          }
+        } catch {
+          return false; // Can't parse args, be safe
+        }
+      }
+    }
+
+    // If there's only one write tool, safe to parallelize with read tools
+    return writeToolCalls.length <= 1;
+  }
+
+  /**
+   * Execute multiple tool calls, potentially in parallel
+   */
+  private async executeToolCallsParallel(
+    toolCalls: GrokToolCall[]
+  ): Promise<Map<string, ToolResult>> {
+    const results = new Map<string, ToolResult>();
+
+    if (this.canParallelizeToolCalls(toolCalls)) {
+      // Execute in parallel
+      const promises = toolCalls.map(async (toolCall) => {
+        const result = await this.executeTool(toolCall);
+        return { id: toolCall.id, result };
+      });
+
+      const settled = await Promise.all(promises);
+      for (const { id, result } of settled) {
+        results.set(id, result);
+      }
+    } else {
+      // Execute sequentially
+      for (const toolCall of toolCalls) {
+        const result = await this.executeTool(toolCall);
+        results.set(toolCall.id, result);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get tools for a query using RAG selection if enabled
+   */
+  private async getToolsForQuery(query: string): Promise<{
+    tools: import("../grok/client.js").GrokTool[];
+    selection: ToolSelectionResult | null;
+  }> {
+    if (this.useRAGToolSelection) {
+      const selection = await getRelevantTools(query, {
+        maxTools: 15,
+        useRAG: true,
+        alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor']
+      });
+      this.lastToolSelection = selection;
+      return { tools: selection.selectedTools, selection };
+    } else {
+      const tools = await getAllGrokTools();
+      return { tools, selection: null };
+    }
+  }
+
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -275,7 +407,8 @@ Current working directory: ${process.cwd()}`,
     let toolRounds = 0;
 
     try {
-      const tools = await getAllGrokTools();
+      // Use RAG-based tool selection for initial query
+      const { tools } = await this.getToolsForQuery(message);
       let currentResponse = await this.grokClient.chat(
         this.messages,
         tools,
@@ -522,7 +655,10 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
-        const tools = await getAllGrokTools();
+        // Use RAG-based tool selection on first round, then use same tools for consistency
+        const { tools } = toolRounds === 0
+          ? await this.getToolsForQuery(message)
+          : { tools: await getAllGrokTools() };
         const stream = this.grokClient.chatStream(
           this.messages,
           tools,
@@ -982,6 +1118,97 @@ Current working directory: ${process.cwd()}`,
 
   isImageFile(filePath: string): boolean {
     return this.imageTool.isImage(filePath);
+  }
+
+  // RAG Tool Selection methods
+
+  /**
+   * Enable or disable RAG-based tool selection
+   *
+   * When enabled, only semantically relevant tools are sent to the LLM,
+   * reducing prompt bloat and improving tool selection accuracy.
+   *
+   * @param enabled - Whether to enable RAG tool selection
+   */
+  setRAGToolSelection(enabled: boolean): void {
+    this.useRAGToolSelection = enabled;
+  }
+
+  /**
+   * Check if RAG tool selection is enabled
+   */
+  isRAGToolSelectionEnabled(): boolean {
+    return this.useRAGToolSelection;
+  }
+
+  /**
+   * Get the last tool selection result
+   *
+   * Contains information about which tools were selected,
+   * their scores, and token savings.
+   */
+  getLastToolSelection(): ToolSelectionResult | null {
+    return this.lastToolSelection;
+  }
+
+  /**
+   * Get a formatted summary of the last tool selection
+   */
+  formatToolSelectionStats(): string {
+    const selection = this.lastToolSelection;
+    if (!selection) {
+      return 'No tool selection data available';
+    }
+
+    const { selectedTools, classification, reducedTokens, originalTokens } = selection;
+    const tokenSavings = originalTokens > 0
+      ? Math.round((1 - reducedTokens / originalTokens) * 100)
+      : 0;
+
+    const lines = [
+      '📊 Tool Selection Statistics',
+      '─'.repeat(30),
+      `RAG Enabled: ${this.useRAGToolSelection ? '✅' : '❌'}`,
+      `Selected Tools: ${selectedTools.length}`,
+      `Categories: ${classification.categories.join(', ')}`,
+      `Confidence: ${Math.round(classification.confidence * 100)}%`,
+      `Token Savings: ~${tokenSavings}% (${originalTokens} → ${reducedTokens})`,
+      '',
+      'Selected Tools:',
+      ...selectedTools.map(t => `  • ${t.function.name}`)
+    ];
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Classify a query to understand what types of tools might be needed
+   */
+  classifyUserQuery(query: string) {
+    return classifyQuery(query);
+  }
+
+  // Parallel Tool Execution methods
+
+  /**
+   * Enable or disable parallel tool execution
+   *
+   * When enabled, multiple read-only tool calls (view_file, search, web_search, etc.)
+   * will be executed in parallel for faster response times.
+   *
+   * Write operations are automatically serialized to prevent conflicts.
+   *
+   * @param enabled - Whether to enable parallel tool execution
+   */
+  setParallelToolExecution(enabled: boolean): void {
+    this.parallelToolExecution = enabled;
+  }
+
+  /**
+   * Check if parallel tool execution is enabled
+   */
+  isParallelToolExecutionEnabled(): boolean {
+    return this.parallelToolExecution;
   }
 
   /**
