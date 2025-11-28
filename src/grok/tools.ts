@@ -1,6 +1,13 @@
 import { GrokTool } from "./client.js";
 import { MCPManager, MCPTool } from "../mcp/client.js";
 import { loadMCPConfig } from "../mcp/config.js";
+import {
+  getToolSelector,
+  selectRelevantTools,
+  ToolSelectionResult,
+  QueryClassification,
+  ToolCategory
+} from "../tools/tool-selector.js";
 
 // Multi-edit tool for atomic multi-file changes
 const MULTI_EDIT_TOOL: GrokTool = {
@@ -1051,5 +1058,77 @@ export async function getAllGrokTools(): Promise<GrokTool[]> {
   manager.ensureServersInitialized().catch(() => {
     // Ignore initialization errors to avoid blocking
   });
-  return addMCPToolsToGrokTools(GROK_TOOLS);
+
+  const allTools = addMCPToolsToGrokTools(GROK_TOOLS);
+
+  // Register MCP tools in the tool selector for better RAG matching
+  const selector = getToolSelector();
+  for (const tool of allTools) {
+    if (tool.function.name.startsWith('mcp__')) {
+      selector.registerMCPTool(tool);
+    }
+  }
+
+  return allTools;
 }
+
+/**
+ * Get relevant tools for a specific query using RAG-based selection
+ *
+ * This reduces prompt bloat and improves tool selection accuracy
+ * by only including tools that are semantically relevant to the query.
+ *
+ * @param query - The user's query
+ * @param options - Selection options
+ * @returns Selected tools and metadata
+ */
+export async function getRelevantTools(
+  query: string,
+  options: {
+    maxTools?: number;
+    minScore?: number;
+    includeCategories?: ToolCategory[];
+    excludeCategories?: ToolCategory[];
+    alwaysInclude?: string[];
+    useRAG?: boolean;
+  } = {}
+): Promise<ToolSelectionResult> {
+  const { useRAG = true, maxTools = 15, ...selectorOptions } = options;
+
+  const allTools = await getAllGrokTools();
+
+  // If RAG is disabled, return all tools
+  if (!useRAG) {
+    return {
+      selectedTools: allTools,
+      scores: new Map(allTools.map(t => [t.function.name, 1])),
+      classification: {
+        categories: ['file_read', 'file_write', 'system'] as ToolCategory[],
+        confidence: 1,
+        keywords: [],
+        requiresMultipleTools: true
+      },
+      reducedTokens: 0,
+      originalTokens: 0
+    };
+  }
+
+  return selectRelevantTools(query, allTools, maxTools);
+}
+
+/**
+ * Classify a query to understand what types of tools are needed
+ */
+export function classifyQuery(query: string): QueryClassification {
+  return getToolSelector().classifyQuery(query);
+}
+
+/**
+ * Get the tool selector instance for advanced usage
+ */
+export { getToolSelector };
+
+/**
+ * Re-export types for convenience
+ */
+export type { ToolSelectionResult, QueryClassification, ToolCategory };
