@@ -146,6 +146,485 @@ const SUBAGENT_TOOL: GrokTool = {
   }
 };
 
+// ============== MULTIMODAL TOOLS ==============
+
+// PDF Tool - Read and extract content from PDF files
+const PDF_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "pdf",
+    description: "Read and extract content from PDF files. Supports text extraction, metadata reading, and page-specific extraction.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["extract", "info", "list", "to_base64"],
+          description: "Operation: extract (get text content), info (get metadata), list (list PDFs in directory), to_base64 (convert to base64)"
+        },
+        path: {
+          type: "string",
+          description: "Path to PDF file or directory"
+        },
+        pages: {
+          type: "array",
+          items: { type: "number" },
+          description: "Specific page numbers to extract (optional)"
+        },
+        max_pages: {
+          type: "number",
+          description: "Maximum number of pages to extract (optional)"
+        }
+      },
+      required: ["operation", "path"]
+    }
+  }
+};
+
+// Audio Tool - Process and transcribe audio files
+const AUDIO_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "audio",
+    description: "Process and transcribe audio files. Supports info extraction, transcription (via Whisper API), and format conversion.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["info", "transcribe", "list", "to_base64"],
+          description: "Operation: info (get audio metadata), transcribe (convert speech to text), list (list audio files), to_base64"
+        },
+        path: {
+          type: "string",
+          description: "Path to audio file or directory"
+        },
+        language: {
+          type: "string",
+          description: "Language code for transcription (e.g., 'en', 'fr', 'es')"
+        },
+        prompt: {
+          type: "string",
+          description: "Optional prompt to guide transcription"
+        }
+      },
+      required: ["operation", "path"]
+    }
+  }
+};
+
+// Video Tool - Process video files and extract frames
+const VIDEO_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "video",
+    description: "Process video files: get info, extract frames, create thumbnails, extract audio. Requires ffmpeg for most operations.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["info", "extract_frames", "thumbnail", "extract_audio", "list"],
+          description: "Operation to perform on the video"
+        },
+        path: {
+          type: "string",
+          description: "Path to video file or directory"
+        },
+        interval: {
+          type: "number",
+          description: "Seconds between frames for frame extraction"
+        },
+        count: {
+          type: "number",
+          description: "Number of frames to extract"
+        },
+        timestamps: {
+          type: "array",
+          items: { type: "number" },
+          description: "Specific timestamps (in seconds) to extract frames from"
+        },
+        output_dir: {
+          type: "string",
+          description: "Output directory for extracted content"
+        }
+      },
+      required: ["operation", "path"]
+    }
+  }
+};
+
+// Screenshot Tool - Capture screenshots
+const SCREENSHOT_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "screenshot",
+    description: "Capture screenshots: fullscreen, window, or region. Works on Linux, macOS, and Windows.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["capture", "capture_window", "capture_region", "capture_delayed", "list", "to_base64", "delete", "clear"],
+          description: "Screenshot operation to perform"
+        },
+        delay: {
+          type: "number",
+          description: "Delay in seconds before capture"
+        },
+        region: {
+          type: "object",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            width: { type: "number" },
+            height: { type: "number" }
+          },
+          description: "Region to capture (for capture_region)"
+        },
+        window: {
+          type: "string",
+          description: "Window title or ID to capture"
+        },
+        format: {
+          type: "string",
+          enum: ["png", "jpg"],
+          description: "Output format (default: png)"
+        },
+        path: {
+          type: "string",
+          description: "Path for to_base64 or delete operations"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// Clipboard Tool - System clipboard operations
+const CLIPBOARD_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "clipboard",
+    description: "Read and write to system clipboard. Supports text, images, and HTML content.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["read_text", "write_text", "read_image", "write_image", "read_html", "copy_file_path", "copy_file_content", "get_type", "clear"],
+          description: "Clipboard operation to perform"
+        },
+        text: {
+          type: "string",
+          description: "Text to write to clipboard (for write_text)"
+        },
+        path: {
+          type: "string",
+          description: "File path (for image operations or copy_file_*)"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// Document Tool - Read Office documents
+const DOCUMENT_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "document",
+    description: "Read Office documents (DOCX, XLSX, PPTX, CSV, RTF). Extracts text, metadata, and structure.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["read", "list"],
+          description: "Operation: read (extract content), list (list documents in directory)"
+        },
+        path: {
+          type: "string",
+          description: "Path to document or directory"
+        }
+      },
+      required: ["operation", "path"]
+    }
+  }
+};
+
+// OCR Tool - Extract text from images
+const OCR_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "ocr",
+    description: "Extract text from images using OCR. Uses Tesseract if available, or vision API as fallback.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["extract", "extract_region", "list_languages", "batch"],
+          description: "OCR operation to perform"
+        },
+        path: {
+          type: "string",
+          description: "Path to image file"
+        },
+        paths: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of image paths for batch OCR"
+        },
+        language: {
+          type: "string",
+          description: "OCR language code (e.g., 'eng', 'fra', 'deu')"
+        },
+        region: {
+          type: "object",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            width: { type: "number" },
+            height: { type: "number" }
+          },
+          description: "Region to OCR (for extract_region)"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// Diagram Tool - Generate diagrams
+const DIAGRAM_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "diagram",
+    description: "Generate diagrams: flowcharts, sequence diagrams, class diagrams, pie charts, Gantt charts, and ASCII art.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["mermaid", "flowchart", "sequence", "class", "pie", "gantt", "ascii_box", "ascii_tree", "list"],
+          description: "Type of diagram to generate"
+        },
+        code: {
+          type: "string",
+          description: "Mermaid code for mermaid operation"
+        },
+        title: {
+          type: "string",
+          description: "Title for the diagram"
+        },
+        nodes: {
+          type: "array",
+          description: "Nodes for flowchart or ASCII tree"
+        },
+        connections: {
+          type: "array",
+          description: "Connections between nodes"
+        },
+        participants: {
+          type: "array",
+          items: { type: "string" },
+          description: "Participants for sequence diagram"
+        },
+        messages: {
+          type: "array",
+          description: "Messages for sequence diagram"
+        },
+        classes: {
+          type: "array",
+          description: "Classes for class diagram"
+        },
+        relationships: {
+          type: "array",
+          description: "Relationships for class diagram"
+        },
+        data: {
+          type: "array",
+          description: "Data points for pie chart"
+        },
+        sections: {
+          type: "array",
+          description: "Sections for Gantt chart"
+        },
+        format: {
+          type: "string",
+          enum: ["svg", "png", "ascii", "utf8"],
+          description: "Output format (default: ascii)"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// Export Tool - Export conversations and data
+const EXPORT_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "export",
+    description: "Export conversations to various formats: JSON, Markdown, HTML, plain text, or PDF.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["conversation", "csv", "code_snippets", "list"],
+          description: "Export operation"
+        },
+        format: {
+          type: "string",
+          enum: ["json", "markdown", "html", "txt", "pdf"],
+          description: "Export format for conversation"
+        },
+        messages: {
+          type: "array",
+          description: "Messages to export"
+        },
+        data: {
+          type: "array",
+          description: "Data array for CSV export"
+        },
+        title: {
+          type: "string",
+          description: "Title for the export"
+        },
+        include_metadata: {
+          type: "boolean",
+          description: "Include metadata in export"
+        },
+        include_timestamps: {
+          type: "boolean",
+          description: "Include timestamps in export"
+        },
+        theme: {
+          type: "string",
+          enum: ["light", "dark"],
+          description: "Theme for HTML export"
+        },
+        output_path: {
+          type: "string",
+          description: "Output file path"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// QR Tool - Generate and read QR codes
+const QR_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "qr",
+    description: "Generate and read QR codes. Supports URL, WiFi, vCard, and custom data. Can output ASCII, SVG, or PNG.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["generate", "generate_url", "generate_wifi", "generate_vcard", "decode", "list"],
+          description: "QR code operation"
+        },
+        data: {
+          type: "string",
+          description: "Data to encode in QR code"
+        },
+        url: {
+          type: "string",
+          description: "URL for generate_url"
+        },
+        ssid: {
+          type: "string",
+          description: "WiFi SSID for generate_wifi"
+        },
+        password: {
+          type: "string",
+          description: "WiFi password for generate_wifi"
+        },
+        wifi_type: {
+          type: "string",
+          enum: ["WPA", "WEP", "nopass"],
+          description: "WiFi security type"
+        },
+        contact: {
+          type: "object",
+          description: "Contact info for vCard (firstName, lastName, phone, email, etc.)"
+        },
+        path: {
+          type: "string",
+          description: "Path to QR code image for decode"
+        },
+        format: {
+          type: "string",
+          enum: ["ascii", "utf8", "svg", "png"],
+          description: "Output format (default: utf8)"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
+// Archive Tool - Work with compressed archives
+const ARCHIVE_TOOL: GrokTool = {
+  type: "function",
+  function: {
+    name: "archive",
+    description: "Work with compressed archives: ZIP, TAR, TAR.GZ, 7Z, RAR. List, extract, and create archives.",
+    parameters: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["list", "extract", "create", "list_archives"],
+          description: "Archive operation to perform"
+        },
+        path: {
+          type: "string",
+          description: "Path to archive file or directory"
+        },
+        sources: {
+          type: "array",
+          items: { type: "string" },
+          description: "Source paths for creating archive"
+        },
+        output_dir: {
+          type: "string",
+          description: "Output directory for extraction"
+        },
+        output_path: {
+          type: "string",
+          description: "Output path for created archive"
+        },
+        format: {
+          type: "string",
+          enum: ["zip", "tar", "tar.gz", "tar.bz2", "tar.xz"],
+          description: "Format for creating archive (default: zip)"
+        },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          description: "Specific files to extract"
+        },
+        password: {
+          type: "string",
+          description: "Password for encrypted archives"
+        },
+        overwrite: {
+          type: "boolean",
+          description: "Overwrite existing files during extraction"
+        }
+      },
+      required: ["operation"]
+    }
+  }
+};
+
 const BASE_GROK_TOOLS: GrokTool[] = [
   {
     type: "function",
@@ -466,6 +945,19 @@ function buildGrokTools(): GrokTool[] {
   tools.push(GIT_TOOL);
   tools.push(CODEBASE_MAP_TOOL);
   tools.push(SUBAGENT_TOOL);
+
+  // Add multimodal tools
+  tools.push(PDF_TOOL);
+  tools.push(AUDIO_TOOL);
+  tools.push(VIDEO_TOOL);
+  tools.push(SCREENSHOT_TOOL);
+  tools.push(CLIPBOARD_TOOL);
+  tools.push(DOCUMENT_TOOL);
+  tools.push(OCR_TOOL);
+  tools.push(DIAGRAM_TOOL);
+  tools.push(EXPORT_TOOL);
+  tools.push(QR_TOOL);
+  tools.push(ARCHIVE_TOOL);
 
   return tools;
 }
