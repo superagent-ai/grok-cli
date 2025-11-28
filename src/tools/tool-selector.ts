@@ -11,6 +11,8 @@
  * Key improvements:
  * - Reduces prompt tokens by ~50%
  * - Improves tool selection accuracy from ~13% to ~43%+ with many tools
+ * - Adaptive thresholds based on success metrics
+ * - LRU cache for repeated queries
  */
 
 import { GrokTool } from "../grok/client.js";
@@ -62,6 +64,105 @@ export interface ToolSelectionResult {
   classification: QueryClassification;
   reducedTokens: number;
   originalTokens: number;
+}
+
+/**
+ * Metrics for tracking tool selection success
+ */
+export interface ToolSelectionMetrics {
+  totalSelections: number;
+  successfulSelections: number;  // Tool was in selected set
+  missedTools: number;           // Tool requested but not selected
+  missedToolNames: Map<string, number>; // Count per tool name
+  successRate: number;           // successfulSelections / totalSelections
+  lastUpdated: Date;
+}
+
+/**
+ * Event for when LLM requests a tool
+ */
+export interface ToolRequestEvent {
+  requestedTool: string;
+  selectedTools: string[];
+  query: string;
+  wasSelected: boolean;
+}
+
+/**
+ * Cache entry for query classification
+ */
+interface CacheEntry<T> {
+  value: T;
+  timestamp: number;
+  accessCount: number;
+}
+
+/**
+ * Simple LRU Cache implementation
+ */
+class LRUCache<K, V> {
+  private cache: Map<K, CacheEntry<V>>;
+  private maxSize: number;
+  private ttlMs: number;
+
+  constructor(maxSize: number = 100, ttlMs: number = 5 * 60 * 1000) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMs;
+  }
+
+  get(key: K): V | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    // Update access count and move to end (most recently used)
+    entry.accessCount++;
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+
+    return entry.value;
+  }
+
+  set(key: K, value: V): void {
+    // Remove oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+
+    this.cache.set(key, {
+      value,
+      timestamp: Date.now(),
+      accessCount: 1
+    });
+  }
+
+  has(key: K): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+
+  getStats(): { size: number; hitRate: number } {
+    return {
+      size: this.cache.size,
+      hitRate: 0 // Would need to track hits/misses
+    };
+  }
 }
 
 /**
@@ -285,7 +386,7 @@ const CATEGORY_KEYWORDS: Record<ToolCategory, string[]> = {
 };
 
 /**
- * TF-IDF based Tool Selector
+ * TF-IDF based Tool Selector with metrics tracking and adaptive thresholds
  */
 export class ToolSelector {
   private toolIndex: Map<string, ToolMetadata>;
@@ -293,11 +394,39 @@ export class ToolSelector {
   private documentFrequency: Map<string, number>;
   private totalDocuments: number;
 
+  // Metrics tracking
+  private metrics: ToolSelectionMetrics;
+  private requestHistory: ToolRequestEvent[] = [];
+  private maxHistorySize: number = 1000;
+
+  // Adaptive threshold
+  private baseMinScore: number = 0.5;
+  private adaptiveMinScore: number = 0.5;
+  private adaptationRate: number = 0.1;
+
+  // Classification cache
+  private classificationCache: LRUCache<string, QueryClassification>;
+  private selectionCache: LRUCache<string, ToolSelectionResult>;
+
   constructor() {
     this.toolIndex = new Map();
     this.idfScores = new Map();
     this.documentFrequency = new Map();
     this.totalDocuments = TOOL_METADATA.length;
+
+    // Initialize metrics
+    this.metrics = {
+      totalSelections: 0,
+      successfulSelections: 0,
+      missedTools: 0,
+      missedToolNames: new Map(),
+      successRate: 1.0,
+      lastUpdated: new Date()
+    };
+
+    // Initialize caches
+    this.classificationCache = new LRUCache<string, QueryClassification>(100, 5 * 60 * 1000);
+    this.selectionCache = new LRUCache<string, ToolSelectionResult>(50, 2 * 60 * 1000);
 
     this.buildIndex();
   }
@@ -377,9 +506,16 @@ export class ToolSelector {
   }
 
   /**
-   * Classify a user query into tool categories
+   * Classify a user query into tool categories (with caching)
    */
   classifyQuery(query: string): QueryClassification {
+    // Check cache first
+    const cacheKey = query.toLowerCase().trim();
+    const cached = this.classificationCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const tokens = this.tokenize(query);
     const queryLower = query.toLowerCase();
 
@@ -428,20 +564,28 @@ export class ToolSelector {
 
     // If no categories detected, return defaults
     if (sortedCategories.length === 0) {
-      return {
+      const defaultResult: QueryClassification = {
         categories: ['file_read', 'file_search', 'system'],
         confidence: 0.3,
         keywords: tokens,
         requiresMultipleTools: false
       };
+      // Cache the default result too
+      this.classificationCache.set(cacheKey, defaultResult);
+      return defaultResult;
     }
 
-    return {
+    const result: QueryClassification = {
       categories: sortedCategories.slice(0, 3), // Top 3 categories
       confidence,
       keywords: [...new Set(detectedKeywords)],
       requiresMultipleTools
     };
+
+    // Cache the result
+    this.classificationCache.set(cacheKey, result);
+
+    return result;
   }
 
   /**
@@ -456,15 +600,22 @@ export class ToolSelector {
       includeCategories?: ToolCategory[];
       excludeCategories?: ToolCategory[];
       alwaysInclude?: string[];
+      useAdaptiveThreshold?: boolean;
     } = {}
   ): ToolSelectionResult {
     const {
       maxTools = 10,
-      minScore = 0.5,
+      minScore = this.baseMinScore,
       includeCategories,
       excludeCategories,
-      alwaysInclude = ['view_file', 'bash'] // Core tools always included
+      alwaysInclude = ['view_file', 'bash'], // Core tools always included
+      useAdaptiveThreshold = true
     } = options;
+
+    // Use adaptive threshold if enabled and we have enough data
+    const effectiveMinScore = useAdaptiveThreshold && this.metrics.totalSelections > 10
+      ? this.adaptiveMinScore
+      : minScore;
 
     const classification = this.classifyQuery(query);
     const queryTokens = this.tokenize(query);
@@ -501,7 +652,7 @@ export class ToolSelector {
 
         // Additional boost for always-include tools
         if (alwaysInclude.includes(toolName)) {
-          score = Math.max(score, minScore + 0.1);
+          score = Math.max(score, effectiveMinScore + 0.1);
         }
 
         scores.set(toolName, score);
@@ -537,7 +688,7 @@ export class ToolSelector {
     // Then add high-scoring tools
     for (const [name, score] of sortedTools) {
       if (selectedToolNames.length >= maxTools) break;
-      if (score < minScore && !alwaysInclude.includes(name)) continue;
+      if (score < effectiveMinScore && !alwaysInclude.includes(name)) continue;
       if (!selectedToolNames.includes(name)) {
         selectedToolNames.push(name);
       }
@@ -647,6 +798,203 @@ export class ToolSelector {
 
     this.registerTool(name, 'mcp', keywords, description, 4);
   }
+
+  // ============== METRICS TRACKING ==============
+
+  /**
+   * Record a tool request from the LLM
+   *
+   * Call this when the LLM requests a tool to track whether
+   * our RAG selection correctly included it.
+   *
+   * @param requestedTool - The tool name requested by LLM
+   * @param selectedTools - The tools that were selected by RAG
+   * @param query - The original user query
+   */
+  recordToolRequest(
+    requestedTool: string,
+    selectedTools: string[],
+    query: string
+  ): void {
+    const wasSelected = selectedTools.includes(requestedTool);
+
+    // Record the event
+    const event: ToolRequestEvent = {
+      requestedTool,
+      selectedTools,
+      query,
+      wasSelected
+    };
+
+    // Add to history (bounded)
+    this.requestHistory.push(event);
+    if (this.requestHistory.length > this.maxHistorySize) {
+      this.requestHistory.shift();
+    }
+
+    // Update metrics
+    this.metrics.totalSelections++;
+    if (wasSelected) {
+      this.metrics.successfulSelections++;
+    } else {
+      this.metrics.missedTools++;
+      const currentCount = this.metrics.missedToolNames.get(requestedTool) || 0;
+      this.metrics.missedToolNames.set(requestedTool, currentCount + 1);
+
+      // Adaptive threshold adjustment: lower threshold when we miss tools
+      this.adaptiveMinScore = Math.max(
+        0.1,
+        this.adaptiveMinScore - this.adaptationRate
+      );
+    }
+
+    // Recalculate success rate
+    this.metrics.successRate = this.metrics.totalSelections > 0
+      ? this.metrics.successfulSelections / this.metrics.totalSelections
+      : 1.0;
+    this.metrics.lastUpdated = new Date();
+
+    // Adaptive threshold adjustment based on success rate
+    if (this.metrics.totalSelections > 0 && this.metrics.totalSelections % 10 === 0) {
+      this.adjustAdaptiveThreshold();
+    }
+  }
+
+  /**
+   * Adjust adaptive threshold based on recent performance
+   */
+  private adjustAdaptiveThreshold(): void {
+    const targetSuccessRate = 0.95; // Target 95% success rate
+
+    if (this.metrics.successRate < targetSuccessRate) {
+      // Lower threshold to include more tools
+      this.adaptiveMinScore = Math.max(0.1, this.adaptiveMinScore - this.adaptationRate);
+    } else if (this.metrics.successRate > 0.99 && this.adaptiveMinScore < this.baseMinScore) {
+      // Raise threshold back towards base if we're doing very well
+      this.adaptiveMinScore = Math.min(
+        this.baseMinScore,
+        this.adaptiveMinScore + this.adaptationRate * 0.5
+      );
+    }
+  }
+
+  /**
+   * Get current metrics
+   */
+  getMetrics(): ToolSelectionMetrics {
+    return { ...this.metrics };
+  }
+
+  /**
+   * Get most frequently missed tools
+   */
+  getMostMissedTools(limit: number = 10): Array<{ tool: string; count: number }> {
+    return Array.from(this.metrics.missedToolNames.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([tool, count]) => ({ tool, count }));
+  }
+
+  /**
+   * Get recent request history
+   */
+  getRequestHistory(limit: number = 50): ToolRequestEvent[] {
+    return this.requestHistory.slice(-limit);
+  }
+
+  /**
+   * Get current adaptive threshold
+   */
+  getAdaptiveThreshold(): number {
+    return this.adaptiveMinScore;
+  }
+
+  /**
+   * Manually set the adaptive threshold
+   */
+  setAdaptiveThreshold(threshold: number): void {
+    this.adaptiveMinScore = Math.max(0.1, Math.min(1.0, threshold));
+  }
+
+  /**
+   * Reset metrics to initial state
+   */
+  resetMetrics(): void {
+    this.metrics = {
+      totalSelections: 0,
+      successfulSelections: 0,
+      missedTools: 0,
+      missedToolNames: new Map(),
+      successRate: 1.0,
+      lastUpdated: new Date()
+    };
+    this.requestHistory = [];
+    this.adaptiveMinScore = this.baseMinScore;
+  }
+
+  /**
+   * Format metrics as a readable string
+   */
+  formatMetrics(): string {
+    const metrics = this.metrics;
+    const missedTools = this.getMostMissedTools(5);
+
+    const lines = [
+      '📈 Tool Selection Metrics',
+      '─'.repeat(30),
+      `Total Selections: ${metrics.totalSelections}`,
+      `Successful: ${metrics.successfulSelections} (${(metrics.successRate * 100).toFixed(1)}%)`,
+      `Missed: ${metrics.missedTools}`,
+      `Adaptive Threshold: ${this.adaptiveMinScore.toFixed(2)} (base: ${this.baseMinScore})`,
+      `Last Updated: ${metrics.lastUpdated.toLocaleString()}`,
+    ];
+
+    if (missedTools.length > 0) {
+      lines.push('', 'Most Missed Tools:');
+      missedTools.forEach(({ tool, count }) => {
+        lines.push(`  • ${tool}: ${count} times`);
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+  // ============== CACHE MANAGEMENT ==============
+
+  /**
+   * Clear classification cache
+   */
+  clearClassificationCache(): void {
+    this.classificationCache.clear();
+  }
+
+  /**
+   * Clear selection cache
+   */
+  clearSelectionCache(): void {
+    this.selectionCache.clear();
+  }
+
+  /**
+   * Clear all caches
+   */
+  clearAllCaches(): void {
+    this.classificationCache.clear();
+    this.selectionCache.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    classificationCache: { size: number };
+    selectionCache: { size: number };
+  } {
+    return {
+      classificationCache: { size: this.classificationCache.size },
+      selectionCache: { size: this.selectionCache.size }
+    };
+  }
 }
 
 /**
@@ -670,4 +1018,29 @@ export function selectRelevantTools(
   maxTools: number = 10
 ): ToolSelectionResult {
   return getToolSelector().selectTools(query, allTools, { maxTools });
+}
+
+/**
+ * Record a tool request for metrics tracking
+ */
+export function recordToolRequest(
+  requestedTool: string,
+  selectedTools: string[],
+  query: string
+): void {
+  getToolSelector().recordToolRequest(requestedTool, selectedTools, query);
+}
+
+/**
+ * Get tool selection metrics
+ */
+export function getToolSelectionMetrics(): ToolSelectionMetrics {
+  return getToolSelector().getMetrics();
+}
+
+/**
+ * Format metrics as string
+ */
+export function formatToolSelectionMetrics(): string {
+  return getToolSelector().formatMetrics();
 }

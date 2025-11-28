@@ -492,3 +492,169 @@ describe('Tool Selection Performance', () => {
     expect(result.selectedTools.length).toBeLessThanOrEqual(10);
   });
 });
+
+describe('Metrics Tracking', () => {
+  let selector: ToolSelector;
+
+  beforeEach(() => {
+    selector = new ToolSelector();
+    selector.resetMetrics();
+  });
+
+  it('should track successful tool selections', () => {
+    const selectedTools = ['view_file', 'bash', 'search'];
+
+    // Record a successful selection (tool was in selected set)
+    selector.recordToolRequest('view_file', selectedTools, 'Show me the file');
+
+    const metrics = selector.getMetrics();
+    expect(metrics.totalSelections).toBe(1);
+    expect(metrics.successfulSelections).toBe(1);
+    expect(metrics.missedTools).toBe(0);
+    expect(metrics.successRate).toBe(1.0);
+  });
+
+  it('should track missed tool selections', () => {
+    const selectedTools = ['view_file', 'bash'];
+
+    // Record a missed selection (tool was NOT in selected set)
+    selector.recordToolRequest('git', selectedTools, 'Commit my changes');
+
+    const metrics = selector.getMetrics();
+    expect(metrics.totalSelections).toBe(1);
+    expect(metrics.successfulSelections).toBe(0);
+    expect(metrics.missedTools).toBe(1);
+    expect(metrics.successRate).toBe(0);
+  });
+
+  it('should track frequently missed tools', () => {
+    const selectedTools = ['view_file', 'bash'];
+
+    // Miss the same tool multiple times
+    selector.recordToolRequest('git', selectedTools, 'Commit');
+    selector.recordToolRequest('git', selectedTools, 'Push');
+    selector.recordToolRequest('git', selectedTools, 'Status');
+    selector.recordToolRequest('web_search', selectedTools, 'Search online');
+
+    const missedTools = selector.getMostMissedTools(2);
+    expect(missedTools.length).toBe(2);
+    expect(missedTools[0].tool).toBe('git');
+    expect(missedTools[0].count).toBe(3);
+    expect(missedTools[1].tool).toBe('web_search');
+    expect(missedTools[1].count).toBe(1);
+  });
+
+  it('should calculate success rate correctly', () => {
+    const selectedTools = ['view_file', 'bash', 'git'];
+
+    // 3 successful, 1 missed
+    selector.recordToolRequest('view_file', selectedTools, 'Query 1');
+    selector.recordToolRequest('bash', selectedTools, 'Query 2');
+    selector.recordToolRequest('git', selectedTools, 'Query 3');
+    selector.recordToolRequest('web_search', selectedTools, 'Query 4');
+
+    const metrics = selector.getMetrics();
+    expect(metrics.successRate).toBe(0.75); // 3/4
+  });
+
+  it('should reset metrics', () => {
+    const selectedTools = ['view_file'];
+
+    selector.recordToolRequest('git', selectedTools, 'Query');
+    selector.resetMetrics();
+
+    const metrics = selector.getMetrics();
+    expect(metrics.totalSelections).toBe(0);
+    expect(metrics.missedTools).toBe(0);
+  });
+
+  it('should format metrics as string', () => {
+    const formatted = selector.formatMetrics();
+
+    expect(formatted).toContain('Tool Selection Metrics');
+    expect(formatted).toContain('Total Selections');
+  });
+});
+
+describe('Adaptive Thresholds', () => {
+  let selector: ToolSelector;
+
+  beforeEach(() => {
+    selector = new ToolSelector();
+    selector.resetMetrics();
+  });
+
+  it('should lower threshold when tools are missed', () => {
+    const initialThreshold = selector.getAdaptiveThreshold();
+    const selectedTools = ['view_file'];
+
+    // Miss several tools
+    for (let i = 0; i < 5; i++) {
+      selector.recordToolRequest('git', selectedTools, `Query ${i}`);
+    }
+
+    const newThreshold = selector.getAdaptiveThreshold();
+    expect(newThreshold).toBeLessThan(initialThreshold);
+  });
+
+  it('should allow manual threshold adjustment', () => {
+    selector.setAdaptiveThreshold(0.3);
+    expect(selector.getAdaptiveThreshold()).toBe(0.3);
+  });
+
+  it('should clamp threshold to valid range', () => {
+    selector.setAdaptiveThreshold(0.05); // Below minimum
+    expect(selector.getAdaptiveThreshold()).toBe(0.1);
+
+    selector.setAdaptiveThreshold(1.5); // Above maximum
+    expect(selector.getAdaptiveThreshold()).toBe(1.0);
+  });
+});
+
+describe('Classification Cache', () => {
+  let selector: ToolSelector;
+
+  beforeEach(() => {
+    selector = new ToolSelector();
+    selector.clearAllCaches();
+  });
+
+  it('should cache classification results', () => {
+    const query = 'Show me the package.json file';
+
+    // First call - not cached
+    const result1 = selector.classifyQuery(query);
+
+    // Second call - should be cached
+    const result2 = selector.classifyQuery(query);
+
+    // Results should be identical
+    expect(result1.categories).toEqual(result2.categories);
+    expect(result1.confidence).toEqual(result2.confidence);
+  });
+
+  it('should report cache statistics', () => {
+    selector.classifyQuery('Query 1');
+    selector.classifyQuery('Query 2');
+
+    const stats = selector.getCacheStats();
+    expect(stats.classificationCache.size).toBe(2);
+  });
+
+  it('should clear caches', () => {
+    selector.classifyQuery('Test query');
+    expect(selector.getCacheStats().classificationCache.size).toBe(1);
+
+    selector.clearAllCaches();
+    expect(selector.getCacheStats().classificationCache.size).toBe(0);
+  });
+
+  it('should be case-insensitive for cache keys', () => {
+    selector.classifyQuery('Show File');
+    selector.classifyQuery('show file');
+
+    // Should only have one entry (same key after lowercase)
+    const stats = selector.getCacheStats();
+    expect(stats.classificationCache.size).toBe(1);
+  });
+});
