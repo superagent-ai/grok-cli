@@ -6,6 +6,11 @@ import { getCostTracker } from "../utils/cost-tracker.js";
 import { getWorkspaceDetector } from "../utils/workspace-detector.js";
 import { getBranchManager } from "../persistence/conversation-branches.js";
 import { getCommentWatcher } from "../tools/comment-watcher.js";
+import { getResponseCache } from "../utils/response-cache.js";
+import { getContextLoader, ContextLoader } from "../context/context-loader.js";
+import { getConversationExporter } from "../utils/conversation-export.js";
+import { getSelfHealingEngine } from "../utils/self-healing.js";
+import { ConfirmationService } from "../utils/confirmation-service.js";
 
 /**
  * Enhanced Command Handler - Processes special command tokens
@@ -84,6 +89,24 @@ export class EnhancedCommandHandler {
 
       case "__AUTONOMY__":
         return this.handleAutonomy(args);
+
+      case "__ADD_CONTEXT__":
+        return this.handleAddContext(args);
+
+      case "__SAVE_CONVERSATION__":
+        return this.handleSaveConversation(args);
+
+      case "__CACHE__":
+        return this.handleCache(args);
+
+      case "__SELF_HEALING__":
+        return this.handleSelfHealing(args);
+
+      case "__CONTEXT__":
+        return this.handleContext(args);
+
+      case "__DRY_RUN__":
+        return this.handleDryRun(args);
 
       default:
         return { handled: false };
@@ -837,6 +860,350 @@ Levels:
   yolo     - No confirmations at all
 
 Usage: /autonomy <level>`,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  /**
+   * Add Context - Load files into context dynamically
+   */
+  private async handleAddContext(args: string[]): Promise<CommandHandlerResult> {
+    const pattern = args.join(" ");
+
+    if (!pattern) {
+      return {
+        handled: true,
+        entry: {
+          type: "assistant",
+          content: `📁 Add Files to Context
+
+Usage: /add <pattern>
+
+Examples:
+  /add src/utils.ts           - Add single file
+  /add src/**/*.ts            - Add all TypeScript files in src/
+  /add src/**/*.ts,!**/*.test.ts  - Add TS files except tests
+
+Files will be loaded and available for the AI to reference.`,
+          timestamp: new Date(),
+        },
+      };
+    }
+
+    try {
+      const { include, exclude } = ContextLoader.parsePatternString(pattern);
+      const contextLoader = getContextLoader(process.cwd(), {
+        patterns: include,
+        excludePatterns: exclude,
+        respectGitignore: true,
+      });
+
+      const files = await contextLoader.loadFiles(include);
+
+      if (files.length === 0) {
+        return {
+          handled: true,
+          entry: {
+            type: "assistant",
+            content: `❌ No files matched pattern: ${pattern}
+
+Check your glob pattern and try again.`,
+            timestamp: new Date(),
+          },
+        };
+      }
+
+      const summary = contextLoader.getSummary(files);
+      const fileList = files.slice(0, 10).map(f => `  • ${f.relativePath}`).join('\n');
+      const moreFiles = files.length > 10 ? `\n  ... and ${files.length - 10} more` : '';
+
+      return {
+        handled: true,
+        entry: {
+          type: "assistant",
+          content: `✅ Added ${files.length} file(s) to context
+
+${summary}
+
+Files:
+${fileList}${moreFiles}
+
+These files are now available for reference.`,
+          timestamp: new Date(),
+        },
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        entry: {
+          type: "assistant",
+          content: `❌ Error loading files: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          timestamp: new Date(),
+        },
+      };
+    }
+  }
+
+  /**
+   * Save Conversation - Export chat to file
+   */
+  private handleSaveConversation(args: string[]): CommandHandlerResult {
+    const filename = args.join(" ") || undefined;
+    const exporter = getConversationExporter();
+
+    const result = exporter.export(this.conversationHistory, {
+      format: 'markdown',
+      includeToolResults: true,
+      includeTimestamps: true,
+      outputPath: filename,
+    });
+
+    if (result.success) {
+      return {
+        handled: true,
+        entry: {
+          type: "assistant",
+          content: `✅ Conversation saved!
+
+📄 File: ${result.filePath}
+
+The conversation has been exported in Markdown format.`,
+          timestamp: new Date(),
+        },
+      };
+    }
+
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content: `❌ Failed to save conversation: ${result.error}`,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  /**
+   * Cache - Manage response cache
+   */
+  private handleCache(args: string[]): CommandHandlerResult {
+    const cache = getResponseCache();
+    const action = args[0]?.toLowerCase();
+
+    let content: string;
+
+    switch (action) {
+      case "clear":
+        cache.clear();
+        content = `🗑️ Cache cleared!
+
+All cached responses have been removed.`;
+        break;
+
+      case "stats":
+        const stats = cache.getStats();
+        content = `📊 Cache Statistics
+
+Entries: ${stats.totalEntries}
+Size: ${stats.cacheSize}
+Hits: ${stats.totalHits}
+Misses: ${stats.totalMisses}
+Hit Rate: ${stats.totalHits + stats.totalMisses > 0
+  ? ((stats.totalHits / (stats.totalHits + stats.totalMisses)) * 100).toFixed(1)
+  : 0}%
+${stats.oldestEntry ? `Oldest: ${stats.oldestEntry.toLocaleDateString()}` : ''}
+${stats.newestEntry ? `Newest: ${stats.newestEntry.toLocaleDateString()}` : ''}`;
+        break;
+
+      case "status":
+      default:
+        content = cache.formatStatus();
+        break;
+    }
+
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  /**
+   * Self-Healing - Configure auto-correction
+   */
+  private handleSelfHealing(args: string[]): CommandHandlerResult {
+    const engine = getSelfHealingEngine();
+    const action = args[0]?.toLowerCase();
+
+    let content: string;
+
+    switch (action) {
+      case "on":
+        engine.updateOptions({ enabled: true });
+        content = `🔧 Self-Healing: ENABLED
+
+The agent will automatically attempt to fix errors when commands fail.
+Max retries: ${engine.getOptions().maxRetries}`;
+        break;
+
+      case "off":
+        engine.updateOptions({ enabled: false });
+        content = `🔧 Self-Healing: DISABLED
+
+Errors will be reported without automatic fix attempts.`;
+        break;
+
+      case "stats":
+        const stats = engine.getStats();
+        content = `📊 Self-Healing Statistics
+
+Total Attempts: ${stats.totalAttempts}
+Successful: ${stats.successfulHeals}
+Failed: ${stats.failedHeals}
+Success Rate: ${stats.successRate}`;
+        break;
+
+      case "status":
+      default:
+        const options = engine.getOptions();
+        content = `🔧 Self-Healing Status
+
+Enabled: ${options.enabled ? '✅ Yes' : '❌ No'}
+Max Retries: ${options.maxRetries}
+Auto-Fix: ${options.autoFix ? 'Yes' : 'No'}
+Verbose: ${options.verbose ? 'Yes' : 'No'}
+
+Commands:
+  /heal on     - Enable self-healing
+  /heal off    - Disable self-healing
+  /heal stats  - Show healing statistics`;
+        break;
+    }
+
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  /**
+   * Context - View/manage loaded context
+   */
+  private async handleContext(args: string[]): Promise<CommandHandlerResult> {
+    const action = args[0]?.toLowerCase();
+    const contextLoader = getContextLoader();
+
+    let content: string;
+
+    switch (action) {
+      case "clear":
+        // Context is ephemeral, just confirm
+        content = `🗑️ Context cleared!
+
+Loaded files have been removed from the current session.`;
+        break;
+
+      case "list":
+        const files = await contextLoader.loadFiles();
+        if (files.length === 0) {
+          content = `📁 No files currently in context.
+
+Use /add <pattern> to add files.`;
+        } else {
+          const fileList = files.map(f => `  • ${f.relativePath} (${f.language || 'text'})`).join('\n');
+          content = `📁 Context Files (${files.length})
+
+${fileList}`;
+        }
+        break;
+
+      case "summary":
+      default:
+        const allFiles = await contextLoader.loadFiles();
+        content = allFiles.length > 0
+          ? contextLoader.getSummary(allFiles)
+          : `📁 No files currently in context.
+
+Use /add <pattern> to add files, or use --context flag when starting.`;
+        break;
+    }
+
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  /**
+   * Dry-Run - Toggle simulation mode
+   */
+  private handleDryRun(args: string[]): CommandHandlerResult {
+    const confirmationService = ConfirmationService.getInstance();
+    const action = args[0]?.toLowerCase();
+
+    let content: string;
+
+    switch (action) {
+      case "on":
+        confirmationService.setDryRunMode(true);
+        content = `🔍 Dry-Run Mode: ENABLED
+
+Changes will be previewed but NOT applied.
+All operations will be logged for review.
+
+Use /dry-run off to disable and apply changes.
+Use /dry-run log to see what would have executed.`;
+        break;
+
+      case "off":
+        const log = confirmationService.getDryRunLog();
+        confirmationService.setDryRunMode(false);
+        content = `🔍 Dry-Run Mode: DISABLED
+
+Changes will now be applied normally.
+
+${log.length > 0 ? `📋 ${log.length} operation(s) were logged during dry-run.` : ''}`;
+        break;
+
+      case "log":
+        content = confirmationService.formatDryRunLog();
+        break;
+
+      case "status":
+      default:
+        const isDryRun = confirmationService.isDryRunMode();
+        const currentLog = confirmationService.getDryRunLog();
+        content = `🔍 Dry-Run Status
+
+Mode: ${isDryRun ? '✅ ENABLED (simulation)' : '❌ DISABLED (live)'}
+Logged Operations: ${currentLog.length}
+
+Commands:
+  /dry-run on     - Enable simulation mode
+  /dry-run off    - Disable and apply changes
+  /dry-run log    - View logged operations
+
+Or use --dry-run flag when starting the CLI.`;
+        break;
+    }
+
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content,
         timestamp: new Date(),
       },
     };

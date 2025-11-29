@@ -439,6 +439,69 @@ Be systematic and thorough in your analysis.`,
         arguments: [
           { name: 'level', description: 'Autonomy level', required: false }
         ]
+      },
+      // ==========================================
+      // Context & Session Management Commands
+      // ==========================================
+      {
+        name: 'add',
+        description: 'Add files to the current context',
+        prompt: '__ADD_CONTEXT__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'pattern', description: 'File path or glob pattern (e.g., src/**/*.ts)', required: true }
+        ]
+      },
+      {
+        name: 'save',
+        description: 'Save the current conversation to a markdown file',
+        prompt: '__SAVE_CONVERSATION__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'filename', description: 'Output filename (optional, defaults to timestamp)', required: false }
+        ]
+      },
+      {
+        name: 'cache',
+        description: 'Manage response cache',
+        prompt: '__CACHE__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'status, clear, or stats', required: false }
+        ]
+      },
+      {
+        name: 'heal',
+        description: 'Configure self-healing auto-correction',
+        prompt: '__SELF_HEALING__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'on, off, status, or stats', required: false }
+        ]
+      },
+      {
+        name: 'context',
+        description: 'View or manage loaded context files',
+        prompt: '__CONTEXT__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'list, clear, or summary', required: false }
+        ]
+      },
+      {
+        name: 'dry-run',
+        description: 'Toggle dry-run mode (preview changes without applying)',
+        prompt: '__DRY_RUN__',
+        filePath: '',
+        isBuiltin: true,
+        arguments: [
+          { name: 'action', description: 'on, off, or status', required: false }
+        ]
       }
     ];
 
