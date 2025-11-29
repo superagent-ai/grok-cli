@@ -80,6 +80,10 @@ export class ConfirmationService extends EventEmitter {
     allOperations: false,
   };
 
+  // Dry-run mode - preview changes without applying
+  private dryRunMode: boolean = false;
+  private dryRunLog: Array<{ operation: string; content: string; timestamp: Date }> = [];
+
   static getInstance(): ConfirmationService {
     if (!ConfirmationService.instance) {
       ConfirmationService.instance = new ConfirmationService();
@@ -91,10 +95,93 @@ export class ConfirmationService extends EventEmitter {
     super();
   }
 
+  /**
+   * Enable or disable dry-run mode
+   */
+  setDryRunMode(enabled: boolean): void {
+    this.dryRunMode = enabled;
+    if (enabled) {
+      this.dryRunLog = [];
+    }
+  }
+
+  /**
+   * Check if dry-run mode is enabled
+   */
+  isDryRunMode(): boolean {
+    return this.dryRunMode;
+  }
+
+  /**
+   * Get dry-run log
+   */
+  getDryRunLog(): Array<{ operation: string; content: string; timestamp: Date }> {
+    return [...this.dryRunLog];
+  }
+
+  /**
+   * Clear dry-run log
+   */
+  clearDryRunLog(): void {
+    this.dryRunLog = [];
+  }
+
+  /**
+   * Format dry-run log for display
+   */
+  formatDryRunLog(): string {
+    if (this.dryRunLog.length === 0) {
+      return '🔍 Dry-run log is empty. No operations would have been executed.';
+    }
+
+    const lines = ['🔍 Dry-run Summary:', '═'.repeat(50)];
+
+    for (let i = 0; i < this.dryRunLog.length; i++) {
+      const entry = this.dryRunLog[i];
+      lines.push(`\n${i + 1}. ${entry.operation}`);
+      lines.push(`   Time: ${entry.timestamp.toLocaleTimeString()}`);
+      if (entry.content) {
+        const preview = entry.content.length > 200
+          ? entry.content.slice(0, 200) + '...'
+          : entry.content;
+        lines.push(`   Content: ${preview}`);
+      }
+    }
+
+    lines.push('\n' + '═'.repeat(50));
+    lines.push(`Total operations that would execute: ${this.dryRunLog.length}`);
+
+    return lines.join('\n');
+  }
+
   async requestConfirmation(
     options: ConfirmationOptions,
     operationType: 'file' | 'bash' = 'file'
   ): Promise<ConfirmationResult> {
+    // In dry-run mode, log the operation but don't execute
+    if (this.dryRunMode) {
+      this.dryRunLog.push({
+        operation: `[${operationType.toUpperCase()}] ${options.operation}: ${options.filename}`,
+        content: options.content || '',
+        timestamp: new Date(),
+      });
+
+      // Emit event for UI to show what would happen
+      setImmediate(() => {
+        this.emit('dry-run-logged', {
+          ...options,
+          operationType,
+          logIndex: this.dryRunLog.length,
+        });
+      });
+
+      // In dry-run mode, return as if rejected (operation won't execute)
+      return {
+        confirmed: false,
+        feedback: `[DRY-RUN] Operation logged but not executed: ${options.operation}`,
+      };
+    }
+
     // Check session flags
     if (
       this.sessionFlags.allOperations ||

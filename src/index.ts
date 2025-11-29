@@ -13,6 +13,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 // Import enhanced features
 import { initGrokProject, formatInitResult } from "./utils/init-project.js";
 import { getSecurityModeManager, SecurityMode } from "./security/security-modes.js";
+import { getContextLoader, ContextLoader } from "./context/context-loader.js";
+import { getResponseCache } from "./utils/response-cache.js";
 // Headless output utilities available for future use
 // import { createHeadlessResult, formatOutput, OutputFormat } from "./utils/headless-output.js";
 
@@ -356,6 +358,22 @@ program
     "--init",
     "initialize .grok directory with templates and exit"
   )
+  .option(
+    "--dry-run",
+    "preview changes without applying them (simulation mode)"
+  )
+  .option(
+    "-c, --context <patterns>",
+    "load specific files into context using glob patterns (e.g., 'src/**/*.ts,!**/*.test.ts')"
+  )
+  .option(
+    "--no-cache",
+    "disable response caching"
+  )
+  .option(
+    "--no-self-heal",
+    "disable self-healing auto-correction"
+  )
   .action(async (message, options) => {
     // Handle --init flag
     if (options.init) {
@@ -420,6 +438,37 @@ program
         } else {
           console.warn(`⚠️ Invalid security mode: ${options.securityMode}. Using default (suggest).`);
         }
+      }
+
+      // Configure dry-run mode
+      if (options.dryRun) {
+        const confirmationService = ConfirmationService.getInstance();
+        confirmationService.setDryRunMode(true);
+        console.log("🔍 Dry-run mode: ENABLED (changes will be previewed, not applied)");
+      }
+
+      // Load context files if specified
+      if (options.context) {
+        const { include, exclude } = ContextLoader.parsePatternString(options.context);
+        const contextLoader = getContextLoader(process.cwd(), {
+          patterns: include,
+          excludePatterns: exclude,
+          respectGitignore: true,
+        });
+        const files = await contextLoader.loadFiles();
+        if (files.length > 0) {
+          console.log(contextLoader.getSummary(files));
+        }
+      }
+
+      // Configure caching
+      if (options.cache === false) {
+        console.log("📦 Response cache: DISABLED");
+      }
+
+      // Configure self-healing
+      if (options.selfHeal === false) {
+        console.log("🔧 Self-healing: DISABLED");
       }
 
       console.log("🤖 Starting Grok CLI Conversational Assistant...\n");

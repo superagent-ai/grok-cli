@@ -2,6 +2,7 @@ import { spawn, SpawnOptions } from 'child_process';
 import { ToolResult } from '../types/index.js';
 import { ConfirmationService } from '../utils/confirmation-service.js';
 import { getSandboxManager } from '../security/sandbox.js';
+import { getSelfHealingEngine, SelfHealingEngine } from '../utils/self-healing.js';
 import path from 'path';
 import os from 'os';
 
@@ -37,6 +38,8 @@ export class BashTool {
   private currentDirectory: string = process.cwd();
   private confirmationService = ConfirmationService.getInstance();
   private sandboxManager = getSandboxManager();
+  private selfHealingEngine: SelfHealingEngine = getSelfHealingEngine();
+  private selfHealingEnabled: boolean = true;
 
   /**
    * Validate command for dangerous patterns
@@ -206,9 +209,54 @@ export class BashTool {
       });
 
       if (result.exitCode !== 0) {
+        const errorMessage = result.stderr || `Command exited with code ${result.exitCode}`;
+
+        // Attempt self-healing if enabled
+        if (this.selfHealingEnabled) {
+          const healingResult = await this.selfHealingEngine.attemptHealing(
+            command,
+            errorMessage,
+            async (fixCmd: string) => {
+              // Execute fix command without self-healing to avoid recursion
+              const fixResult = await this.executeWithSpawn(fixCmd, {
+                timeout: timeout * 2, // Give more time for fix commands
+                cwd: this.currentDirectory,
+              });
+
+              if (fixResult.exitCode === 0) {
+                return {
+                  success: true,
+                  output: fixResult.stdout || 'Fix applied successfully',
+                };
+              }
+              return {
+                success: false,
+                error: fixResult.stderr || `Fix failed with code ${fixResult.exitCode}`,
+              };
+            }
+          );
+
+          if (healingResult.success && healingResult.finalResult) {
+            return {
+              success: true,
+              output: `🔧 Self-healed after ${healingResult.attempts.length} attempt(s)\n` +
+                      `Fix applied: ${healingResult.fixedCommand}\n\n` +
+                      (healingResult.finalResult.output || 'Success'),
+            };
+          }
+
+          // If healing failed, return original error with healing info
+          if (healingResult.attempts.length > 0) {
+            return {
+              success: false,
+              error: `${errorMessage}\n\n🔧 Self-healing attempted ${healingResult.attempts.length} fix(es) but failed.`,
+            };
+          }
+        }
+
         return {
           success: false,
-          error: result.stderr || `Command exited with code ${result.exitCode}`,
+          error: errorMessage,
         };
       }
 
@@ -225,6 +273,27 @@ export class BashTool {
         error: `Command failed: ${errorMessage}`,
       };
     }
+  }
+
+  /**
+   * Enable or disable self-healing
+   */
+  setSelfHealing(enabled: boolean): void {
+    this.selfHealingEnabled = enabled;
+  }
+
+  /**
+   * Check if self-healing is enabled
+   */
+  isSelfHealingEnabled(): boolean {
+    return this.selfHealingEnabled;
+  }
+
+  /**
+   * Get self-healing engine for configuration
+   */
+  getSelfHealingEngine(): SelfHealingEngine {
+    return this.selfHealingEngine;
   }
 
   getCurrentDirectory(): string {
