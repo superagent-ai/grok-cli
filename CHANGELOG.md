@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/vibe-kit/grok-cli/compare/v0.0.12...HEAD
-[0.0.12]: https://github.com/vibe-kit/grok-cli/compare/v0.0.11...v0.0.12
-[0.0.11]: https://github.com/vibe-kit/grok-cli/compare/v0.0.10...v0.0.11
-[0.0.10]: https://github.com/vibe-kit/grok-cli/releases/tag/v0.0.10
+[Unreleased]: https://github.com/phuetz/grok-cli/compare/v0.0.12...HEAD
+[0.0.12]: https://github.com/phuetz/grok-cli/compare/v0.0.11...v0.0.12
+[0.0.11]: https://github.com/phuetz/grok-cli/compare/v0.0.10...v0.0.11
+[0.0.10]: https://github.com/phuetz/grok-cli/releases/tag/v0.0.10

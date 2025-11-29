@@ -68,13 +68,13 @@ jobs:
           ## Installation
 
           ```bash
-          npm install -g @vibe-kit/grok-cli@${{ steps.version.outputs.VERSION }}
+          npm install -g @phuetz/grok-cli@${{ steps.version.outputs.VERSION }}
           ```
 
           or
 
           ```bash
-          npx @vibe-kit/grok-cli@${{ steps.version.outputs.VERSION }}
+          npx @phuetz/grok-cli@${{ steps.version.outputs.VERSION }}
           ```
         draft: false
         prerelease: false
@@ -85,6 +85,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./vibe-kit-grok-cli-${{ steps.version.outputs.VERSION }}.tgz
+        asset_path: ./phuetz-grok-cli-${{ steps.version.outputs.VERSION }}.tgz
         asset_name: grok-cli-${{ steps.version.outputs.VERSION }}.tgz
         asset_content_type: application/gzip

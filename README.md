@@ -4,12 +4,12 @@
 
 ### Agent AI conversationnel intelligent pour votre terminal
 
-[![npm version](https://img.shields.io/npm/v/@vibe-kit/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
+[![npm version](https://img.shields.io/npm/v/@phuetz/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@phuetz/grok-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen?style=flat-square)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.9-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![npm downloads](https://img.shields.io/npm/dm/@vibe-kit/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@vibe-kit/grok-cli)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vibe-kit/grok-cli/typecheck.yml?style=flat-square)](https://github.com/vibe-kit/grok-cli/actions)
+[![npm downloads](https://img.shields.io/npm/dm/@phuetz/grok-cli.svg?style=flat-square)](https://www.npmjs.com/package/@phuetz/grok-cli)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/phuetz/grok-cli/typecheck.yml?style=flat-square)](https://github.com/phuetz/grok-cli/actions)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 **Un outil CLI puissant propulsé par Grok qui transforme votre terminal en assistant de développement intelligent avec capacités d'édition, recherche avancée et exécution de commandes.**
@@ -204,13 +204,20 @@ grok --prompt "analyze package.json and suggest optimizations"
 ### Installation Globale (Recommandée)
 
 ```bash
-npm install -g @vibe-kit/grok-cli
+# Avec npm
+npm install -g @phuetz/grok-cli
+
+# Ou avec yarn
+yarn global add @phuetz/grok-cli
+
+# Ou avec bun
+bun add -g @phuetz/grok-cli
 ```
 
 ### Installation pour Développement
 
 ```bash
-git clone https://github.com/your-org/grok-cli.git
+git clone https://github.com/phuetz/grok-cli.git
 cd grok-cli
 npm install
 npm run build
@@ -723,8 +730,8 @@ of this software and associated documentation files...
 
 ## 📞 Support & Contact
 
-- 🐛 **Bug Reports** : [GitHub Issues](https://github.com/your-org/grok-cli/issues)
-- 💡 **Feature Requests** : [GitHub Discussions](https://github.com/your-org/grok-cli/discussions)
+- 🐛 **Bug Reports** : [GitHub Issues](https://github.com/phuetz/grok-cli/issues)
+- 💡 **Feature Requests** : [GitHub Discussions](https://github.com/phuetz/grok-cli/discussions)
 - 📧 **Email** : support@example.com
 - 💬 **Discord** : [Join our community](#)
 - 🐦 **Twitter** : [@grok_cli](#)
@@ -733,9 +740,9 @@ of this software and associated documentation files...
 
 ## 📈 Statistiques du Projet
 
-![GitHub stars](https://img.shields.io/github/stars/your-org/grok-cli?style=social)
-![GitHub forks](https://img.shields.io/github/forks/your-org/grok-cli?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/your-org/grok-cli?style=social)
+![GitHub stars](https://img.shields.io/github/stars/phuetz/grok-cli?style=social)
+![GitHub forks](https://img.shields.io/github/forks/phuetz/grok-cli?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/phuetz/grok-cli?style=social)
 
 ---
 

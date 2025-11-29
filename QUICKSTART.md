@@ -5,7 +5,7 @@ Get up and running with Grok CLI in under 5 minutes!
 ## Installation
 
 ```bash
-npm install -g @vibe-kit/grok-cli
+npm install -g @phuetz/grok-cli
 ```
 
 ## Setup
@@ -147,7 +147,7 @@ grok --api-key your_key
 ### "Command not found"
 ```bash
 # Reinstall globally
-npm install -g @vibe-kit/grok-cli
+npm install -g @phuetz/grok-cli
 
 # Check npm global path
 npm config get prefix
@@ -156,8 +156,8 @@ npm config get prefix
 ### Need Help?
 
 - Check [README](README.md#troubleshooting)
-- Search [Issues](https://github.com/vibe-kit/grok-cli/issues)
-- Create a [new issue](https://github.com/vibe-kit/grok-cli/issues/new)
+- Search [Issues](https://github.com/phuetz/grok-cli/issues)
+- Create a [new issue](https://github.com/phuetz/grok-cli/issues/new)
 
 ---
 

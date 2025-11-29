@@ -284,7 +284,7 @@ Safety checks:
   if (!fs.existsSync(readmePath) || options.force) {
     const readmeContent = `# .grok Directory
 
-This directory contains configuration and customization files for [Grok CLI](https://github.com/vibe-kit/grok-cli).
+This directory contains configuration and customization files for [Grok CLI](https://github.com/phuetz/grok-cli).
 
 ## Files
 
@@ -333,7 +333,7 @@ Configure security modes in \`security.json\`:
 
 ## More Information
 
-See the [Grok CLI documentation](https://github.com/vibe-kit/grok-cli) for more details.
+See the [Grok CLI documentation](https://github.com/phuetz/grok-cli) for more details.
 `;
     fs.writeFileSync(readmePath, readmeContent);
     result.created.push('.grok/README.md');
