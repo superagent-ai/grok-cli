@@ -33,7 +33,7 @@ export interface ExtractedFrame {
  */
 export class VideoTool {
   private readonly supportedFormats = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg'];
-  private readonly maxFileSizeMB = 500; // 500MB max
+  private readonly _maxFileSizeMB = 500; // 500MB max
 
   /**
    * Get video file information

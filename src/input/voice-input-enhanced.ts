@@ -352,7 +352,7 @@ export class VoiceInputManager extends EventEmitter {
   /**
    * Transcribe with system speech recognition (macOS)
    */
-  private async transcribeWithSystem(audioFile: string): Promise<TranscriptionResult> {
+  private async transcribeWithSystem(_audioFile: string): Promise<TranscriptionResult> {
     // On macOS, we can use the built-in speech recognition
     if (process.platform === 'darwin') {
       return new Promise((resolve) => {

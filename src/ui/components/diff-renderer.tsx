@@ -263,7 +263,6 @@ const renderDiffContent = (
 };
 
 // Language detection utility for potential future syntax highlighting
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _getLanguageFromExtension = (extension: string): string | null => {
   const languageMap: { [key: string]: string } = {
     js: 'javascript',

@@ -1,8 +1,19 @@
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat";
+import type { ChatCompletionMessageParam, ChatCompletionChunk } from "openai/resources/chat";
 import { validateModel, getModelInfo } from "../utils/model-utils";
 
 export type GrokMessage = ChatCompletionMessageParam;
+
+/** JSON Schema property definition */
+export interface JsonSchemaProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: JsonSchemaProperty;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  default?: unknown;
+}
 
 export interface GrokTool {
   type: "function";
@@ -11,10 +22,22 @@ export interface GrokTool {
     description: string;
     parameters: {
       type: "object";
-      properties: Record<string, any>;
+      properties: Record<string, JsonSchemaProperty>;
       required: string[];
     };
   };
+}
+
+/** Chat completion request payload */
+interface ChatRequestPayload {
+  model: string;
+  messages: GrokMessage[];
+  tools: GrokTool[];
+  tool_choice?: "auto" | "none" | "required";
+  temperature: number;
+  max_tokens: number;
+  stream?: boolean;
+  search_parameters?: SearchParameters;
 }
 
 export interface GrokToolCall {
@@ -99,7 +122,7 @@ export class GrokClient {
     searchOptions?: SearchOptions
   ): Promise<GrokResponse> {
     try {
-      const requestPayload: any = {
+      const requestPayload: ChatRequestPayload = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
@@ -113,12 +136,13 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
-      const response =
-        await this.client.chat.completions.create(requestPayload);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await this.client.chat.completions.create(requestPayload as any);
 
       return response as GrokResponse;
-    } catch (error: any) {
-      throw new Error(`Grok API error: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Grok API error: ${message}`);
     }
   }
 
@@ -127,9 +151,9 @@ export class GrokClient {
     tools?: GrokTool[],
     model?: string,
     searchOptions?: SearchOptions
-  ): AsyncGenerator<any, void, unknown> {
+  ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
     try {
-      const requestPayload: any = {
+      const requestPayload: ChatRequestPayload = {
         model: model || this.currentModel,
         messages,
         tools: tools || [],
@@ -144,15 +168,18 @@ export class GrokClient {
         requestPayload.search_parameters = searchOptions.search_parameters;
       }
 
-      const stream = (await this.client.chat.completions.create(
-        requestPayload
-      )) as any;
+      const stream = await this.client.chat.completions.create({
+        ...requestPayload,
+        stream: true,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
 
-      for await (const chunk of stream) {
+      for await (const chunk of stream as unknown as AsyncIterable<ChatCompletionChunk>) {
         yield chunk;
       }
-    } catch (error: any) {
-      throw new Error(`Grok API error: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Grok API error: ${message}`);
     }
   }
 

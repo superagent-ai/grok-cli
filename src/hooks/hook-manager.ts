@@ -48,7 +48,6 @@ export interface HooksConfig {
 }
 
 // Default hooks configuration - available for initialization
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _DEFAULT_HOOKS_CONFIG: HooksConfig = {
   hooks: []
 };

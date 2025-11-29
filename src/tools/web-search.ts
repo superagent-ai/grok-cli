@@ -65,7 +65,7 @@ export class WebSearchTool {
   /**
    * Fetch and summarize a web page
    */
-  async fetchPage(url: string, prompt?: string): Promise<ToolResult> {
+  async fetchPage(url: string, _prompt?: string): Promise<ToolResult> {
     try {
       const response = await axios.get(url, {
         headers: {

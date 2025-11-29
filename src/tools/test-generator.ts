@@ -22,7 +22,6 @@ export interface TestTemplate {
 }
 
 // Test templates for different frameworks - stored for future template-based generation
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _TEST_TEMPLATES: Record<string, TestTemplate> = {
   "jest-ts": {
     name: "Jest TypeScript",

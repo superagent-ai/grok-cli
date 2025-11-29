@@ -31,7 +31,7 @@ export interface UnifiedSearchResult {
 }
 
 export class SearchTool {
-  private confirmationService = ConfirmationService.getInstance();
+  private _confirmationService = ConfirmationService.getInstance();
   private currentDirectory: string = process.cwd();
   private searchCache = new Cache<UnifiedSearchResult[]>(SEARCH_CONFIG.CACHE_TTL);
 

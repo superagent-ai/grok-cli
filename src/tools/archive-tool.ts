@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import { ToolResult } from '../types';
 
 export interface ArchiveInfo {
@@ -562,7 +562,7 @@ export class ArchiveTool {
   private async createZip(
     sourcePaths: string[],
     outputPath: string,
-    options: CreateOptions
+    _options: CreateOptions
   ): Promise<boolean> {
     const AdmZip = (await import('adm-zip')).default;
     const zip = new AdmZip();
@@ -589,7 +589,7 @@ export class ArchiveTool {
     sourcePaths: string[],
     outputPath: string,
     format: string,
-    options: CreateOptions
+    _options: CreateOptions
   ): Promise<boolean> {
     return new Promise((resolve) => {
       const args = ['cf', outputPath];

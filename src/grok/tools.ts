@@ -1093,7 +1093,7 @@ export async function getRelevantTools(
     useRAG?: boolean;
   } = {}
 ): Promise<ToolSelectionResult> {
-  const { useRAG = true, maxTools = 15, ...selectorOptions } = options;
+  const { useRAG = true, maxTools = 15 } = options;
 
   const allTools = await getAllGrokTools();
 

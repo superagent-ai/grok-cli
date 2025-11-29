@@ -348,7 +348,7 @@ Current working directory: ${process.cwd()}`,
   /**
    * Execute multiple tool calls, potentially in parallel
    */
-  private async executeToolCallsParallel(
+  private async _executeToolCallsParallel(
     toolCalls: GrokToolCall[]
   ): Promise<Map<string, ToolResult>> {
     const results = new Map<string, ToolResult>();

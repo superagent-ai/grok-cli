@@ -98,7 +98,7 @@ export class AudioTool {
       const channels = buffer.readUInt16LE(22);
       const sampleRate = buffer.readUInt32LE(24);
       const byteRate = buffer.readUInt32LE(28);
-      const bitsPerSample = buffer.readUInt16LE(34);
+      const _bitsPerSample = buffer.readUInt16LE(34);
       const dataSize = buffer.readUInt32LE(40);
 
       const duration = dataSize / byteRate;

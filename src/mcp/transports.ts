@@ -227,6 +227,7 @@ export class StreamableHttpTransport extends EventEmitter implements MCPTranspor
 
 // Custom Streamable HTTP Transport implementation for GitHub Copilot MCP
 class StreamableHttpClientTransport extends EventEmitter implements Transport {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   constructor(private url: string, private headers?: Record<string, string>) {
     super();
   }

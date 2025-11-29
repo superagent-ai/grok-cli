@@ -19,11 +19,12 @@
     "alwaysStrict": true,
 
     // Additional safety checks
+    // Note: Unused vars are handled by ESLint @typescript-eslint/no-unused-vars
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": false, // TODO: Enable when codebase is ready
 
     "esModuleInterop": true,
     "skipLibCheck": true,

@@ -83,7 +83,7 @@ export class QRTool {
    * Generate QR matrix using simple implementation
    * Note: This is a simplified version - for production use qrcode library
    */
-  private generateQRMatrix(data: string, errorCorrection: string): boolean[][] {
+  private generateQRMatrix(data: string, _errorCorrection: string): boolean[][] {
     // Simple QR-like pattern generator for ASCII display
     // Real QR generation would require a full Reed-Solomon implementation
 

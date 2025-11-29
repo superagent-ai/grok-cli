@@ -198,7 +198,7 @@ export class ScreenshotTool {
   /**
    * Capture screenshot on Windows using PowerShell
    */
-  private async captureWindows(outputPath: string, options: ScreenshotOptions): Promise<ScreenshotResult> {
+  private async captureWindows(outputPath: string, _options: ScreenshotOptions): Promise<ScreenshotResult> {
     return new Promise((resolve, reject) => {
       const script = `
 Add-Type -AssemblyName System.Windows.Forms

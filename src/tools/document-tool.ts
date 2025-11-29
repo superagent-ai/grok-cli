@@ -408,7 +408,7 @@ export class DocumentTool {
    * Extract text from XML content
    */
   private extractTextFromXml(xml: string, tagName: string): string {
-    const regex = new RegExp(`<${tagName}[^>]*>([^<]*)<\/${tagName}>`, 'g');
+    const regex = new RegExp(`<${tagName}[^>]*>([^<]*)</${tagName}>`, 'g');
     const matches = xml.match(regex) || [];
 
     const texts: string[] = [];

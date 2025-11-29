@@ -310,7 +310,7 @@ export class DiagramTool {
     connections: Array<{ from: string; to: string }>
   ): string {
     const lines: string[] = [];
-    const nodeMap = new Map(nodes.map(n => [n.id, n.label]));
+    const _nodeMap = new Map(nodes.map(n => [n.id, n.label]));
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
@@ -392,7 +392,7 @@ export class DiagramTool {
       const trimmed = line.trim();
 
       // Match node definition: id[label] or id(label) etc.
-      const nodeMatch = trimmed.match(/^(\w+)[\[\({]([^\]\)}]+)[\]\)}]$/);
+      const nodeMatch = trimmed.match(/^(\w+)[[({]([^\])}]+)[\])}]$/);
       if (nodeMatch) {
         nodes.push({ id: nodeMatch[1], label: nodeMatch[2] });
         continue;

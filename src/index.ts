@@ -14,7 +14,6 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat";
 import { initGrokProject, formatInitResult } from "./utils/init-project.js";
 import { getSecurityModeManager, SecurityMode } from "./security/security-modes.js";
 import { getContextLoader, ContextLoader } from "./context/context-loader.js";
-import { getResponseCache } from "./utils/response-cache.js";
 // Headless output utilities available for future use
 // import { createHeadlessResult, formatOutput, OutputFormat } from "./utils/headless-output.js";
 
