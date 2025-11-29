@@ -242,10 +242,16 @@ async function processPromptHeadless(
   apiKey: string,
   baseURL?: string,
   model?: string,
-  maxToolRounds?: number
+  maxToolRounds?: number,
+  selfHealEnabled: boolean = true
 ): Promise<void> {
   try {
     const agent = new GrokAgent(apiKey, baseURL, model, maxToolRounds);
+
+    // Configure self-healing
+    if (!selfHealEnabled) {
+      agent.setSelfHealing(false);
+    }
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const confirmationService = ConfirmationService.getInstance();
@@ -420,7 +426,8 @@ program
           apiKey,
           baseURL,
           model,
-          maxToolRounds
+          maxToolRounds,
+          options.selfHeal !== false
         );
         return;
       }
@@ -468,6 +475,7 @@ program
 
       // Configure self-healing
       if (options.selfHeal === false) {
+        agent.setSelfHealing(false);
         console.log("🔧 Self-healing: DISABLED");
       }
 

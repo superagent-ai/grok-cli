@@ -1271,6 +1271,25 @@ Current working directory: ${process.cwd()}`,
   }
 
   /**
+   * Enable or disable self-healing for bash commands
+   *
+   * When enabled, failed bash commands will attempt automatic remediation.
+   * When disabled (via --no-self-heal flag), commands fail without auto-fix attempts.
+   *
+   * @param enabled - Whether to enable self-healing
+   */
+  setSelfHealing(enabled: boolean): void {
+    this.bash.setSelfHealing(enabled);
+  }
+
+  /**
+   * Check if self-healing is enabled for bash commands
+   */
+  isSelfHealingEnabled(): boolean {
+    return this.bash.isSelfHealingEnabled();
+  }
+
+  /**
    * Check if parallel tool execution is enabled
    */
   isParallelToolExecutionEnabled(): boolean {
