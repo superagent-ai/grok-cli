@@ -1,4 +1,4 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import { AnyGrokTool, GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
   GROK_TOOLS,
   addMCPToolsToGrokTools,
@@ -20,6 +20,105 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
+
+import fs from 'fs';
+import path from 'path';
+
+// Create a debug log file in the current working directory
+const logFile = path.join(process.cwd(), 'grok-cli-debug.log');
+const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+
+// Simple logger function
+export function debugLog(...args: any[]) {
+  const timestamp = new Date().toISOString();
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : arg).join(' ');
+  logStream.write(`[${timestamp}] ${message}\n`);
+  // Also log to console so you see it immediately
+}
+
+// Optional: log uncaught errors
+process.on('uncaughtException', (err) => {
+  debugLog('UNCAUGHT EXCEPTION:', err);
+});
+
+// Built-in xAI server-side tools (must be in full function format)
+const builtInSearchTools: AnyGrokTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Search the web for real-time information, news, facts, current events, or browse pages for details.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query to look up"
+          },
+          num_results: {
+            type: "integer",
+            description: "Number of results to return (max 30)",
+            default: 10
+          },
+          allowed_domains: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional: Restrict search to specific domains"
+          },
+          excluded_domains: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional: Exclude specific domains"
+          },
+          enable_image_understanding: {
+            type: "boolean",
+            description: "If true, enables image description from search results",
+            default: false
+          }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "x_search",
+      description: "Search X (Twitter) for recent posts, trends, discussions, user content, or advanced keyword/semantic searches.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query (supports advanced operators)"
+          },
+          limit: {
+            type: "integer",
+            description: "Number of posts to return",
+            default: 10
+          },
+          mode: {
+            type: "string",
+            enum: ["Top", "Latest"],
+            description: "Sort by Top or Latest",
+            default: "Top"
+          },
+          from_date: {
+            type: "string",
+            format: "date",
+            description: "Optional: Filter from this date (YYYY-MM-DD)"
+          },
+          to_date: {
+            type: "string",
+            format: "date",
+            description: "Optional: Filter to this date (YYYY-MM-DD)"
+          }
+        },
+        required: ["query"]
+      }
+    }
+  }
+];
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -92,6 +191,8 @@ export class GrokAgent extends EventEmitter {
 You have access to these tools:
 - view_file: View file contents or directory listings
 - create_file: Create new files with content (ONLY use this for files that don't exist yet)
+- web_search: Search the web for real-time information (use for news, current events, web data)
+- x_search: Search X (Twitter) for recent posts, trends, or user content
 - str_replace_editor: Replace text in existing files (ALWAYS use this to edit or update existing files)${
         this.morphEditor
           ? "\n- edit_file: High-speed file editing with Morph Fast Apply (4,500+ tokens/sec with 98% accuracy)"
@@ -215,17 +316,26 @@ Current working directory: ${process.cwd()}`,
     let toolRounds = 0;
 
     try {
-      const tools = await getAllGrokTools();
+      const customTools = await getAllGrokTools();
+      const allTools: AnyGrokTool[] = [...customTools];
+          if (this.isGrokModel() && this.shouldUseSearchFor(message)) {
+            allTools.push(...builtInSearchTools);
+          }
+
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        tools,
+        allTools,
         undefined,
-        this.isGrokModel() && this.shouldUseSearchFor(message)
-          ? { search_parameters: { mode: "auto" } }
-          : { search_parameters: { mode: "off" } }
       );
 
-      // Agent loop - continue until no more tool calls or max rounds reached
+      debugLog('Using tools count:', allTools.length);
+      debugLog('Tools names:', allTools.map(t => {
+          if (t.type === 'function' && t.function?.name) {
+            return t.function.name;
+          }
+          return t.type;  // fallback for built-in tools like "web_search"
+            }).join(', '));
+          // Agent loop - continue until no more tool calls or max rounds reached
       while (toolRounds < maxToolRounds) {
         const assistantMessage = currentResponse.choices[0]?.message;
 
@@ -314,11 +424,8 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            tools,
+            allTools,
             undefined,
-            this.isGrokModel() && this.shouldUseSearchFor(message)
-              ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
           );
         } else {
           // No more tool calls, add final response
@@ -406,6 +513,8 @@ Current working directory: ${process.cwd()}`,
     };
     this.chatHistory.push(userEntry);
     this.messages.push({ role: "user", content: message });
+    debugLog('User message added:', message);
+    debugLog('Current messages length:', this.messages.length);
 
     // Calculate input tokens
     let inputTokens = this.tokenCounter.countMessageTokens(
@@ -435,21 +544,27 @@ Current working directory: ${process.cwd()}`,
         }
 
         // Stream response and accumulate
-        const tools = await getAllGrokTools();
-        const stream = this.grokClient.chatStream(
+        const customTools = await getAllGrokTools();
+        const allTools: AnyGrokTool[] = [...customTools];
+        if (this.isGrokModel() && this.shouldUseSearchFor(message)) {
+          allTools.push(...builtInSearchTools);
+        }
+
+        debugLog('Starting chatStream with messages:', this.messages);
+    
+        let stream = this.grokClient.chatStream(
           this.messages,
-          tools,
-          undefined,
-          this.isGrokModel() && this.shouldUseSearchFor(message)
-            ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
+          allTools,  // Combined tools
+          undefined  // Or remove this if you update the method signature
         );
+
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let toolCallsYielded = false;
 
         for await (const chunk of stream) {
           // Check for cancellation in the streaming loop
+        debugLog('Received streaming chunk:', chunk);
           if (this.abortController?.signal.aborted) {
             yield {
               type: "content",
@@ -463,10 +578,10 @@ Current working directory: ${process.cwd()}`,
 
           // Accumulate the message using reducer
           accumulatedMessage = this.messageReducer(accumulatedMessage, chunk);
+          debugLog('Final accumulated assistant message:', accumulatedMessage);
 
           // Check for tool calls - yield when we have complete tool calls with function names
           if (!toolCallsYielded && accumulatedMessage.tool_calls?.length > 0) {
-            // Check if we have at least one complete tool call with a function name
             const hasCompleteTool = accumulatedMessage.tool_calls.some(
               (tc: any) => tc.function?.name
             );
@@ -483,7 +598,6 @@ Current working directory: ${process.cwd()}`,
           if (chunk.choices[0].delta?.content) {
             accumulatedContent += chunk.choices[0].delta.content;
 
-            // Update token count in real-time including accumulated content and any tool calls
             const currentOutputTokens =
               this.tokenCounter.estimateStreamingTokens(accumulatedContent) +
               (accumulatedMessage.tool_calls
@@ -497,6 +611,7 @@ Current working directory: ${process.cwd()}`,
               type: "content",
               content: chunk.choices[0].delta.content,
             };
+            debugLog('Yielding content chunk:', chunk.choices[0].delta.content);
 
             // Emit token count update
             const now = Date.now();
