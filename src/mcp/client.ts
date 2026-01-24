@@ -51,11 +51,7 @@ export class MCPManager extends EventEmitter {
           name: "grok-cli",
           version: "1.0.0"
         },
-        {
-          capabilities: {
-            tools: {}
-          }
-        }
+        {}
       );
 
       this.clients.set(config.name, client);
@@ -124,10 +120,12 @@ export class MCPManager extends EventEmitter {
     // Extract the original tool name (remove mcp__servername__ prefix)
     const originalToolName = toolName.replace(`mcp__${tool.serverName}__`, '');
 
-    return await client.callTool({
+    const result = await client.callTool({
       name: originalToolName,
       arguments: arguments_
     });
+
+    return result as CallToolResult;
   }
 
   getTools(): MCPTool[] {

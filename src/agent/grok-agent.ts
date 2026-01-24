@@ -1,4 +1,13 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
+import {
+  GrokClient,
+  GrokMessage,
+  GrokToolCall,
+  AgentTool,
+  AgentTools,
+  AgentSearchResponse,
+  extractAgentResponseText,
+  extractAgentCitations,
+} from "../grok/client.js";
 import {
   GROK_TOOLS,
   addMCPToolsToGrokTools,
@@ -20,6 +29,8 @@ import { EventEmitter } from "events";
 import { createTokenCounter, TokenCounter } from "../utils/token-counter.js";
 import { loadCustomInstructions } from "../utils/custom-instructions.js";
 import { getSettingsManager } from "../utils/settings-manager.js";
+
+// Server-side tools (web_search, x_search, etc) use /v1/responses via agentQuery()
 
 export interface ChatEntry {
   type: "user" | "assistant" | "tool_result" | "tool_call";
@@ -103,7 +114,9 @@ You have access to these tools:
 - update_todo_list: Update existing todos in your todo list
 
 REAL-TIME INFORMATION:
-You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
+Note: Real-time web search requires a separate API call. If users ask for current
+information, latest news, or recent events that require live data, inform them that
+you're working with your training data cutoff and cannot access live web content.
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
@@ -167,38 +180,6 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
-  private isGrokModel(): boolean {
-    const currentModel = this.grokClient.getCurrentModel();
-    return currentModel.toLowerCase().includes("grok");
-  }
-
-  // Heuristic: enable web search only when likely needed
-  private shouldUseSearchFor(message: string): boolean {
-    const q = message.toLowerCase();
-    const keywords = [
-      "today",
-      "latest",
-      "news",
-      "trending",
-      "breaking",
-      "current",
-      "now",
-      "recent",
-      "x.com",
-      "twitter",
-      "tweet",
-      "what happened",
-      "as of",
-      "update on",
-      "release notes",
-      "changelog",
-      "price",
-    ];
-    if (keywords.some((k) => q.includes(k))) return true;
-    // crude date pattern (e.g., 2024/2025) may imply recency
-    if (/(20\d{2})/.test(q)) return true;
-    return false;
-  }
 
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
@@ -218,11 +199,7 @@ Current working directory: ${process.cwd()}`,
       const tools = await getAllGrokTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        tools,
-        undefined,
-        this.isGrokModel() && this.shouldUseSearchFor(message)
-          ? { search_parameters: { mode: "auto" } }
-          : { search_parameters: { mode: "off" } }
+        tools
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -314,11 +291,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            tools,
-            undefined,
-            this.isGrokModel() && this.shouldUseSearchFor(message)
-              ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
+            tools
           );
         } else {
           // No more tool calls, add final response
@@ -434,15 +407,10 @@ Current working directory: ${process.cwd()}`,
           return;
         }
 
-        // Stream response and accumulate
         const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          tools,
-          undefined,
-          this.isGrokModel() && this.shouldUseSearchFor(message)
-            ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
+          tools
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
@@ -776,5 +744,26 @@ Current working directory: ${process.cwd()}`,
     if (this.abortController) {
       this.abortController.abort();
     }
+  }
+
+  /** Execute query using Agent Tools API (/v1/responses) for web_search, x_search, code_interpreter, etc. */
+  async agentQuery(
+    query: string,
+    tools?: AgentTool[],
+    options?: { inline_citations?: boolean }
+  ): Promise<{ text: string; citations: string[]; raw: AgentSearchResponse }> {
+    const response = await this.grokClient.agentQuery(query, tools, {
+      inline_citations: options?.inline_citations,
+    });
+
+    return {
+      text: extractAgentResponseText(response),
+      citations: extractAgentCitations(response),
+      raw: response,
+    };
+  }
+
+  static get AgentTools() {
+    return AgentTools;
   }
 }
