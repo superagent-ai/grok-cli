@@ -100,3 +100,8 @@ temp/
 # Coding agents
 .claude/
 .grok/
+.gemini/
+
+# Cursor AI
+.cursor/*
+!.cursor/context.md
