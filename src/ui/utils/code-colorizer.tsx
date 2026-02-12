@@ -1,6 +1,5 @@
 import React from "react";
 import { Text, Box } from "ink";
-import chalk from "chalk";
 
 interface Token {
   content: string;
@@ -315,47 +314,11 @@ const highlightGeneric = (line: string): Token[] => {
   return tokens;
 };
 
-const renderToken = (token: Token): string => {
-  let styled = token.content;
-
-  if (token.color) {
-    switch (token.color) {
-      case "cyan":
-        styled = chalk.cyan(styled);
-        break;
-      case "green":
-        styled = chalk.green(styled);
-        break;
-      case "yellow":
-        styled = chalk.yellow(styled);
-        break;
-      case "gray":
-        styled = chalk.gray(styled);
-        break;
-      case "blue":
-        styled = chalk.blue(styled);
-        break;
-      case "red":
-        styled = chalk.red(styled);
-        break;
-      case "magenta":
-        styled = chalk.magenta(styled);
-        break;
-      default:
-        break;
-    }
-  }
-
-  if (token.bold) {
-    styled = chalk.bold(styled);
-  }
-
-  if (token.italic) {
-    styled = chalk.italic(styled);
-  }
-
-  return styled;
-};
+/** Ink supports these color names (no hex, no Bright variants). */
+const INK_COLORS = ["cyan", "green", "yellow", "gray", "blue", "red", "magenta"] as const;
+function isInkColor(color: string | undefined): color is (typeof INK_COLORS)[number] {
+  return color !== undefined && INK_COLORS.includes(color as (typeof INK_COLORS)[number]);
+}
 
 export const colorizeCode = (
   content: string,
@@ -370,7 +333,14 @@ export const colorizeCode = (
       {highlightedLines.map((tokens, lineIndex) => (
         <Box key={lineIndex} flexDirection="row" flexWrap="wrap">
           {tokens.map((token, tokenIndex) => (
-            <Text key={tokenIndex}>{renderToken(token)}</Text>
+            <Text
+              key={tokenIndex}
+              color={isInkColor(token.color) ? token.color : undefined}
+              bold={token.bold}
+              italic={token.italic}
+            >
+              {token.content}
+            </Text>
           ))}
         </Box>
       ))}

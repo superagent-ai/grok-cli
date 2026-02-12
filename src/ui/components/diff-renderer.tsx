@@ -200,13 +200,13 @@ const renderDiffContent = (
         switch (line.type) {
           case "add":
             gutterNumStr = (line.newLine ?? "").toString();
-            backgroundColor = "#86efac";
+            backgroundColor = "green";
             prefixSymbol = "+";
             lastLineNumber = line.newLine ?? null;
             break;
           case "del":
             gutterNumStr = (line.oldLine ?? "").toString();
-            backgroundColor = "redBright";
+            backgroundColor = "red";
             prefixSymbol = "-";
             if (line.oldLine !== undefined) {
               lastLineNumber = line.oldLine;
@@ -229,7 +229,7 @@ const renderDiffContent = (
         acc.push(
           <Box key={lineKey} flexDirection="row">
             <Text color={Colors.Gray} dimColor={dim}>{gutterNumStr.padEnd(4)}</Text>
-            <Text color={backgroundColor ? "#000000" : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim}>{prefixSymbol} </Text>
+            <Text color={backgroundColor ? "black" : undefined} backgroundColor={backgroundColor} dimColor={!backgroundColor && dim}>{prefixSymbol} </Text>
             <Box flexGrow={1}>{highlightedLine}</Box>
           </Box>,
         );
