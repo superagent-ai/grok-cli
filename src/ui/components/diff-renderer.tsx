@@ -6,7 +6,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { Colors } from "../utils/colors.js";
 import crypto from "crypto";
-import { colorizeCode, getLanguageFromFilename } from "../utils/code-colorizer.js";
+import { colorizeCodeLine, getLanguageFromFilename } from "../utils/code-colorizer.js";
 import { MaxSizedBox } from "../shared/max-sized-box.js";
 
 interface DiffLine {
@@ -224,7 +224,7 @@ const renderDiffContent = (
 
         const displayContent = line.content.substring(baseIndentation);
         const language = getLanguageFromFilename(filename);
-        const highlightedLine = colorizeCode(displayContent, language);
+        const highlightedLine = colorizeCodeLine(displayContent, language);
 
         acc.push(
           <Box key={lineKey} flexDirection="row">

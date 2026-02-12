@@ -320,6 +320,29 @@ function isInkColor(color: string | undefined): color is (typeof INK_COLORS)[num
   return color !== undefined && INK_COLORS.includes(color as (typeof INK_COLORS)[number]);
 }
 
+/** Renders a single line as a row of colored tokens. Use for inline/row layout (e.g. diff lines). */
+export const colorizeCodeLine = (
+  line: string,
+  language: string | null
+): React.ReactNode => {
+  const tokens = highlightCode(line, language)[0] ?? [createToken(line)];
+  return (
+    <Box flexDirection="row" flexWrap="wrap">
+      {tokens.map((token, tokenIndex) => (
+        <Text
+          key={tokenIndex}
+          color={isInkColor(token.color) ? token.color : undefined}
+          bold={token.bold}
+          italic={token.italic}
+        >
+          {token.content}
+        </Text>
+      ))}
+    </Box>
+  );
+};
+
+/** Renders multi-line code as a column of rows. Use for full code blocks (e.g. chat). */
 export const colorizeCode = (
   content: string,
   language: string | null,

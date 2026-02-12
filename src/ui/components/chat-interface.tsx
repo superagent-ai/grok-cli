@@ -125,7 +125,7 @@ function ChatInterfaceWithAgent({
         try {
           let streamingEntry: ChatEntry | null = null;
           for await (const chunk of agent.processUserMessageStream(initialMessage)) {
-            switch (chunk.type) {
+              switch (chunk.type) {
               case "content":
                 if (chunk.content) {
                   if (!streamingEntry) {
