@@ -236,8 +236,8 @@ export function useInputHandler({
     const trimmedInput = input.trim();
 
     if (trimmedInput === "/clear") {
-      // Reset chat history
       setChatHistory([]);
+      agent.clearConversation();
 
       // Reset processing states
       setIsProcessing(false);

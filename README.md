@@ -450,9 +450,9 @@ bun run lint
 bun run typecheck
 ```
 
-## xAI Responses API Migration
+## xAI Responses API
 
-Grok CLI currently uses the legacy Chat Completions API. For a future migration to the xAI Responses API (with native web_search, x_search, stateful conversations), see [docs/xai-responses-api-migration.md](docs/xai-responses-api-migration.md).
+Grok CLI uses the **xAI Responses API** automatically when connected to xAI (`api.x.ai`). Chat and streaming work with native tool-call support. For details see [docs/xai-responses-api-migration.md](docs/xai-responses-api-migration.md).
 
 ## Architecture
 

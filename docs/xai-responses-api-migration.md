@@ -1,4 +1,4 @@
-# xAI Responses API Migration Plan
+# xAI Responses API Migration
 
 The xAI Responses API is the recommended way to interact with Grok models. It offers:
 
@@ -7,33 +7,31 @@ The xAI Responses API is the recommended way to interact with Grok models. It of
 - **Billing Optimization**: Automatic caching of conversation history
 - **Future Features**: All new capabilities delivered to Responses API first
 
+## Implementation Status (Feb 2026)
+
+Grok CLI **automatically uses the Responses API** when the base URL is an xAI endpoint (`x.ai` or `api.x.ai`). No configuration needed.
+
+- **Non-streaming (`chat`)**: Uses `responses.create`, maps `messages` → `input`, parses `output` back to `GrokResponse`
+- **Streaming (`chatStream`)**: Uses `responses.create` with `stream: true`, maps `response.output_text.delta` and `response.function_call_arguments.*` events to Chat Completions–style chunks
+- **Tool calls**: Local function tools execute client-side; results submitted as `function_call_output` items
+- **Stateful conversations**: `store: true` and `previous_response_id` for continuation; only delta (new user message or tool results) sent instead of full history
+- **Native xAI tools**: `web_search` and `x_search` included in every request; server-side execution for real-time web and X (Twitter) data
+
 ## Key API Differences
 
-| Chat Completions (Current) | Responses API |
+| Chat Completions (Legacy) | Responses API |
 |---------------------------|---------------|
 | `client.chat.completions.create` | `client.responses.create` |
 | `messages` | `input` |
 | `max_tokens` | `max_output_tokens` |
 | Response: `choices[0].message` | Response: `output` array |
 
-## Migration Steps (When Implementing)
+## Stream Event Mapping
 
-1. **Update GrokClient** (`src/grok/client.ts`):
-   - Add `responses.create` calls (OpenAI SDK v6 supports this with xAI base URL)
-   - Map `messages` → `input`
-   - Parse new response format: `output` array with `output_text`, `tool_call` items
-
-2. **Adapt Response Parsing**:
-   - Chat Completions: `response.choices[0].message.content`
-   - Responses API: Iterate `response.output[]` for `type: "message"` and `content[].text`
-
-3. **Tool Call Handling**:
-   - Responses API may use different structure for tool calls in the output stream
-   - Built-in tools (web_search, x_search) execute server-side — no local execution needed
-   - Function tools still require local execution and result submission
-
-4. **Streaming**:
-   - Responses API streaming format differs; check xAI docs for SSE/stream structure
+| Responses API Event | Chunk Yielded |
+|---------------------|---------------|
+| `response.output_text.delta` | `{ choices: [{ delta: { content } }] }` |
+| `response.completed` (with tool calls) | `{ choices: [{ delta: { tool_calls } }] }` |
 
 ## References
 

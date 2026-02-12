@@ -1,6 +1,10 @@
-import { GrokClient, GrokMessage, GrokToolCall } from "../grok/client.js";
 import {
-  addMCPToolsToGrokTools,
+  GrokClient,
+  GrokMessage,
+  GrokToolCall,
+  StatefulOptions,
+} from "../grok/client.js";
+import {
   getAllGrokTools,
   getMCPManager,
   initializeMCPServers,
@@ -49,6 +53,7 @@ export class GrokAgent extends EventEmitter {
   private search: SearchTool;
   private chatHistory: ChatEntry[] = [];
   private messages: GrokMessage[] = [];
+  private lastResponseId: string | null = null;
   private tokenCounter: TokenCounter;
   private abortController: AbortController | null = null;
   private mcpInitialized: boolean = false;
@@ -185,13 +190,23 @@ Current working directory: ${process.cwd()}`,
 
     try {
       const tools = await getAllGrokTools();
+      const statefulFirst =
+        this.lastResponseId !== null
+          ? ({
+              previousResponseId: this.lastResponseId,
+              deltaInput: [{ role: "user" as const, content: message }],
+            } satisfies StatefulOptions)
+          : undefined;
       let currentResponse = await this.grokClient.chat(
         this.messages,
         tools,
-        undefined
+        undefined,
+        statefulFirst
       );
 
       while (toolRounds < maxToolRounds) {
+        if (currentResponse.id) this.lastResponseId = currentResponse.id;
+
         const assistantMessage = currentResponse.choices[0]?.message;
 
         if (!assistantMessage) {
@@ -230,6 +245,7 @@ Current working directory: ${process.cwd()}`,
             newEntries.push(toolCallEntry);
           });
 
+          const toolResultsDelta: Array<Record<string, unknown>> = [];
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await this.executeTool(toolCall);
 
@@ -259,19 +275,35 @@ Current working directory: ${process.cwd()}`,
               }
             }
 
+            const toolContent = result.success
+              ? result.output || "Success"
+              : result.error || "Error";
             this.messages.push({
               role: "tool",
-              content: result.success
-                ? result.output || "Success"
-                : result.error || "Error",
+              content: toolContent,
               tool_call_id: toolCall.id,
             });
+            if (this.lastResponseId) {
+              toolResultsDelta.push({
+                type: "function_call_output",
+                call_id: toolCall.id,
+                output: toolContent,
+              });
+            }
           }
 
+          const statefulTool =
+            this.lastResponseId && toolResultsDelta.length
+              ? ({
+                  previousResponseId: this.lastResponseId,
+                  deltaInput: toolResultsDelta,
+                } satisfies StatefulOptions)
+              : undefined;
           currentResponse = await this.grokClient.chat(
             this.messages,
             tools,
-            undefined
+            undefined,
+            statefulTool
           );
         } else {
           const finalEntry: ChatEntry = {
@@ -366,6 +398,7 @@ Current working directory: ${process.cwd()}`,
 
     const maxToolRounds = this.maxToolRounds;
     let toolRounds = 0;
+    let lastToolCallsCount = 0;
     let totalOutputTokens = 0;
     let lastTokenUpdate = 0;
 
@@ -381,16 +414,44 @@ Current working directory: ${process.cwd()}`,
         }
 
         const tools = await getAllGrokTools();
+        let statefulOpts: StatefulOptions | undefined;
+        if (this.lastResponseId !== null) {
+          if (toolRounds > 0) {
+            const toolMsgs = this.messages.filter(
+              (m): m is { role: "tool"; content: string; tool_call_id: string } =>
+                m.role === "tool"
+            );
+            const toSend = toolMsgs.slice(-lastToolCallsCount);
+            statefulOpts = {
+              previousResponseId: this.lastResponseId,
+              deltaInput: toSend.map((m) => ({
+                type: "function_call_output" as const,
+                call_id: m.tool_call_id,
+                output: m.content,
+              })),
+            };
+          } else {
+            statefulOpts = {
+              previousResponseId: this.lastResponseId,
+              deltaInput: [{ role: "user" as const, content: message }],
+            };
+          }
+        }
         const stream = this.grokClient.chatStream(
           this.messages,
           tools,
-          undefined
+          undefined,
+          statefulOpts
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";
         let toolCallsYielded = false;
 
         for await (const chunk of stream) {
+          if ((chunk as any).responseId) {
+            this.lastResponseId = (chunk as any).responseId;
+            continue;
+          }
           if (this.abortController?.signal.aborted) {
             yield {
               type: "content",
@@ -461,6 +522,7 @@ Current working directory: ${process.cwd()}`,
 
         if (accumulatedMessage.tool_calls?.length > 0) {
           toolRounds++;
+          lastToolCallsCount = accumulatedMessage.tool_calls.length;
 
           if (!toolCallsYielded) {
             yield {
@@ -670,6 +732,12 @@ Current working directory: ${process.cwd()}`,
 
   getChatHistory(): ChatEntry[] {
     return [...this.chatHistory];
+  }
+
+  clearConversation(): void {
+    this.chatHistory = [];
+    this.messages = this.messages.filter((m) => m.role === "system");
+    this.lastResponseId = null;
   }
 
   getCurrentDirectory(): string {

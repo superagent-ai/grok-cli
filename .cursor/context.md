@@ -23,9 +23,13 @@ Kurze Referenz für zukünftige Arbeit an diesem Projekt. Das vollständige Chat
 - **OpenAI SDK:** auf `^6.17.0` upgegradet (Kompatibilität mit xAI).
 - **MCP SDK:** bewusst bei `^1.17.0` belassen (1.25+ hat Breaking Changes bei Client-Capabilities und CallToolResult).
 
-### 4. xAI Responses API (geplant, nicht umgesetzt)
-- Migrationsplan in **`docs/xai-responses-api-migration.md`**.
-- README verweist darauf. Später: Wechsel von Chat Completions auf Responses API für native web_search/x_search etc.
+### 4. xAI Responses API (umgesetzt)
+- **Automatisch aktiv** bei xAI Base-URL (`x.ai` / `api.x.ai`).
+- **`chat()`** und **`chatStream()`** nutzen `responses.create`; Input/Output-Mapping in `src/grok/client.ts`.
+- Tool-Calls (inkl. MCP) laufen über `function_call` / `function_call_output`.
+- **Stateful**: `store: true`, `previous_response_id` für längere Chats ohne volles Resending.
+- **Native Tools**: `web_search`, `x_search` bei jedem Request.
+- Details in **`docs/xai-responses-api-migration.md`**.
 
 ### 5. Keine system-spezifischen Tools
 - Keine Ubuntu/System-Tools (apt, systemctl, disk, network) gewünscht; nur die bestehenden CLI-Tools.
