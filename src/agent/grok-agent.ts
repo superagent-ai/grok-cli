@@ -103,7 +103,7 @@ You have access to these tools:
 - update_todo_list: Update existing todos in your todo list
 
 REAL-TIME INFORMATION:
-You have access to real-time web search and X (Twitter) data. When users ask for current information, latest news, or recent events, you automatically have access to up-to-date information from the web and social media.
+Web search and X (Twitter) search are available via MCP tools (e.g., grok_web_search, grok_x_search) if configured. Use these MCP tools when users ask for current information, latest news, or recent events.
 
 IMPORTANT TOOL USAGE RULES:
 - NEVER use create_file on files that already exist - this will overwrite them completely
@@ -167,39 +167,6 @@ Current working directory: ${process.cwd()}`,
     });
   }
 
-  private isGrokModel(): boolean {
-    const currentModel = this.grokClient.getCurrentModel();
-    return currentModel.toLowerCase().includes("grok");
-  }
-
-  // Heuristic: enable web search only when likely needed
-  private shouldUseSearchFor(message: string): boolean {
-    const q = message.toLowerCase();
-    const keywords = [
-      "today",
-      "latest",
-      "news",
-      "trending",
-      "breaking",
-      "current",
-      "now",
-      "recent",
-      "x.com",
-      "twitter",
-      "tweet",
-      "what happened",
-      "as of",
-      "update on",
-      "release notes",
-      "changelog",
-      "price",
-    ];
-    if (keywords.some((k) => q.includes(k))) return true;
-    // crude date pattern (e.g., 2024/2025) may imply recency
-    if (/(20\d{2})/.test(q)) return true;
-    return false;
-  }
-
   async processUserMessage(message: string): Promise<ChatEntry[]> {
     // Add user message to conversation
     const userEntry: ChatEntry = {
@@ -218,11 +185,7 @@ Current working directory: ${process.cwd()}`,
       const tools = await getAllGrokTools();
       let currentResponse = await this.grokClient.chat(
         this.messages,
-        tools,
-        undefined,
-        this.isGrokModel() && this.shouldUseSearchFor(message)
-          ? { search_parameters: { mode: "auto" } }
-          : { search_parameters: { mode: "off" } }
+        tools
       );
 
       // Agent loop - continue until no more tool calls or max rounds reached
@@ -314,11 +277,7 @@ Current working directory: ${process.cwd()}`,
           // Get next response - this might contain more tool calls
           currentResponse = await this.grokClient.chat(
             this.messages,
-            tools,
-            undefined,
-            this.isGrokModel() && this.shouldUseSearchFor(message)
-              ? { search_parameters: { mode: "auto" } }
-              : { search_parameters: { mode: "off" } }
+            tools
           );
         } else {
           // No more tool calls, add final response
@@ -438,11 +397,7 @@ Current working directory: ${process.cwd()}`,
         const tools = await getAllGrokTools();
         const stream = this.grokClient.chatStream(
           this.messages,
-          tools,
-          undefined,
-          this.isGrokModel() && this.shouldUseSearchFor(message)
-            ? { search_parameters: { mode: "auto" } }
-            : { search_parameters: { mode: "off" } }
+          tools
         );
         let accumulatedMessage: any = {};
         let accumulatedContent = "";

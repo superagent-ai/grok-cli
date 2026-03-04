@@ -25,11 +25,12 @@ export interface GrokToolCall {
   };
 }
 
+/** @deprecated Live Search API deprecated Jan 2026 — use MCP tools (web_search, x_search) instead */
 export interface SearchParameters {
   mode?: "auto" | "on" | "off";
-  // sources removed - let API use default sources to avoid format issues
 }
 
+/** @deprecated Live Search API deprecated Jan 2026 — use MCP tools (web_search, x_search) instead */
 export interface SearchOptions {
   search_parameters?: SearchParameters;
 }
@@ -75,7 +76,7 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    _searchOptions?: SearchOptions
   ): Promise<GrokResponse> {
     try {
       const requestPayload: any = {
@@ -87,10 +88,8 @@ export class GrokClient {
         max_tokens: this.defaultMaxTokens,
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
-        requestPayload.search_parameters = searchOptions.search_parameters;
-      }
+      // Note: search_parameters removed — Live Search API deprecated (410) since Jan 2026.
+      // Web/X search now available via MCP tools (web_search, x_search) using the Responses API.
 
       const response =
         await this.client.chat.completions.create(requestPayload);
@@ -105,7 +104,7 @@ export class GrokClient {
     messages: GrokMessage[],
     tools?: GrokTool[],
     model?: string,
-    searchOptions?: SearchOptions
+    _searchOptions?: SearchOptions
   ): AsyncGenerator<any, void, unknown> {
     try {
       const requestPayload: any = {
@@ -118,10 +117,7 @@ export class GrokClient {
         stream: true,
       };
 
-      // Add search parameters if specified
-      if (searchOptions?.search_parameters) {
-        requestPayload.search_parameters = searchOptions.search_parameters;
-      }
+      // Note: search_parameters removed — Live Search API deprecated (410) since Jan 2026.
 
       const stream = (await this.client.chat.completions.create(
         requestPayload
@@ -137,17 +133,14 @@ export class GrokClient {
 
   async search(
     query: string,
-    searchParameters?: SearchParameters
+    _searchParameters?: SearchParameters
   ): Promise<GrokResponse> {
     const searchMessage: GrokMessage = {
       role: "user",
       content: query,
     };
 
-    const searchOptions: SearchOptions = {
-      search_parameters: searchParameters || { mode: "on" },
-    };
-
-    return this.chat([searchMessage], [], undefined, searchOptions);
+    // Note: search_parameters removed — Live Search API deprecated (410) since Jan 2026.
+    return this.chat([searchMessage], [], undefined);
   }
 }
