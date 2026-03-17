@@ -1,0 +1,51 @@
+---
+description: Project overview and architecture for Grok CLI
+globs:
+alwaysApply: true
+---
+
+# Grok CLI — Project Overview
+
+Grok CLI (`@vibe-kit/grok-cli`) is an open-source conversational AI CLI tool powered by Grok that brings AI assistance directly into the terminal.
+
+## Tech Stack
+
+- **Language**: TypeScript (ES2022, ESNext modules)
+- **Runtime**: Node.js 18+ (Bun preferred)
+- **UI Framework**: React with [Ink](https://github.com/vadimdemedes/ink) for terminal rendering
+- **Build**: `tsc` (TypeScript compiler)
+- **Package Manager**: Bun (primary), npm (fallback)
+- **Linting**: ESLint with `@typescript-eslint`
+- **API Client**: OpenAI SDK (used for OpenAI-compatible APIs including Grok)
+
+## Architecture
+
+```
+src/
+├── index.ts              # CLI entry point (Commander.js)
+├── agent/                # GrokAgent — orchestrates client, tools, MCP
+├── grok/                 # Grok API client and tool definitions
+├── mcp/                  # Model Context Protocol integration
+├── commands/             # CLI subcommands (e.g. mcp)
+├── tools/                # Built-in tools (bash, text-editor, search, etc.)
+├── ui/                   # Ink-based terminal UI
+│   ├── app.tsx
+│   ├── components/       # Chat interface, diff renderer, inputs, etc.
+│   └── utils/            # Colors, markdown rendering, code colorizer
+├── hooks/                # React hooks for input handling
+├── utils/                # Settings, token counting, custom instructions
+└── types/                # Shared TypeScript type definitions
+```
+
+## Key Patterns
+
+- **Agent loop**: `GrokAgent` runs an iterative tool-call loop — the LLM responds, tools execute, results feed back until no more tool calls remain or the round limit is hit.
+- **Streaming**: `processUserMessageStream` is an async generator that yields chunks for real-time UI updates.
+- **Settings hierarchy**: User-level (`~/.grok/user-settings.json`) → Project-level (`.grok/settings.json`) → System defaults.
+- **MCP**: External tools are integrated via Model Context Protocol servers (stdio, HTTP, SSE transports).
+- **ESM only**: The project uses `"type": "module"` — all imports use `.js` extensions for compiled output.
+
+## CI/CD
+
+- **typecheck.yml**: Runs `tsc --noEmit` on push/PR to `main`/`develop`.
+- **security.yml**: Runs `npm audit` and TruffleHog secret scanning.

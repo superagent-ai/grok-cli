@@ -1,0 +1,69 @@
+---
+description: Guidelines for the agent system and tool implementations
+globs: "src/agent/**/*.ts,src/tools/**/*.ts,src/grok/**/*.ts"
+alwaysApply: false
+---
+
+# Agent & Tools System
+
+## GrokAgent
+
+`GrokAgent` (in `src/agent/grok-agent.ts`) is the core orchestrator. It extends `EventEmitter` and manages:
+
+- The Grok API client (`GrokClient`)
+- Built-in tools (text editor, bash, search, todo, confirmation)
+- Optional Morph Fast Apply editor
+- MCP server integration
+- Chat history and message accumulation
+- Abort/cancellation support
+
+### Agent Loop
+
+The agent uses an iterative tool-call pattern:
+
+1. Send messages to the LLM.
+2. If the response contains `tool_calls`, execute each tool.
+3. Append tool results to the message history.
+4. Repeat until no tool calls remain or `maxToolRounds` is reached.
+
+Both `processUserMessage` (non-streaming) and `processUserMessageStream` (async generator) implement this loop.
+
+## Tool Interface
+
+All tools return a `ToolResult`:
+
+```typescript
+interface ToolResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+  data?: any;
+}
+```
+
+Tools should never throw — wrap errors in `{ success: false, error: "..." }`.
+
+## Built-in Tools
+
+| Tool | File | Purpose |
+|------|------|---------|
+| `TextEditorTool` | `src/tools/text-editor.ts` | View, create, and str_replace files |
+| `MorphEditorTool` | `src/tools/morph-editor.ts` | Fast Apply editing (requires MORPH_API_KEY) |
+| `BashTool` | `src/tools/bash.ts` | Execute shell commands |
+| `SearchTool` | `src/tools/search.ts` | Unified text/file search (uses ripgrep) |
+| `TodoTool` | `src/tools/todo-tool.ts` | Create/update visual todo lists |
+| `ConfirmationTool` | `src/tools/confirmation-tool.ts` | User confirmation for operations |
+
+## Adding a New Tool
+
+1. Create a new file in `src/tools/` implementing the tool class.
+2. Export it from `src/tools/index.ts`.
+3. Register the tool schema in `src/grok/tools.ts` (add to `GROK_TOOLS` array).
+4. Add the execution case in `GrokAgent.executeTool()`.
+5. Update the system prompt in the `GrokAgent` constructor to document the tool.
+
+## MCP Integration
+
+- MCP tools are prefixed with `mcp__` and dispatched through `executeMCPTool`.
+- MCP config is loaded from `.grok/settings.json` under `mcpServers`.
+- Supported transports: stdio, HTTP, SSE (defined in `src/mcp/transports.ts`).
