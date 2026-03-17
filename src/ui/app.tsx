@@ -223,7 +223,9 @@ export function App({ agent, initialMessage }: AppProps) {
         <box flexDirection="column" gap={1} padding={1}>
           {showHelp && <HelpPanel />}
           {messages.map((msg, i) => (
-            <MessageView key={i} entry={msg} />
+            <box key={i} flexDirection="column">
+              <MessageView entry={msg} />
+            </box>
           ))}
           {activeToolCalls.length > 0 && (
             <box flexDirection="column">
@@ -242,7 +244,7 @@ export function App({ agent, initialMessage }: AppProps) {
           {streamContent && (
             <box flexDirection="column">
               <text fg="#34d399"><b>{"✦ Grok"}</b></text>
-              <text fg="#e2e8f0" wrapMode="word">{streamContent}</text>
+              <text fg="#e2e8f0">{streamContent}</text>
             </box>
           )}
           {isProcessing && !streamContent && activeToolCalls.length === 0 && (
@@ -298,7 +300,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
       return (
         <box flexDirection="column">
           <text fg="#60a5fa"><b>{"❯ You"}</b></text>
-          <text fg="#cbd5e1" wrapMode="word">{entry.content}</text>
+          <text fg="#cbd5e1">{entry.content}</text>
         </box>
       );
 
@@ -306,7 +308,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
       return (
         <box flexDirection="column">
           <text fg="#34d399"><b>{"✦ Grok"}</b></text>
-          <text fg="#e2e8f0" wrapMode="word">{entry.content}</text>
+          <text fg="#e2e8f0">{entry.content}</text>
         </box>
       );
 
@@ -320,11 +322,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
       return (
         <box flexDirection="column">
           <text fg={color}>{`${icon} ${name}`}</text>
-          {output && (
-            <box>
-              <text fg="#9ca3af" wrapMode="word">{output}</text>
-            </box>
-          )}
+          {output && <text fg="#9ca3af">{output}</text>}
         </box>
       );
     }
