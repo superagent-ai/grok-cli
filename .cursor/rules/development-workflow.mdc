@@ -1,6 +1,6 @@
 ---
-description: Development workflow, scripts, and common tasks
-globs:
+description: Development workflow and common commands
+globs: "**/*"
 alwaysApply: true
 ---
 
@@ -8,19 +8,16 @@ alwaysApply: true
 
 ## Prerequisites
 
-- Node.js 18+ (required)
-- Bun 1.0+ (preferred, npm as fallback)
+- Bun 1.0+ (required)
 
 ## Common Commands
 
 ```bash
 # Install dependencies
-bun install          # preferred
-npm install          # fallback
+bun install
 
-# Development (runs from source)
-bun run dev          # uses Bun runtime
-bun run dev:node     # uses tsx (Node.js + TypeScript)
+# Development (runs from source with Bun)
+bun run dev
 
 # Build (compile TypeScript to dist/)
 bun run build
@@ -32,19 +29,17 @@ bun run typecheck
 bun run lint
 
 # Run the built CLI
-bun run start        # Node.js
-bun run start:bun    # Bun runtime
+bun run start
 ```
 
 ## Environment Variables
 
 | Variable | Required | Description |
-|----------|----------|-------------|
-| `GROK_API_KEY` | Yes | API key for Grok / OpenAI-compatible provider |
+|----|----|----|
+| `GROK_API_KEY` | Yes | API key for xAI Grok |
 | `GROK_BASE_URL` | No | Custom API endpoint (default: `https://api.x.ai/v1`) |
-| `GROK_MODEL` | No | Model override (default: `grok-code-fast-1`) |
-| `GROK_MAX_TOKENS` | No | Max tokens per response (default: 1536) |
-| `MORPH_API_KEY` | No | Enables Morph Fast Apply editing |
+| `GROK_MODEL` | No | Model override (default: `grok-4-1-fast`) |
+| `GROK_MAX_TOKENS` | No | Max tokens per response (default: 16384) |
 
 Copy `.env.example` to `.env` and fill in your values.
 
@@ -58,5 +53,6 @@ Copy `.env.example` to `.env` and fill in your values.
 ## Project Structure Conventions
 
 - Source code lives in `src/`, compiled output in `dist/` (gitignored).
-- No test framework is configured yet — if adding tests, prefer Vitest for ESM compatibility.
 - The CLI entry point is `src/index.ts` which uses Commander.js for argument parsing.
+- UI is built with OpenTUI React (`@opentui/react`).
+- Only tool is bash — all file operations happen through shell commands.

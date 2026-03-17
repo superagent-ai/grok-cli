@@ -1,86 +1,53 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { ToolResult } from '../types/index.js';
-import { ConfirmationService } from '../utils/confirmation-service.js';
+import { exec } from "child_process";
+import { promisify } from "util";
+import type { ToolResult } from "../types/index.js";
 
 const execAsync = promisify(exec);
 
 export class BashTool {
-  private currentDirectory: string = process.cwd();
-  private confirmationService = ConfirmationService.getInstance();
+  private cwd: string = process.cwd();
 
-
-  async execute(command: string, timeout: number = 30000): Promise<ToolResult> {
+  async execute(command: string, timeout = 30_000): Promise<ToolResult> {
     try {
-      // Check if user has already accepted bash commands for this session
-      const sessionFlags = this.confirmationService.getSessionFlags();
-      if (!sessionFlags.bashCommands && !sessionFlags.allOperations) {
-        // Request confirmation showing the command
-        const confirmationResult = await this.confirmationService.requestConfirmation({
-          operation: 'Run bash command',
-          filename: command,
-          showVSCodeOpen: false,
-          content: `Command: ${command}\nWorking directory: ${this.currentDirectory}`
-        }, 'bash');
-
-        if (!confirmationResult.confirmed) {
-          return {
-            success: false,
-            error: confirmationResult.feedback || 'Command execution cancelled by user'
-          };
-        }
-      }
-
-      if (command.startsWith('cd ')) {
-        const newDir = command.substring(3).trim();
+      if (command.startsWith("cd ")) {
+        const dir = command.substring(3).trim().replace(/^["']|["']$/g, "");
         try {
-          process.chdir(newDir);
-          this.currentDirectory = process.cwd();
-          return {
-            success: true,
-            output: `Changed directory to: ${this.currentDirectory}`
-          };
-        } catch (error: any) {
-          return {
-            success: false,
-            error: `Cannot change directory: ${error.message}`
-          };
+          process.chdir(dir);
+          this.cwd = process.cwd();
+          return { success: true, output: `Changed directory to: ${this.cwd}` };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { success: false, error: `Cannot change directory: ${msg}` };
         }
       }
 
       const { stdout, stderr } = await execAsync(command, {
-        cwd: this.currentDirectory,
+        cwd: this.cwd,
         timeout,
-        maxBuffer: 1024 * 1024
+        maxBuffer: 10 * 1024 * 1024,
+        env: { ...process.env, FORCE_COLOR: "0" },
       });
 
-      const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : '');
-      
+      const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
       return {
         success: true,
-        output: output.trim() || 'Command executed successfully (no output)'
+        output: output.trim() || "Command executed successfully (no output)",
       };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: `Command failed: ${error.message}`
-      };
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "stdout" in err) {
+        const execErr = err as { stdout?: string; stderr?: string; message: string };
+        const output =
+          (execErr.stdout || "") + (execErr.stderr ? `\nSTDERR: ${execErr.stderr}` : "");
+        if (output.trim()) {
+          return { success: false, error: output.trim() };
+        }
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `Command failed: ${msg}` };
     }
   }
 
-  getCurrentDirectory(): string {
-    return this.currentDirectory;
-  }
-
-  async listFiles(directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`ls -la ${directory}`);
-  }
-
-  async findFiles(pattern: string, directory: string = '.'): Promise<ToolResult> {
-    return this.execute(`find ${directory} -name "${pattern}" -type f`);
-  }
-
-  async grep(pattern: string, files: string = '.'): Promise<ToolResult> {
-    return this.execute(`grep -r "${pattern}" ${files}`);
+  getCwd(): string {
+    return this.cwd;
   }
 }

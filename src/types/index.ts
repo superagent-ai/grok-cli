@@ -2,33 +2,61 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
-  data?: any;
 }
 
-export interface Tool {
-  name: string;
-  description: string;
-  execute: (...args: any[]) => Promise<ToolResult>;
+export interface Message {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
 }
 
-export interface EditorCommand {
-  command: 'view' | 'str_replace' | 'create' | 'insert' | 'undo_edit';
-  path?: string;
-  old_str?: string;
-  new_str?: string;
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+  };
+}
+
+export interface ChatEntry {
+  type: "user" | "assistant" | "tool_call" | "tool_result" | "search_result";
+  content: string;
+  timestamp: Date;
+  toolCalls?: ToolCall[];
+  toolCall?: ToolCall;
+  toolResult?: ToolResult;
+  isStreaming?: boolean;
+}
+
+export interface StreamChunk {
+  type: "content" | "tool_calls" | "tool_result" | "search_result" | "done" | "error" | "reasoning";
   content?: string;
-  insert_line?: number;
-  view_range?: [number, number];
-  replace_all?: boolean;
+  toolCalls?: ToolCall[];
+  toolCall?: ToolCall;
+  toolResult?: ToolResult;
 }
 
-export interface AgentState {
-  currentDirectory: string;
-  editHistory: EditorCommand[];
-  tools: Tool[];
-}
-
-export interface ConfirmationState {
-  skipThisSession: boolean;
-  pendingOperation: boolean;
+export interface ModelInfo {
+  id: string;
+  name: string;
+  contextWindow: number;
+  inputPrice: number;
+  outputPrice: number;
+  reasoning: boolean;
+  description: string;
 }

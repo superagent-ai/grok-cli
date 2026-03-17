@@ -5,17 +5,17 @@
     "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "sourceMap": true,
     "resolveJsonModule": true,
-    "jsx": "react",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react",
     "moduleResolution": "Bundler",
-    "allowSyntheticDefaultImports": true,
-    "noImplicitAny": false
+    "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
