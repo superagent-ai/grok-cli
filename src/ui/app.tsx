@@ -213,7 +213,7 @@ export function App({ agent, initialMessage }: AppProps) {
   }
 
   return (
-    <box flexDirection="column" width="100%" height="100%">
+    <box flexDirection="column" width="100%" height="100%" backgroundColor="#0f172a">
       <StatusBar model={model} cwd={agent.getCwd()} isProcessing={isProcessing} />
       <scrollbox
         ref={scrollRef}
@@ -240,8 +240,9 @@ export function App({ agent, initialMessage }: AppProps) {
             </box>
           )}
           {streamContent && (
-            <box>
-              <text fg="#e2e8f0">{streamContent}</text>
+            <box flexDirection="column">
+              <text fg="#34d399"><b>{"✦ Grok"}</b></text>
+              <text fg="#e2e8f0" wrapMode="word">{streamContent}</text>
             </box>
           )}
           {isProcessing && !streamContent && activeToolCalls.length === 0 && (
@@ -259,6 +260,9 @@ export function App({ agent, initialMessage }: AppProps) {
           ref={inputRef}
           focused={!isProcessing && !showModelPicker}
           placeholder={isProcessing ? "Processing... (Esc to cancel)" : "Type a message... (/help for commands)"}
+          textColor="#e2e8f0"
+          backgroundColor="#0f172a"
+          placeholderColor="#6b7280"
           onSubmit={handleSubmit as any}
         />
       </box>
@@ -294,7 +298,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
       return (
         <box flexDirection="column">
           <text fg="#60a5fa"><b>{"❯ You"}</b></text>
-          <text content={entry.content} />
+          <text fg="#cbd5e1" wrapMode="word">{entry.content}</text>
         </box>
       );
 
@@ -302,7 +306,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
       return (
         <box flexDirection="column">
           <text fg="#34d399"><b>{"✦ Grok"}</b></text>
-          <text fg="#e2e8f0">{entry.content}</text>
+          <text fg="#e2e8f0" wrapMode="word">{entry.content}</text>
         </box>
       );
 
@@ -318,7 +322,7 @@ function MessageView({ entry }: { entry: ChatEntry }) {
           <text fg={color}>{`${icon} ${name}`}</text>
           {output && (
             <box>
-              <text fg="#9ca3af">{output}</text>
+              <text fg="#9ca3af" wrapMode="word">{output}</text>
             </box>
           )}
         </box>
@@ -358,7 +362,7 @@ function ModelPicker({ currentModel, selectedIndex }: { currentModel: string; se
   const models = getAvailableModels();
 
   return (
-    <box flexDirection="column" width="100%" height="100%">
+    <box flexDirection="column" width="100%" height="100%" backgroundColor="#0f172a">
       <box
         border
         borderStyle="rounded"
