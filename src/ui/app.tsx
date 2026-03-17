@@ -341,7 +341,7 @@ function HelpPanel() {
       <text fg="#94a3b8">{"/clear    — Clear chat history"}</text>
       <text fg="#94a3b8">{"/help     — Toggle this help"}</text>
       <text fg="#94a3b8">{"/quit     — Exit"}</text>
-      <br />
+      <text>{" "}</text>
       <text fg="#e2e8f0"><b>{"Shortcuts"}</b></text>
       <text fg="#94a3b8">{"Esc       — Cancel current operation"}</text>
       <text fg="#94a3b8">{"Enter     — Send message"}</text>
