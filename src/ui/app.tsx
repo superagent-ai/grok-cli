@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
 import type { ChatEntry, ToolCall, StreamChunk } from "../types/index.js";
@@ -16,7 +16,6 @@ export function App({ agent, initialMessage }: AppProps) {
   const [streamContent, setStreamContent] = useState("");
   const [streamReasoning, setStreamReasoning] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [inputValue, setInputValue] = useState("");
   const [model, setModel] = useState(agent.getModel());
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
@@ -24,8 +23,8 @@ export function App({ agent, initialMessage }: AppProps) {
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const inputRef = useRef<InputRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
+  const contentAccRef = useRef("");
 
   const scrollToBottom = useCallback(() => {
     try {
@@ -43,6 +42,7 @@ export function App({ agent, initialMessage }: AppProps) {
       setStreamContent("");
       setStreamReasoning("");
       setActiveToolCalls([]);
+      contentAccRef.current = "";
 
       setMessages((prev) => [
         ...prev,
@@ -55,7 +55,8 @@ export function App({ agent, initialMessage }: AppProps) {
         for await (const chunk of agent.processMessage(text.trim())) {
           switch (chunk.type) {
             case "content":
-              setStreamContent((prev) => prev + (chunk.content || ""));
+              contentAccRef.current += chunk.content || "";
+              setStreamContent(contentAccRef.current);
               setTimeout(scrollToBottom, 10);
               break;
             case "reasoning":
@@ -63,6 +64,15 @@ export function App({ agent, initialMessage }: AppProps) {
               break;
             case "tool_calls":
               if (chunk.toolCalls) {
+                if (contentAccRef.current.trim()) {
+                  const savedContent = contentAccRef.current;
+                  setMessages((prev) => [
+                    ...prev,
+                    { type: "assistant", content: savedContent, timestamp: new Date() },
+                  ]);
+                  contentAccRef.current = "";
+                  setStreamContent("");
+                }
                 setActiveToolCalls(chunk.toolCalls);
               }
               break;
@@ -85,32 +95,27 @@ export function App({ agent, initialMessage }: AppProps) {
               }
               break;
             case "error":
-              setStreamContent((prev) => prev + `\n${chunk.content || "Unknown error"}`);
+              contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
+              setStreamContent(contentAccRef.current);
               break;
             case "done":
               break;
           }
         }
       } catch {
-        setStreamContent((prev) => prev + "\nAn unexpected error occurred.");
+        contentAccRef.current += "\nAn unexpected error occurred.";
+        setStreamContent(contentAccRef.current);
       }
 
-      const finalContent = (() => {
-        let c = "";
-        setStreamContent((prev) => {
-          c = prev;
-          return prev;
-        });
-        return c;
-      })();
-
-      if (finalContent.trim()) {
+      if (contentAccRef.current.trim()) {
+        const finalContent = contentAccRef.current;
         setMessages((prev) => [
           ...prev,
           { type: "assistant", content: finalContent, timestamp: new Date() },
         ]);
       }
 
+      contentAccRef.current = "";
       setStreamContent("");
       setStreamReasoning("");
       setActiveToolCalls([]);
