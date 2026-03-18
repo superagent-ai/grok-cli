@@ -78,8 +78,3 @@ export function getCurrentModel(): string {
   const user = loadUserSettings();
   return user.defaultModel || DEFAULT_MODEL;
 }
-
-export function getAvailableModels(): string[] {
-  const user = loadUserSettings();
-  return user.models || getModelIds();
-}

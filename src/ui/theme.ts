@@ -8,6 +8,7 @@ export const dark = {
   textMuted: "#666666",
   textDim: "#444444",
   primary: "#ffffff",
+  accent: "#5c9cf5",
   selected: "#ffffff",
   selectedBg: "#2a2a2a",
 } as const;

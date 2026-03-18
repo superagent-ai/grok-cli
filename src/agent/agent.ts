@@ -2,7 +2,7 @@ import { GrokClient } from "../grok/client.js";
 import { TOOLS } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
 import { loadCustomInstructions } from "../utils/instructions.js";
-import type { AgentMode, ChatEntry, Message, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
+import type { AgentMode, Message, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -69,7 +69,6 @@ export class Agent {
   private client: GrokClient;
   private bash: BashTool;
   private messages: Message[] = [];
-  private history: ChatEntry[] = [];
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
   private mode: AgentMode = "agent";
@@ -104,12 +103,12 @@ export class Agent {
     };
   }
 
-  getHistory(): ChatEntry[] {
-    return [...this.history];
-  }
-
   getCwd(): string {
     return this.bash.getCwd();
+  }
+
+  generateTitle(userMessage: string): Promise<string> {
+    return this.client.generateTitle(userMessage);
   }
 
   abort(): void {
@@ -121,18 +120,11 @@ export class Agent {
       role: "system",
       content: buildSystemPrompt(this.bash.getCwd(), this.mode),
     }];
-    this.history = [];
   }
 
   async *processMessage(userMessage: string): AsyncGenerator<StreamChunk, void, unknown> {
     this.abortController = new AbortController();
 
-    const userEntry: ChatEntry = {
-      type: "user",
-      content: userMessage,
-      timestamp: new Date(),
-    };
-    this.history.push(userEntry);
     this.messages.push({ role: "user", content: userMessage });
 
     let toolRounds = 0;
@@ -178,13 +170,6 @@ export class Agent {
           tool_calls: accToolCalls,
         });
 
-        this.history.push({
-          type: "assistant",
-          content: accContent || "",
-          timestamp: new Date(),
-          toolCalls: accToolCalls,
-        });
-
         if (!accToolCalls || accToolCalls.length === 0) {
           break;
         }
@@ -201,14 +186,6 @@ export class Agent {
           const result = await this.executeTool(tc);
 
           yield { type: "tool_result", toolCall: tc, toolResult: result };
-
-          this.history.push({
-            type: "tool_result",
-            content: result.success ? (result.output || "Success") : (result.error || "Error"),
-            timestamp: new Date(),
-            toolCall: tc,
-            toolResult: result,
-          });
 
           this.messages.push({
             role: "tool",

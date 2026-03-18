@@ -6,7 +6,6 @@ export interface StreamDelta {
   content?: string;
   toolCalls?: ToolCall[];
   reasoning?: string;
-  finishReason?: string | null;
 }
 
 export class GrokClient {
@@ -60,7 +59,7 @@ export class GrokClient {
       const choice = chunk.choices?.[0];
       if (!choice) continue;
 
-      const delta: StreamDelta = { finishReason: choice.finish_reason };
+      const delta: StreamDelta = {};
 
       if (choice.delta?.content) {
         delta.content = choice.delta.content;
@@ -103,6 +102,37 @@ export class GrokClient {
 
   async searchX(query: string): Promise<string> {
     return this.search(query, "x_search");
+  }
+
+  async generateTitle(userMessage: string): Promise<string> {
+    try {
+      const response = await this.client.chat.completions.create({
+        model: "grok-3-mini-fast",
+        temperature: 0.5,
+        max_tokens: 60,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are a title generator. Output ONLY a short title. Nothing else.",
+              "Rules:",
+              "- Single line, ≤50 characters",
+              "- Use the same language as the user message",
+              "- Focus on the main topic or intent",
+              "- Keep technical terms, filenames, numbers exact",
+              "- Remove filler words (the, this, my, a, an)",
+              "- Never use tools or explain anything",
+              "- If the message is a greeting, output something like 'Quick chat'",
+            ].join("\n"),
+          },
+          { role: "user", content: userMessage },
+        ],
+      });
+      const title = response.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, "");
+      return title || "New session";
+    } catch {
+      return "New session";
+    }
   }
 
   private async search(query: string, toolType: "web_search" | "x_search"): Promise<string> {

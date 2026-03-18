@@ -35,10 +35,12 @@ async function startInteractive(
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
 
   const renderer = await createCliRenderer({
-    exitOnCtrlC: true,
+    exitOnCtrlC: false,
   });
 
-  createRoot(renderer).render(createElement(App, { agent, initialMessage }));
+  const onExit = () => { renderer.destroy(); process.exit(0); };
+
+  createRoot(renderer).render(createElement(App, { agent, initialMessage, onExit }));
 }
 
 async function runHeadless(

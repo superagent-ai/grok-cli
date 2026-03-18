@@ -1,12 +1,23 @@
+import os from "os";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
+import { decodePasteBytes, PasteEvent } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
-import type { ChatEntry, ToolCall, AgentMode } from "../types/index.js";
+import type { ChatEntry, ToolCall, AgentMode, ModelInfo } from "../types/index.js";
 import { MODES } from "../types/index.js";
-import { getModelInfo, MODEL_GROUPS, MODELS } from "../grok/models.js";
+import { getModelInfo, MODELS } from "../grok/models.js";
 import { saveProjectSettings } from "../utils/settings.js";
 import { dark, type Theme } from "./theme.js";
+
+const GROK_LOGO = [
+  "  █▃▆▃▐▃▆▃=.                 <▆█",
+  " ▅▆<    .@▆#                 <▆█",
+  "@▆░          I▀▅▌▌▌ @▆▐▌▌▃▆! <▆█  ~▆▀",
+  "▒▆░  .*▆▆▆▆▆ _▆▁   ▒▆=   i▅▄I<▆█|▁▂/",
+  "+▆▐:     I▁▆ _▆▁   ▆▆=    ▅▂\\<▆▓|▃▄l",
+  " █▆▃l....▆▆! _▆▁   ,▆▀i .█▆▌ <▆█  ▃▆/",
+].join("\n");
 
 const SPLIT = {
   topLeft: "", bottomLeft: "", vertical: "┃", topRight: "",
@@ -20,9 +31,25 @@ const EMPTY = {
   cross: "", leftT: "", rightT: "",
 };
 
-interface AppProps { agent: Agent; initialMessage?: string }
+interface SlashMenuItem {
+  id: string;
+  label: string;
+  description: string;
+}
 
-export function App({ agent, initialMessage }: AppProps) {
+const SLASH_MENU_ITEMS: SlashMenuItem[] = [
+  { id: "exit", label: "exit", description: "Quit the CLI" },
+  { id: "help", label: "help", description: "Show available commands" },
+  { id: "mcps", label: "mcps", description: "Manage MCP servers" },
+  { id: "models", label: "models", description: "Select a model" },
+  { id: "new", label: "new session", description: "Start a new session" },
+  { id: "review", label: "review", description: "Review recent changes" },
+  { id: "skills", label: "skills", description: "Manage skills" },
+];
+
+interface AppProps { agent: Agent; initialMessage?: string; onExit?: () => void }
+
+export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [streamContent, setStreamContent] = useState("");
@@ -32,9 +59,16 @@ export function App({ agent, initialMessage }: AppProps) {
   const [mode, setModeState] = useState<AgentMode>(agent.getMode());
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
-  const [toolCallCount, setToolCallCount] = useState(0);
-  const inputRef = useRef<InputRenderable>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [slashSearchQuery, setSlashSearchQuery] = useState("");
+  const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>([]);
+  const imageCounterRef = useRef(0);
+  const pasteCounterRef = useRef(0);
+  const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
@@ -50,6 +84,19 @@ export function App({ agent, initialMessage }: AppProps) {
   const modeInfo = MODES.find((m) => m.id === mode)!;
   const modelInfo = getModelInfo(model);
   const flatModels = MODELS.map((m) => m.id);
+  const filteredModels = modelSearchQuery
+    ? MODELS.filter((m) =>
+        m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+        m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())
+      )
+    : MODELS;
+  const filteredModelIds = filteredModels.map((m) => m.id);
+  const filteredSlashItems = slashSearchQuery
+    ? SLASH_MENU_ITEMS.filter((item) =>
+        item.label.toLowerCase().includes(slashSearchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(slashSearchQuery.toLowerCase())
+      )
+    : SLASH_MENU_ITEMS;
 
   const scrollToBottom = useCallback(() => {
     try { scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999); } catch { /* */ }
@@ -58,7 +105,8 @@ export function App({ agent, initialMessage }: AppProps) {
   const processMessage = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
     setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); contentAccRef.current = "";
-    setToolCallCount(0); startTimeRef.current = Date.now();
+    startTimeRef.current = Date.now();
+    if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
     setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date() }]);
     setTimeout(scrollToBottom, 50);
     try {
@@ -80,7 +128,6 @@ export function App({ agent, initialMessage }: AppProps) {
                 contentAccRef.current = ""; setStreamContent("");
               }
               setActiveToolCalls(chunk.toolCalls);
-              setToolCallCount((c) => c + chunk.toolCalls!.length);
             }
             break;
           case "tool_result":
@@ -119,35 +166,137 @@ export function App({ agent, initialMessage }: AppProps) {
 
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
-    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); return true; }
-    if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(Math.max(0, flatModels.indexOf(model))); return true; }
-    if (c === "/quit" || c === "/exit" || c === "/q") { process.exit(0); }
+    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); imageCounterRef.current = 0; return true; }
+    if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery(""); return true; }
+    if (c === "/quit" || c === "/exit" || c === "/q") { onExit ? onExit() : process.exit(0); }
     return false;
   }, [agent, model, flatModels]);
 
+  const handleSlashMenuSelect = useCallback((item: SlashMenuItem) => {
+    setShowSlashMenu(false);
+    inputRef.current?.clear();
+    switch (item.id) {
+      case "new":
+        agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]);
+        break;
+      case "models":
+        setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery("");
+        break;
+      case "exit":
+        onExit ? onExit() : process.exit(0);
+        break;
+      case "help":
+        setMessages((p) => [...p, { type: "assistant", content: SLASH_MENU_ITEMS.map((i) => `/${i.label} — ${i.description}`).join("\n"), timestamp: new Date() }]);
+        break;
+      case "skills":
+        setMessages((p) => [...p, { type: "assistant", content: "Skills management coming soon.", timestamp: new Date() }]);
+        break;
+      case "mcps":
+        setMessages((p) => [...p, { type: "assistant", content: "MCP server management coming soon.", timestamp: new Date() }]);
+        break;
+      case "review":
+        setMessages((p) => [...p, { type: "assistant", content: "Review feature coming soon.", timestamp: new Date() }]);
+        break;
+    }
+  }, [agent, flatModels, model]);
+
   useKeyboard((key) => {
-    if (showModelPicker) {
-      if (key.name === "escape") { setShowModelPicker(false); return; }
-      if (key.name === "up") { setModelPickerIndex((i) => Math.max(0, i - 1)); return; }
-      if (key.name === "down") { setModelPickerIndex((i) => Math.min(flatModels.length - 1, i + 1)); return; }
+    if (showSlashMenu) {
+      if (key.name === "escape") { setShowSlashMenu(false); setSlashSearchQuery(""); inputRef.current?.clear(); return; }
+      if (key.name === "up") { setSlashMenuIndex((i) => Math.max(0, i - 1)); return; }
+      if (key.name === "down") { setSlashMenuIndex((i) => Math.min(filteredSlashItems.length - 1, i + 1)); return; }
       if (key.name === "return") {
-        const sel = flatModels[modelPickerIndex];
+        const item = filteredSlashItems[slashMenuIndex];
+        if (item) handleSlashMenuSelect(item);
+        setSlashSearchQuery("");
+        return;
+      }
+      if (key.name === "backspace") {
+        setSlashSearchQuery((q) => q.slice(0, -1));
+        setSlashMenuIndex(0);
+        return;
+      }
+      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+        setSlashSearchQuery((q) => q + key.sequence);
+        setSlashMenuIndex(0);
+        return;
+      }
+      return;
+    }
+    if (showModelPicker) {
+      if (key.name === "escape") { setShowModelPicker(false); setModelSearchQuery(""); return; }
+      if (key.name === "up") { setModelPickerIndex((i) => Math.max(0, i - 1)); return; }
+      if (key.name === "down") { setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1)); return; }
+      if (key.name === "return") {
+        const sel = filteredModelIds[modelPickerIndex];
         if (sel) { agent.setModel(sel); setModel(sel); saveProjectSettings({ model: sel }); }
-        setShowModelPicker(false); return;
+        setShowModelPicker(false); setModelSearchQuery(""); return;
+      }
+      if (key.name === "backspace") {
+        setModelSearchQuery((q) => q.slice(0, -1));
+        setModelPickerIndex(0);
+        return;
+      }
+      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+        setModelSearchQuery((q) => q + key.sequence);
+        setModelPickerIndex(0);
+        return;
       }
       return;
     }
     if (isProcessing && key.name === "escape") { agent.abort(); return; }
+    if (key.sequence === "/" && !isProcessing) {
+      const text = inputRef.current?.plainText || "";
+      if (!text.trim()) { setShowSlashMenu(true); setSlashMenuIndex(0); setSlashSearchQuery(""); return; }
+    }
+    if (key.name === "c" && key.ctrl) {
+      const text = inputRef.current?.plainText || "";
+      if (text.trim()) { inputRef.current?.clear(); setPasteBlocks([]); } else { onExit ? onExit() : process.exit(0); }
+      return;
+    }
     if (key.name === "tab" && !isProcessing) { cycleMode(); return; }
   });
 
+  const handlePaste = useCallback((event: PasteEvent) => {
+    const text = decodePasteBytes(event.bytes);
+    const trimmed = text.trim();
+    const imageExts = /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff?)$/i;
+    if (imageExts.test(trimmed) && !trimmed.includes("\n")) {
+      event.preventDefault();
+      const id = ++pasteCounterRef.current;
+      const imgNum = ++imageCounterRef.current;
+      setPasteBlocks((prev) => [...prev, { id, content: trimmed, lines: 1, isImage: true }]);
+      inputRef.current?.insertText(`[Image ${imgNum}]`);
+      return;
+    }
+    const lineCount = text.split("\n").length;
+    if (lineCount < 2) return;
+    event.preventDefault();
+    const id = ++pasteCounterRef.current;
+    setPasteBlocks((prev) => [...prev, { id, content: text, lines: lineCount }]);
+    inputRef.current?.insertText(`[Pasted ~${lineCount} lines]`);
+  }, []);
+
   const handleSubmit = useCallback(() => {
-    const v = inputRef.current?.value || "";
-    if (!v.trim()) return;
-    if (inputRef.current) inputRef.current.value = "";
-    if (handleCommand(v)) return;
-    processMessage(v);
-  }, [handleCommand, processMessage]);
+    const raw = inputRef.current?.plainText || "";
+    if (!raw.trim() && pasteBlocks.length === 0) return;
+    inputRef.current?.clear();
+    let message = raw;
+    const blocks = [...pasteBlocks];
+    let imgIdx = 0;
+    setPasteBlocks([]);
+    for (const block of blocks) {
+      if (block.isImage) {
+        imgIdx++;
+        message = message.replace(`[Image ${imgIdx}]`, block.content);
+      } else {
+        message = message.replace(`[Pasted ~${block.lines} lines]`, block.content);
+      }
+    }
+    if (!message.trim()) return;
+    if (handleCommand(message)) return;
+    processMessage(message);
+  }, [handleCommand, processMessage, pasteBlocks]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -156,7 +305,7 @@ export function App({ agent, initialMessage }: AppProps) {
       {hasMessages ? (
         <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
           {/* Session header — ┃ left-border panel like OpenCode's Header */}
-          <SessionHeader t={t} model={model} modelInfo={modelInfo} modeInfo={modeInfo} />
+          <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} />
           {/* Scrollable messages */}
           <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
             {messages.map((msg, i) => (
@@ -185,8 +334,9 @@ export function App({ agent, initialMessage }: AppProps) {
           </scrollbox>
           {/* Prompt */}
           <box flexShrink={0}>
-            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
-              onSubmit={handleSubmit} mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
+            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu}
+              onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
+              modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
           </box>
         </box>
       ) : (
@@ -195,41 +345,35 @@ export function App({ agent, initialMessage }: AppProps) {
           <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
             <box flexGrow={1} minHeight={0} />
             <box flexShrink={0} alignItems="center">
-              <text fg={t.primary}><b>{"  ✦  G R O K"}</b></text>
-              <box height={1} />
-              <text fg={t.textMuted}>{"AI coding agent for the terminal"}</text>
+              <text fg={t.text}>{GROK_LOGO}</text>
             </box>
             <box height={3} minHeight={0} flexShrink={1} />
             <box width="100%" maxWidth={75} flexShrink={0}>
-              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
-                onSubmit={handleSubmit} mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo}
-                placeholder={'Ask anything... "Fix broken tests"'} />
+              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu}
+                onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
+                modeInfo={modeInfo} model={model} modelInfo={modelInfo}
+                placeholder={"What are we building?"} />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
-            <box flexDirection="row" gap={3}>
-              <text fg={t.textDim}>{"tab"}<span style={{ fg: t.textMuted }}>{" cycle modes"}</span></text>
-              <text fg={t.textDim}>{"/model"}<span style={{ fg: t.textMuted }}>{" switch"}</span></text>
-              <text fg={t.textDim}>{"/quit"}<span style={{ fg: t.textMuted }}>{" exit"}</span></text>
-            </box>
             <box flexGrow={1} minHeight={0} />
           </box>
           <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
-            <text fg={t.textDim}>{agent.getCwd()}</text>
+            <text fg={t.textDim}>{agent.getCwd().replace(os.homedir(), "~")}</text>
             <box flexGrow={1} />
-            <text fg={t.textDim}>{"grok-cli v1.0"}</text>
+            <text fg={t.textDim}>{"v1.0.0"}</text>
           </box>
         </>
       )}
-      {showModelPicker && <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} />}
+      {showSlashMenu && <SlashMenuModal t={t} selectedIndex={slashMenuIndex} width={width} height={height} searchQuery={slashSearchQuery} filteredItems={filteredSlashItems} />}
+      {showModelPicker && <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} searchQuery={modelSearchQuery} filteredModels={filteredModels} />}
     </box>
   );
 }
 
 /* ── Session Header ──────────────────────────────────────────── */
 
-function SessionHeader({ t, model, modelInfo, modeInfo }: {
-  t: Theme; model: string; modelInfo: ReturnType<typeof getModelInfo>;
-  modeInfo: typeof MODES[number];
+function SessionHeader({ t, modeInfo, sessionTitle }: {
+  t: Theme; modeInfo: typeof MODES[number]; sessionTitle: string | null;
 }) {
   return (
     <box flexShrink={0}>
@@ -238,7 +382,10 @@ function SessionHeader({ t, model, modelInfo, modeInfo }: {
         border={["left"]} customBorderChars={SPLIT} borderColor={t.border}
         backgroundColor={t.backgroundPanel}
       >
-        <text fg={t.text}><b>{"# "}{modelInfo?.name || model}</b></text>
+        <text>
+          <span style={{ fg: modeInfo.color }}><b>{modeInfo.label}</b></span>
+          {sessionTitle ? <span style={{ fg: t.text }}><b>{": "}{sessionTitle}</b></span> : null}
+        </text>
       </box>
     </box>
   );
@@ -246,40 +393,48 @@ function SessionHeader({ t, model, modelInfo, modeInfo }: {
 
 /* ── Prompt Box ──────────────────────────────────────────────── */
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, onSubmit, mode, modeInfo, model, modelInfo, placeholder }: {
-  t: Theme; inputRef: React.RefObject<InputRenderable | null>;
-  isProcessing: boolean; showModelPicker: boolean; onSubmit: () => void;
-  mode: AgentMode; modeInfo: typeof MODES[number]; model: string;
+const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
+  { name: "return", action: "submit" },
+  { name: "return", shift: true, action: "newline" },
+];
+
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder }: {
+  t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
+  isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; onSubmit: () => void;
+  onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
+  modeInfo: typeof MODES[number]; model: string;
   modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
 }) {
   return (
     <box>
-      <box border={["left"]} customBorderChars={SPLIT_END} borderColor={modeInfo.color}>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} backgroundColor={t.backgroundElement} flexShrink={0}>
-          <input
-            ref={inputRef} focused={!isProcessing && !showModelPicker}
+      <box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={2} backgroundColor={t.backgroundElement} flexShrink={0}>
+          <textarea
+            ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu}
             placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
             textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
+            minHeight={1} maxHeight={10} wrapMode="word"
+            keyBindings={TEXTAREA_KEYBINDINGS}
             onSubmit={onSubmit as any}
+            onPaste={onPaste as any}
           />
-          <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1}>
-            <text fg={modeInfo.color}><b>{modeInfo.label}</b>{" "}</text>
-            <text fg={t.text}>{modelInfo?.name || model}</text>
-          </box>
         </box>
       </box>
-      <box height={1} border={["left"]} borderColor={modeInfo.color} customBorderChars={{ ...EMPTY, vertical: "╹" }}>
-        <box height={1} border={["bottom"]} borderColor={t.backgroundElement} customBorderChars={{ ...EMPTY, horizontal: "▀" }} />
-      </box>
-      <box flexDirection="row" justifyContent="flex-end" gap={3}>
-        {isProcessing ? (
-          <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
-        ) : (
-          <>
-            <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
-            <text fg={t.text}>{"ctrl+p "}<span style={{ fg: t.textMuted }}>{"commands"}</span></text>
-          </>
-        )}
+      <box flexDirection="row" justifyContent="space-between" alignItems="center" backgroundColor={t.backgroundPanel} paddingLeft={2} paddingRight={2} border={["top", "bottom"]} borderColor={t.backgroundPanel} customBorderChars={EMPTY}>
+        <box flexDirection="row" gap={2} alignItems="center">
+          <text fg={modeInfo.color}><b>{modeInfo.label}</b>{" "}</text>
+          <text fg={t.text}>{modelInfo?.name || model}</text>
+        </box>
+        <box flexDirection="row" gap={3} alignItems="center">
+          {isProcessing ? (
+            <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
+          ) : (
+            <>
+              <text fg={t.text}>{"shift+enter "}<span style={{ fg: t.textMuted }}>{"new line"}</span></text>
+              <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
+            </>
+          )}
+        </box>
       </box>
     </box>
   );
@@ -376,48 +531,99 @@ function InlineTool({ t, icon, pending, children }: { t: Theme; icon: string; pe
   );
 }
 
-/* ── Model Picker ────────────────────────────────────────────── */
+/* ── Slash Menu ──────────────────────────────────────────────── */
 
-function ModelPickerModal({ t, currentModel, selectedIndex, width, height }: {
-  t: Theme; currentModel: string; selectedIndex: number; width: number; height: number;
+function SlashMenuModal({ t, selectedIndex, width, height, searchQuery, filteredItems }: {
+  t: Theme; selectedIndex: number; width: number; height: number;
+  searchQuery: string; filteredItems: SlashMenuItem[];
 }) {
-  let flatIdx = 0;
+  const listRef = useRef<ScrollBoxRenderable>(null);
+  useEffect(() => {
+    const item = filteredItems[selectedIndex];
+    if (item) listRef.current?.scrollChildIntoView(`slash-${item.id}`);
+  }, [selectedIndex, filteredItems]);
+
+  const itemCount = Math.max(filteredItems.length, 1);
+  const contentHeight = itemCount + 5;
+  const maxH = Math.floor(height * 0.6);
+  const panelHeight = Math.min(contentHeight, maxH);
+  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
   return (
     <box position="absolute" left={0} top={0} width={width} height={height}
-      alignItems="center" paddingTop={Math.max(2, Math.floor(height / 6))}
+      alignItems="center" paddingTop={top}
       backgroundColor={"#000000cc" as any}>
-      <box width={Math.min(60, width - 6)} backgroundColor={t.backgroundPanel}
-        paddingTop={1} paddingBottom={1} maxHeight={Math.floor(height * 0.7)}
-        border borderStyle="single" borderColor={t.border}>
-        <box flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+      <box width={Math.min(50, width - 6)} height={panelHeight} backgroundColor={t.backgroundPanel}
+        paddingTop={1} paddingBottom={1}>
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}><b>{"Commands"}</b></text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+          <text fg={t.text}>{searchQuery || <span style={{ fg: t.textMuted }}>{"Search..."}</span>}</text>
+        </box>
+        <scrollbox ref={listRef} flexGrow={1}>
+          {filteredItems.map((item, idx) => (
+            <box key={item.id} id={`slash-${item.id}`} backgroundColor={idx === selectedIndex ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
+              <box flexDirection="row" justifyContent="space-between">
+                <text fg={idx === selectedIndex ? t.selected : t.text}>{"/"}{item.label}</text>
+                <text fg={t.textMuted}>{item.description}</text>
+              </box>
+            </box>
+          ))}
+          {filteredItems.length === 0 && (
+            <box paddingLeft={2}><text fg={t.textMuted}>{"No commands match your search"}</text></box>
+          )}
+        </scrollbox>
+      </box>
+    </box>
+  );
+}
+
+/* ── Model Picker ────────────────────────────────────────────── */
+
+function ModelPickerModal({ t, currentModel, selectedIndex, width, height, searchQuery, filteredModels }: {
+  t: Theme; currentModel: string; selectedIndex: number; width: number; height: number;
+  searchQuery: string; filteredModels: ModelInfo[];
+}) {
+  const listRef = useRef<ScrollBoxRenderable>(null);
+  useEffect(() => {
+    const m = filteredModels[selectedIndex];
+    if (m) listRef.current?.scrollChildIntoView(`model-${m.id}`);
+  }, [selectedIndex, filteredModels]);
+
+  const itemCount = Math.max(filteredModels.length, 1);
+  const contentHeight = itemCount + 5;
+  const maxH = Math.floor(height * 0.6);
+  const panelHeight = Math.min(contentHeight, maxH);
+  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  return (
+    <box position="absolute" left={0} top={0} width={width} height={height}
+      alignItems="center" paddingTop={top}
+      backgroundColor={"#000000cc" as any}>
+      <box width={Math.min(60, width - 6)} height={panelHeight} backgroundColor={t.backgroundPanel}
+        paddingTop={1} paddingBottom={1}>
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}><b>{"Select model"}</b></text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
-        <scrollbox flexGrow={1} paddingTop={1}>
-          {MODEL_GROUPS.map((group) => {
-            const items = group.models.map((mid) => {
-              const info = getModelInfo(mid);
-              const idx = flatIdx++;
-              return { mid, info, idx, selected: idx === selectedIndex, current: mid === currentModel };
-            });
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+          <text fg={t.text}>{searchQuery || <span style={{ fg: t.textMuted }}>{"Search..."}</span>}</text>
+        </box>
+        <scrollbox ref={listRef} flexGrow={1}>
+          {filteredModels.map((m, idx) => {
+            const selected = idx === selectedIndex;
+            const current = m.id === currentModel;
             return (
-              <box key={group.category}>
-                <box paddingLeft={2} paddingTop={1}><text fg={t.textMuted}>{group.category}</text></box>
-                {items.map(({ mid, info, selected, current }) => (
-                  <box key={mid} backgroundColor={selected ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
-                    <box flexDirection="row" justifyContent="space-between">
-                      <text fg={selected ? t.selected : t.text}>
-                        {current ? "● " : "  "}{info?.name || mid}
-                      </text>
-                      {info && info.inputPrice < 1 && (
-                        <text fg={t.textMuted}>{`$${info.inputPrice}/$${info.outputPrice}`}</text>
-                      )}
-                    </box>
-                  </box>
-                ))}
+              <box key={m.id} id={`model-${m.id}`} backgroundColor={selected ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
+                <text fg={current ? t.accent : selected ? t.selected : t.text}>
+                  {m.name}
+                </text>
               </box>
             );
           })}
+          {filteredModels.length === 0 && (
+            <box paddingLeft={2}><text fg={t.textMuted}>{"No models match your search"}</text></box>
+          )}
         </scrollbox>
       </box>
     </box>
