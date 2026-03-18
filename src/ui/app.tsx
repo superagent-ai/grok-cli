@@ -8,6 +8,18 @@ import { getModelInfo, MODEL_GROUPS, MODELS } from "../grok/models.js";
 import { saveProjectSettings } from "../utils/settings.js";
 import { dark, type Theme } from "./theme.js";
 
+const SPLIT_BORDER = {
+  topLeft: "", bottomLeft: "", vertical: "┃", topRight: "",
+  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
+  cross: "", leftT: "", rightT: "",
+};
+const SPLIT_BORDER_END = { ...SPLIT_BORDER, bottomLeft: "╹" };
+const EMPTY_BORDER = {
+  topLeft: "", bottomLeft: "", vertical: "", topRight: "",
+  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
+  cross: "", leftT: "", rightT: "",
+};
+
 interface AppProps {
   agent: Agent;
   initialMessage?: string;
@@ -113,12 +125,11 @@ export function App({ agent, initialMessage }: AppProps) {
     <box width={width} height={height} backgroundColor={t.background} flexDirection="column">
       {hasMessages ? (
         <box flexGrow={1} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} gap={1}>
-          {/* Top bar: model on left, mode pill on right */}
+          {/* Top bar */}
           <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
             <text fg={t.textMuted}>{modelInfo?.name || model}{isProcessing ? "  working..." : ""}</text>
             <text fg={modeInfo.color}>{modeInfo.label}</text>
           </box>
-          {/* Thin separator */}
           <box height={1} flexShrink={0}><text fg={t.border}>{"─".repeat(Math.max(1, width - 4))}</text></box>
           {/* Messages */}
           <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
@@ -136,22 +147,14 @@ export function App({ agent, initialMessage }: AppProps) {
               <box paddingLeft={2} marginTop={1}><text fg={t.textMuted}>{"..."}</text></box>
             )}
           </scrollbox>
-          {/* Input area */}
-          <box flexShrink={0} border borderStyle="single" borderColor={modeInfo.color} paddingLeft={1} paddingRight={1}>
-            <input
-              ref={inputRef} focused={!isProcessing && !showModelPicker}
-              placeholder={isProcessing ? "Working... (esc to stop)" : "Message Grok..."}
-              textColor={t.text} backgroundColor={t.background} placeholderColor={t.textMuted}
-              onSubmit={handleSubmit as any}
-            />
+          {/* Prompt box */}
+          <box flexShrink={0}>
+            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
+              onSubmit={handleSubmit} mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
           </box>
-          {/* Bottom hints */}
           <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
             <text fg={t.textDim}>{agent.getCwd()}</text>
-            <box flexDirection="row" gap={2}>
-              <text fg={t.textDim}>{"tab"}<span style={{ fg: t.textMuted }}>{" mode"}</span></text>
-              <text fg={t.textDim}>{"/model"}</text>
-            </box>
+            <text fg={t.textDim}>{model}</text>
           </box>
         </box>
       ) : (
@@ -159,34 +162,18 @@ export function App({ agent, initialMessage }: AppProps) {
         <>
           <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
             <box flexGrow={1} minHeight={0} />
-            {/* Logo: simple bold text */}
+            {/* Logo */}
             <box flexShrink={0} alignItems="center">
               <text fg={t.primary}><b>{"  ✦  G R O K"}</b></text>
               <box height={1} />
               <text fg={t.textMuted}>{"AI coding agent for the terminal"}</text>
             </box>
             <box height={3} minHeight={0} flexShrink={1} />
-            {/* Prompt area */}
-            <box width="100%" maxWidth={70} flexShrink={0}>
-              <box border borderStyle="single" borderColor={modeInfo.color} paddingLeft={1} paddingRight={1}>
-                <input
-                  ref={inputRef} focused={!isProcessing && !showModelPicker}
-                  placeholder={'Message Grok... "Fix broken tests"'}
-                  textColor={t.text} backgroundColor={t.background} placeholderColor={t.textMuted}
-                  onSubmit={handleSubmit as any}
-                />
-              </box>
-              {/* Mode + model row */}
-              <box flexDirection="row" justifyContent="space-between" paddingTop={1}>
-                <box flexDirection="row" gap={2}>
-                  {MODES.map((m) => (
-                    <text key={m.id} fg={m.id === mode ? m.color : t.textDim}>
-                      {m.id === mode ? `● ${m.label}` : m.label}
-                    </text>
-                  ))}
-                </box>
-                <text fg={t.textMuted}>{modelInfo?.name || model}</text>
-              </box>
+            {/* Prompt box */}
+            <box width="100%" maxWidth={75} flexShrink={0}>
+              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
+                onSubmit={handleSubmit} mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo}
+                placeholder={'Ask anything... "Fix broken tests"'} />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
             {/* Hints */}
@@ -197,7 +184,6 @@ export function App({ agent, initialMessage }: AppProps) {
             </box>
             <box flexGrow={1} minHeight={0} />
           </box>
-          {/* Footer */}
           <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
             <text fg={t.textDim}>{agent.getCwd()}</text>
             <box flexGrow={1} />
@@ -205,8 +191,50 @@ export function App({ agent, initialMessage }: AppProps) {
           </box>
         </>
       )}
-      {/* Model picker overlay */}
       {showModelPicker && <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} />}
+    </box>
+  );
+}
+
+/* ── Prompt Box (┃ left-border with mode/model inside) ───────── */
+
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, onSubmit, mode, modeInfo, model, modelInfo, placeholder }: {
+  t: Theme; inputRef: React.RefObject<InputRenderable | null>;
+  isProcessing: boolean; showModelPicker: boolean; onSubmit: () => void;
+  mode: AgentMode; modeInfo: typeof MODES[number]; model: string;
+  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
+}) {
+  return (
+    <box>
+      <box border={["left"]} customBorderChars={SPLIT_BORDER_END} borderColor={modeInfo.color}>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1} backgroundColor={t.backgroundElement} flexShrink={0}>
+          <input
+            ref={inputRef} focused={!isProcessing && !showModelPicker}
+            placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
+            textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
+            onSubmit={onSubmit as any}
+          />
+          <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1}>
+            <text fg={modeInfo.color}><b>{modeInfo.label}</b>{" "}</text>
+            <text fg={t.text}>{modelInfo?.name || model}</text>
+          </box>
+        </box>
+      </box>
+      {/* Shadow edge */}
+      <box height={1} border={["left"]} borderColor={modeInfo.color} customBorderChars={{ ...EMPTY_BORDER, vertical: "╹" }}>
+        <box height={1} border={["bottom"]} borderColor={t.backgroundElement} customBorderChars={{ ...EMPTY_BORDER, horizontal: "▀" }} />
+      </box>
+      {/* Hints */}
+      <box flexDirection="row" justifyContent="flex-end" gap={3}>
+        {isProcessing ? (
+          <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
+        ) : (
+          <>
+            <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
+            <text fg={t.text}>{"ctrl+p "}<span style={{ fg: t.textMuted }}>{"commands"}</span></text>
+          </>
+        )}
+      </box>
     </box>
   );
 }
@@ -261,12 +289,10 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height }: {
       <box width={Math.min(60, width - 6)} backgroundColor={t.backgroundPanel}
         paddingTop={1} paddingBottom={1} maxHeight={Math.floor(height * 0.7)}
         border borderStyle="single" borderColor={t.border}>
-        {/* Header */}
         <box flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}><b>{"Select model"}</b></text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
-        {/* List */}
         <scrollbox flexGrow={1} paddingTop={1}>
           {MODEL_GROUPS.map((group) => {
             const items = group.models.map((mid) => {
@@ -276,9 +302,7 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height }: {
             });
             return (
               <box key={group.category}>
-                <box paddingLeft={2} paddingTop={1}>
-                  <text fg={t.textMuted}>{group.category}</text>
-                </box>
+                <box paddingLeft={2} paddingTop={1}><text fg={t.textMuted}>{group.category}</text></box>
                 {items.map(({ mid, info, selected, current }) => (
                   <box key={mid} backgroundColor={selected ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
                     <box flexDirection="row" justifyContent="space-between">
