@@ -1,7 +1,16 @@
+export interface FileDiff {
+  filePath: string;
+  additions: number;
+  removals: number;
+  patch: string;
+  isNew: boolean;
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  diff?: FileDiff;
 }
 
 export interface ToolCall {

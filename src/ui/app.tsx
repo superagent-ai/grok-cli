@@ -4,20 +4,73 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
 import { decodePasteBytes, PasteEvent } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
-import type { ChatEntry, ToolCall, AgentMode, ModelInfo } from "../types/index.js";
+import type { ChatEntry, ToolCall, AgentMode, ModelInfo, FileDiff } from "../types/index.js";
 import { MODES } from "../types/index.js";
 import { getModelInfo, MODELS } from "../grok/models.js";
 import { saveProjectSettings } from "../utils/settings.js";
 import { dark, type Theme } from "./theme.js";
+import { Markdown } from "./markdown.js";
 
-const GROK_LOGO = [
-  "  █▃▆▃▐▃▆▃=.                 <▆█",
-  " ▅▆<    .@▆#                 <▆█",
-  "@▆░          I▀▅▌▌▌ @▆▐▌▌▃▆! <▆█  ~▆▀",
-  "▒▆░  .*▆▆▆▆▆ _▆▁   ▒▆=   i▅▄I<▆█|▁▂/",
-  "+▆▐:     I▁▆ _▆▁   ▆▆=    ▅▂\\<▆▓|▃▄l",
-  " █▆▃l....▆▆! _▆▁   ,▆▀i .█▆▌ <▆█  ▃▆/",
-].join("\n");
+const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
+
+type Star = { col: number; ch: string };
+type Row = { stars: Star[]; grok?: number };
+
+const HERO_ROWS: Row[] = [
+  { stars: [{ col: 0, ch: "·" }, { col: 13, ch: "*" }, { col: 21, ch: "·" }, { col: 34, ch: "·" }] },
+  { stars: [{ col: 3, ch: "*" }, { col: 11, ch: "·" }, { col: 17, ch: "·" }, { col: 25, ch: "*" }] },
+  { stars: [{ col: 6, ch: "·" }, { col: 12, ch: "·" }, { col: 15, ch: "·" }, { col: 18, ch: "·" }, { col: 24, ch: "·" }] },
+  { stars: [{ col: 2, ch: "·" }, { col: 10, ch: "·" }, { col: 19, ch: "·" }, { col: 27, ch: "·" }], grok: 13 },
+  { stars: [{ col: 6, ch: "·" }, { col: 12, ch: "·" }, { col: 15, ch: "·" }, { col: 18, ch: "·" }, { col: 24, ch: "·" }] },
+  { stars: [{ col: 3, ch: "·" }, { col: 11, ch: "*" }, { col: 17, ch: "·" }, { col: 25, ch: "·" }] },
+  { stars: [{ col: 0, ch: "*" }, { col: 13, ch: "·" }, { col: 21, ch: "*" }, { col: 34, ch: "·" }] },
+];
+
+function HeroLogo({ t }: { t: Theme }) {
+  const [tick, setTick] = useState(0);
+  const starIdx = useRef(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(n => n + 1), 900);
+    return () => clearInterval(id);
+  }, []);
+
+  starIdx.current = 0;
+  const nextColor = () => {
+    const i = starIdx.current++;
+    return STAR_PALETTE[(i * 7 + tick * 3 + i * tick) % STAR_PALETTE.length];
+  };
+
+  return (
+    <box flexDirection="column" alignItems="center">
+      {HERO_ROWS.map((row, r) => {
+        const els: React.ReactNode[] = [];
+        let cursor = 0;
+
+        for (const star of row.stars) {
+          if (row.grok !== undefined && cursor <= row.grok && star.col > row.grok) {
+            els.push(" ".repeat(row.grok - cursor));
+            els.push(<span key={`g${r}`} style={{ fg: t.primary }}>{"Grok"}</span>);
+            cursor = row.grok + 4;
+          }
+          const gap = star.col - cursor;
+          if (gap > 0) els.push(" ".repeat(gap));
+          els.push(<span key={`s${r}-${star.col}`} style={{ fg: nextColor() }}>{star.ch}</span>);
+          cursor = star.col + 1;
+        }
+
+        if (row.grok !== undefined && cursor <= row.grok) {
+          els.push(" ".repeat(row.grok - cursor));
+          els.push(<span key={`g${r}`} style={{ fg: t.primary }}>{"Grok"}</span>);
+          cursor = row.grok + 4;
+        }
+
+        els.push(" ".repeat(Math.max(0, 35 - cursor)));
+        return <text key={r}>{els}</text>;
+      })}
+    </box>
+  );
+}
 
 const SPLIT = {
   topLeft: "", bottomLeft: "", vertical: "┃", topRight: "",
@@ -29,6 +82,11 @@ const EMPTY = {
   topLeft: "", bottomLeft: "", vertical: "", topRight: "",
   bottomRight: "", horizontal: " ", bottomT: "", topT: "",
   cross: "", leftT: "", rightT: "",
+};
+const LINE = {
+  topLeft: "━", bottomLeft: "━", vertical: "", topRight: "━",
+  bottomRight: "━", horizontal: "━", bottomT: "━", topT: "━",
+  cross: "━", leftT: "━", rightT: "━",
 };
 
 interface SlashMenuItem {
@@ -311,23 +369,17 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             ))}
             {/* Active tool calls — pending inline */}
             {activeToolCalls.map((tc, i) => (
-              <InlineTool key={i} t={t} icon="~" pending>{toolLabel(tc)}</InlineTool>
+              <InlineTool key={i} t={t} pending>{toolLabel(tc)}</InlineTool>
             ))}
-            {/* Reasoning */}
-            {streamReasoning && (
-              <box paddingLeft={2} marginTop={1} border={["left"]} customBorderChars={SPLIT} borderColor={t.backgroundElement}>
-                <text fg={t.textDim}><i>{"Thinking: "}{trunc(streamReasoning, 300)}</i></text>
-              </box>
-            )}
             {/* Streaming assistant content */}
             {streamContent && (
               <box paddingLeft={3} marginTop={1} flexShrink={0}>
-                <text fg={t.text}>{streamContent}</text>
+                <Markdown content={streamContent} t={t} />
               </box>
             )}
             {/* Waiting indicator */}
             {isProcessing && !streamContent && activeToolCalls.length === 0 && (
-              <InlineTool t={t} icon="~" pending>{"Thinking..."}</InlineTool>
+              <ShimmerText t={t} text="Planning next moves" />
             )}
           </scrollbox>
           {/* Prompt */}
@@ -343,9 +395,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
             <box flexGrow={1} minHeight={0} />
             <box flexShrink={0} alignItems="center">
-              <text fg={t.text}>{GROK_LOGO}</text>
+              <HeroLogo t={t} />
             </box>
-            <box height={3} minHeight={0} flexShrink={1} />
+            <box height={1} minHeight={0} flexShrink={1} />
             <box width="100%" maxWidth={75} flexShrink={0}>
               <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu}
                 onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
@@ -404,7 +456,7 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
   modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
 }) {
   return (
-    <box>
+    <box backgroundColor={t.backgroundPanel}>
       <box>
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
           <textarea
@@ -418,7 +470,7 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
           />
         </box>
       </box>
-      <box flexDirection="row" justifyContent="space-between" alignItems="center" backgroundColor={t.backgroundPanel} paddingLeft={2} paddingRight={2} border={["top", "bottom"]} borderColor={t.backgroundPanel} customBorderChars={EMPTY}>
+      <box flexDirection="row" justifyContent="space-between" alignItems="center" backgroundColor={t.backgroundPanel} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
         <box flexDirection="row" gap={2} alignItems="center">
           <text fg={modeInfo.color}><b>{modeInfo.label}</b>{" "}</text>
           <text fg={t.text}>{modelInfo?.name || model}</text>
@@ -446,7 +498,7 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
       return (
         <box
           border={["left"]} customBorderChars={SPLIT} borderColor={modeColor}
-          marginTop={index === 0 ? 0 : 1}
+          marginTop={index === 0 ? 0 : 1} marginBottom={1}
         >
           <box paddingTop={1} paddingBottom={1} paddingLeft={2} backgroundColor={t.backgroundPanel} flexShrink={0}>
             <text fg={t.text}>{entry.content}</text>
@@ -457,7 +509,7 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
     case "assistant":
       return (
         <box paddingLeft={3} marginTop={1} flexShrink={0}>
-          <text fg={t.text}>{entry.content}</text>
+          <Markdown content={entry.content} t={t} />
         </box>
       );
 
@@ -473,45 +525,25 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
 
     case "tool_result": {
       const name = entry.toolCall?.function.name || "tool";
-      const ok = entry.toolResult?.success ?? true;
       const args = toolArgs(entry.toolCall);
-      const output = entry.content;
+      const diff = entry.toolResult?.diff;
 
-      if (name === "bash" && output && output.split("\n").length > 3) {
-        const lines = output.split("\n");
-        const preview = lines.slice(0, 10).join("\n") + (lines.length > 10 ? "\n…" : "");
+      if ((name === "write_file" || name === "edit_file") && diff) {
+        const label = name === "write_file"
+          ? `Write ${diff.filePath}`
+          : `Edit ${diff.filePath}`;
         return (
-          <box
-            border={["left"]} customBorderChars={SPLIT} borderColor={t.background}
-            paddingTop={1} paddingBottom={1} paddingLeft={2} marginTop={1} gap={1}
-            backgroundColor={t.backgroundPanel}
-          >
-            <text fg={t.textMuted}>{"# Shell"}</text>
-            <box gap={1}>
-              <text fg={t.text}>{"$ "}{args}</text>
-              <text fg={t.text}>{preview}</text>
-            </box>
+          <box gap={0}>
+            <InlineTool t={t} pending={false}>{label}</InlineTool>
+            <DiffView t={t} diff={diff} />
           </box>
         );
       }
 
-      if (name === "search_web" || name === "search_x") {
-        if (output && output.length > 100) {
-          return (
-            <box
-              border={["left"]} customBorderChars={SPLIT} borderColor={t.background}
-              paddingTop={1} paddingBottom={1} paddingLeft={2} marginTop={1} gap={1}
-              backgroundColor={t.backgroundPanel}
-            >
-              <text fg={t.textMuted}>{"# "}{name === "search_web" ? "Web Search" : "X Search"}{` "${args}"`}</text>
-              <text fg={t.text}>{trunc(output, 500)}</text>
-            </box>
-          );
-        }
-        return <InlineTool t={t} icon="◈" pending={false}>{name === "search_web" ? "Web" : "X"}{` Search "${args}"`}</InlineTool>;
-      }
+      if (name === "read_file") return <InlineTool t={t} pending={false}>{`Read ${tryParseArg(entry.toolCall, "path") || args}`}</InlineTool>;
+      if (name === "search_web" || name === "search_x") return <InlineTool t={t} pending={false}>{name === "search_web" ? "Web" : "X"}{` Search "${args}"`}</InlineTool>;
 
-      return <InlineTool t={t} icon={ok ? "$" : "✗"} pending={false}>{name === "bash" ? args : `${name} ${args}`}</InlineTool>;
+      return <InlineTool t={t} pending={false}>{name === "bash" ? args : `${name} ${args}`}</InlineTool>;
     }
 
     default:
@@ -519,11 +551,155 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
   }
 }
 
-function InlineTool({ t, icon, pending, children }: { t: Theme; icon: string; pending: boolean; children: React.ReactNode }) {
+/* ── Diff View ────────────────────────────────────────────────── */
+
+type DiffRow =
+  | { kind: "context"; oldNum: number; newNum: number; text: string }
+  | { kind: "added"; newNum: number; text: string }
+  | { kind: "removed"; oldNum: number; text: string }
+  | { kind: "separator"; count: number };
+
+const MAX_DIFF_ROWS = 20;
+const LINE_NUM_WIDTH = 4;
+
+function parsePatch(patch: string): DiffRow[] {
+  const lines = patch.split("\n");
+  const rows: DiffRow[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let prevOldEnd = 0;
+
+  for (const line of lines) {
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunkMatch) {
+      oldLine = parseInt(hunkMatch[1], 10);
+      newLine = parseInt(hunkMatch[2], 10);
+      const skipped = oldLine - prevOldEnd - 1;
+      if (skipped > 0) {
+        rows.push({ kind: "separator", count: skipped });
+      }
+      continue;
+    }
+
+    if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("\\")) continue;
+    if (line.startsWith("Index:") || line.startsWith("====")) continue;
+
+    if (line.startsWith("-")) {
+      rows.push({ kind: "removed", oldNum: oldLine, text: line.slice(1) });
+      oldLine++;
+      prevOldEnd = oldLine - 1;
+    } else if (line.startsWith("+")) {
+      rows.push({ kind: "added", newNum: newLine, text: line.slice(1) });
+      newLine++;
+    } else if (line.length > 0 || (oldLine > 0 && newLine > 0)) {
+      const content = line.startsWith(" ") ? line.slice(1) : line;
+      rows.push({ kind: "context", oldNum: oldLine, newNum: newLine, text: content });
+      oldLine++;
+      newLine++;
+      prevOldEnd = oldLine - 1;
+    }
+  }
+
+  return rows;
+}
+
+function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
+  const rows = parsePatch(diff.patch);
+  if (rows.length === 0) return null;
+
+  const truncated = rows.length > MAX_DIFF_ROWS;
+  const visible = truncated ? rows.slice(0, MAX_DIFF_ROWS) : rows;
+
+  const pad = (n: number | undefined) =>
+    n !== undefined ? String(n).padStart(LINE_NUM_WIDTH) : " ".repeat(LINE_NUM_WIDTH);
+
   return (
-    <box paddingLeft={3} marginTop={0}>
-      <text fg={pending ? t.text : t.textMuted}>
-        {pending ? `~ ` : `${icon} `}{children}
+    <box paddingLeft={5} marginTop={0} flexShrink={0}>
+      <box flexDirection="column">
+        {/* Header */}
+        <box backgroundColor={t.diffHeader} paddingLeft={1} paddingRight={1}>
+          <text>
+            <span style={{ fg: t.diffHeaderFg }}>{diff.filePath}</span>
+            <span style={{ fg: t.textDim }}>{"  "}</span>
+            <span style={{ fg: t.diffRemovedFg }}>{`-${diff.removals}`}</span>
+            <span style={{ fg: t.textDim }}>{" "}</span>
+            <span style={{ fg: t.diffAddedFg }}>{`+${diff.additions}`}</span>
+          </text>
+        </box>
+
+        {/* Rows */}
+        {visible.map((row, i) => {
+          if (row.kind === "separator") {
+            return (
+              <box key={i} backgroundColor={t.diffSeparator} paddingLeft={1}>
+                <text fg={t.diffSeparatorFg}>{"⌃  "}{row.count}{" unmodified lines"}</text>
+              </box>
+            );
+          }
+          if (row.kind === "removed") {
+            return (
+              <box key={i} backgroundColor={t.diffRemoved} flexDirection="row">
+                <text fg={t.diffRemovedLineNum}>{pad(row.oldNum)}</text>
+                <text fg={t.diffRemovedFg}>{" " + row.text}</text>
+              </box>
+            );
+          }
+          if (row.kind === "added") {
+            return (
+              <box key={i} backgroundColor={t.diffAdded} flexDirection="row">
+                <text fg={t.diffAddedLineNum}>{pad(row.newNum)}</text>
+                <text fg={t.diffAddedFg}>{" " + row.text}</text>
+              </box>
+            );
+          }
+          return (
+            <box key={i} backgroundColor={t.diffContext} flexDirection="row">
+              <text fg={t.diffLineNumber}>{pad(row.oldNum)}</text>
+              <text fg={t.diffContextFg}>{" " + row.text}</text>
+            </box>
+          );
+        })}
+
+        {truncated && (
+          <box backgroundColor={t.diffSeparator} paddingLeft={1}>
+            <text fg={t.diffSeparatorFg}>{"⌃  "}{rows.length - MAX_DIFF_ROWS}{" more lines"}</text>
+          </box>
+        )}
+      </box>
+    </box>
+  );
+}
+
+function ShimmerText({ t, text }: { t: Theme; text: string }) {
+  const [pos, setPos] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setPos(p => (p + 1) % (text.length + 4)), 60);
+    return () => clearInterval(id);
+  }, [text]);
+
+  const dim = "#333333";
+  const mid = "#555555";
+  const bright = "#888888";
+
+  return (
+    <box paddingLeft={3}>
+      <text>
+        <span style={{ fg: "#555555" }}>{"◇ "}</span>
+        {text.split("").map((ch, i) => {
+          const dist = Math.abs(i - pos);
+          const fg = dist === 0 ? bright : dist === 1 ? mid : dim;
+          return <span key={i} style={{ fg }}>{ch}</span>;
+        })}
+      </text>
+    </box>
+  );
+}
+
+function InlineTool({ t, pending, children }: { t: Theme; pending: boolean; children: React.ReactNode }) {
+  return (
+    <box paddingLeft={3}>
+      <text fg={t.textMuted}>
+        {"→ "}{children}
       </text>
     </box>
   );
@@ -632,11 +808,23 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height, searc
 
 function toolArgs(tc?: ToolCall): string {
   if (!tc) return "";
-  try { const a = JSON.parse(tc.function.arguments); return tc.function.name === "bash" ? a.command || "" : a.query || ""; } catch { return ""; }
+  try {
+    const a = JSON.parse(tc.function.arguments);
+    if (tc.function.name === "bash") return a.command || "";
+    if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file") return a.path || "";
+    return a.query || "";
+  } catch { return ""; }
+}
+function tryParseArg(tc: ToolCall | undefined, key: string): string {
+  if (!tc) return "";
+  try { return JSON.parse(tc.function.arguments)[key] || ""; } catch { return ""; }
 }
 function toolLabel(tc: ToolCall): string {
   const args = toolArgs(tc);
   if (tc.function.name === "bash") return args || "Running command...";
+  if (tc.function.name === "read_file") return `Read ${args}`;
+  if (tc.function.name === "write_file") return `Write ${args}`;
+  if (tc.function.name === "edit_file") return `Edit ${args}`;
   if (tc.function.name === "search_web") return `Web Search "${args}"`;
   if (tc.function.name === "search_x") return `X Search "${args}"`;
   return `${tc.function.name} ${args}`;
