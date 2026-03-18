@@ -1,10 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
-import type { ChatEntry, ToolCall, StreamChunk } from "../types/index.js";
+import type { ChatEntry, ToolCall } from "../types/index.js";
 import { getModelInfo } from "../grok/models.js";
 import { getAvailableModels, saveProjectSettings } from "../utils/settings.js";
+import { dark, type Theme } from "./theme.js";
+
+const SPLIT_BORDER = {
+  topLeft: "",
+  bottomLeft: "",
+  vertical: "┃",
+  topRight: "",
+  bottomRight: "",
+  horizontal: " ",
+  bottomT: "",
+  topT: "",
+  cross: "",
+  leftT: "",
+  rightT: "",
+};
 
 interface AppProps {
   agent: Agent;
@@ -12,6 +27,7 @@ interface AppProps {
 }
 
 export function App({ agent, initialMessage }: AppProps) {
+  const t = dark;
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [streamContent, setStreamContent] = useState("");
   const [streamReasoning, setStreamReasoning] = useState("");
@@ -23,14 +39,15 @@ export function App({ agent, initialMessage }: AppProps) {
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const inputRef = useRef<InputRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
   const contentAccRef = useRef("");
 
   const scrollToBottom = useCallback(() => {
     try {
-      scrollRef.current?.scrollTo({ y: "end" } as any);
+      scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
     } catch {
-      // ignore scroll errors
+      /* ignore */
     }
   }, []);
 
@@ -48,7 +65,6 @@ export function App({ agent, initialMessage }: AppProps) {
         ...prev,
         { type: "user", content: text.trim(), timestamp: new Date() },
       ]);
-
       setTimeout(scrollToBottom, 50);
 
       try {
@@ -65,10 +81,10 @@ export function App({ agent, initialMessage }: AppProps) {
             case "tool_calls":
               if (chunk.toolCalls) {
                 if (contentAccRef.current.trim()) {
-                  const savedContent = contentAccRef.current;
+                  const saved = contentAccRef.current;
                   setMessages((prev) => [
                     ...prev,
-                    { type: "assistant", content: savedContent, timestamp: new Date() },
+                    { type: "assistant", content: saved, timestamp: new Date() },
                   ]);
                   contentAccRef.current = "";
                   setStreamContent("");
@@ -108,10 +124,10 @@ export function App({ agent, initialMessage }: AppProps) {
       }
 
       if (contentAccRef.current.trim()) {
-        const finalContent = contentAccRef.current;
+        const final = contentAccRef.current;
         setMessages((prev) => [
           ...prev,
-          { type: "assistant", content: finalContent, timestamp: new Date() },
+          { type: "assistant", content: final, timestamp: new Date() },
         ]);
       }
 
@@ -135,24 +151,10 @@ export function App({ agent, initialMessage }: AppProps) {
   const handleCommand = useCallback(
     (cmd: string): boolean => {
       const c = cmd.trim().toLowerCase();
-      if (c === "/help" || c === "/?") {
-        setShowHelp((v) => !v);
-        return true;
-      }
-      if (c === "/clear") {
-        agent.clearHistory();
-        setMessages([]);
-        setStreamContent("");
-        return true;
-      }
-      if (c === "/model" || c === "/models") {
-        setShowModelPicker(true);
-        setModelPickerIndex(0);
-        return true;
-      }
-      if (c === "/quit" || c === "/exit" || c === "/q") {
-        process.exit(0);
-      }
+      if (c === "/help") { setShowHelp((v) => !v); return true; }
+      if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); return true; }
+      if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); return true; }
+      if (c === "/quit" || c === "/exit" || c === "/q") { process.exit(0); }
       return false;
     },
     [agent],
@@ -161,250 +163,423 @@ export function App({ agent, initialMessage }: AppProps) {
   useKeyboard((key) => {
     if (showModelPicker) {
       const models = getAvailableModels();
-      if (key.name === "escape") {
-        setShowModelPicker(false);
-        return;
-      }
-      if (key.name === "up") {
-        setModelPickerIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (key.name === "down") {
-        setModelPickerIndex((i) => Math.min(models.length - 1, i + 1));
-        return;
-      }
+      if (key.name === "escape") { setShowModelPicker(false); return; }
+      if (key.name === "up") { setModelPickerIndex((i) => Math.max(0, i - 1)); return; }
+      if (key.name === "down") { setModelPickerIndex((i) => Math.min(models.length - 1, i + 1)); return; }
       if (key.name === "return") {
-        const selected = models[modelPickerIndex];
-        if (selected) {
-          agent.setModel(selected);
-          setModel(selected);
-          saveProjectSettings({ model: selected });
-        }
+        const sel = models[modelPickerIndex];
+        if (sel) { agent.setModel(sel); setModel(sel); saveProjectSettings({ model: sel }); }
         setShowModelPicker(false);
         return;
       }
       return;
     }
-
-    if (showHelp && key.name === "escape") {
-      setShowHelp(false);
-      return;
-    }
-
-    if (isProcessing && key.name === "escape") {
-      agent.abort();
-      return;
-    }
+    if (showHelp && key.name === "escape") { setShowHelp(false); return; }
+    if (isProcessing && key.name === "escape") { agent.abort(); return; }
   });
 
-  const handleSubmit = useCallback(
-    () => {
-      const value = inputRef.current?.value || "";
-      if (!value.trim()) return;
-      if (inputRef.current) inputRef.current.value = "";
-      if (handleCommand(value)) return;
-      processMessage(value);
-    },
-    [handleCommand, processMessage],
-  );
+  const handleSubmit = useCallback(() => {
+    const value = inputRef.current?.value || "";
+    if (!value.trim()) return;
+    if (inputRef.current) inputRef.current.value = "";
+    if (handleCommand(value)) return;
+    processMessage(value);
+  }, [handleCommand, processMessage]);
 
   if (showModelPicker) {
-    return <ModelPicker currentModel={model} selectedIndex={modelPickerIndex} />;
+    return <ModelPickerView t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} />;
   }
 
+  const hasMessages = messages.length > 0 || streamContent || isProcessing;
+
   return (
-    <box flexDirection="column" width="100%" height="100%" backgroundColor="#0f172a">
-      <StatusBar model={model} cwd={agent.getCwd()} isProcessing={isProcessing} />
-      <scrollbox
-        ref={scrollRef}
-        flexGrow={1}
-        flexShrink={1}
-      >
-        <box flexDirection="column" gap={1} padding={1}>
-          {showHelp && <HelpPanel />}
-          {messages.map((msg, i) => (
-            <box key={i} flexDirection="column">
-              <MessageView entry={msg} />
-            </box>
-          ))}
-          {activeToolCalls.length > 0 && (
-            <box flexDirection="column">
-              {activeToolCalls.map((tc, i) => (
-                <text key={i} fg="#facc15">
-                  {`⚙ ${tc.function.name}(${truncate(getToolArgs(tc), 120)})`}
-                </text>
+    <box width={width} height={height} backgroundColor={t.background} flexDirection="column">
+      {/* Main content area */}
+      <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
+        {hasMessages ? (
+          <>
+            <Header t={t} model={model} cwd={agent.getCwd()} isProcessing={isProcessing} />
+            <scrollbox
+              ref={scrollRef}
+              flexGrow={1}
+              stickyScroll={true}
+              stickyStart={"bottom" as any}
+            >
+              {showHelp && <HelpPanel t={t} />}
+              {messages.map((msg, i) => (
+                <MessageView key={i} entry={msg} index={i} t={t} />
               ))}
+              {activeToolCalls.length > 0 && activeToolCalls.map((tc, i) => (
+                <ToolCallPending key={i} tc={tc} t={t} />
+              ))}
+              {streamReasoning && (
+                <box
+                  paddingLeft={2}
+                  marginTop={1}
+                  border={["left"]}
+                  customBorderChars={SPLIT_BORDER}
+                  borderColor={t.backgroundElement}
+                >
+                  <text fg={t.textMuted}>
+                    <i>{"Thinking: "}{truncate(streamReasoning, 300)}</i>
+                  </text>
+                </box>
+              )}
+              {streamContent && (
+                <box paddingLeft={3} marginTop={1} flexShrink={0}>
+                  <text fg={t.text}>{streamContent}</text>
+                </box>
+              )}
+              {isProcessing && !streamContent && activeToolCalls.length === 0 && (
+                <box paddingLeft={3} marginTop={1}>
+                  <text fg={t.textMuted}>{"~ Thinking..."}</text>
+                </box>
+              )}
+            </scrollbox>
+            <box flexShrink={0}>
+              <PromptInput
+                t={t}
+                inputRef={inputRef}
+                isProcessing={isProcessing}
+                showModelPicker={showModelPicker}
+                onSubmit={handleSubmit}
+              />
             </box>
-          )}
-          {streamReasoning && (
-            <box>
-              <text fg="#8b5cf6">{`💭 ${truncate(streamReasoning, 200)}`}</text>
+          </>
+        ) : (
+          /* Home screen — centered logo + prompt like OpenCode */
+          <>
+            <box flexGrow={1} alignItems="center">
+              <box flexGrow={1} minHeight={0} />
+              <box flexShrink={0}>
+                <text fg={t.primary}>
+                  <b>{"  ┏━━┓┏━━┓┏━━┓┏┓┏┓"}</b>
+                </text>
+                <text fg={t.primary}>
+                  <b>{"  ┃╺━┫┣━┓┃┃╺╸┃┃┗┛┃"}</b>
+                </text>
+                <text fg={t.primary}>
+                  <b>{"  ┗━━┛┗━━┛┗━━┛┗━━━┛"}</b>
+                </text>
+                <text fg={t.textMuted}>{"      grok cli"}</text>
+              </box>
+              {showHelp && (
+                <box marginTop={1} width="100%" maxWidth={75}>
+                  <HelpPanel t={t} />
+                </box>
+              )}
+              <box height={1} minHeight={0} flexShrink={1} />
+              <box width="100%" maxWidth={75} paddingTop={1} flexShrink={0}>
+                <PromptInput
+                  t={t}
+                  inputRef={inputRef}
+                  isProcessing={isProcessing}
+                  showModelPicker={showModelPicker}
+                  onSubmit={handleSubmit}
+                />
+              </box>
+              <box height={4} minHeight={0} flexShrink={1} />
+              <box flexGrow={1} minHeight={0} />
             </box>
-          )}
-          {streamContent && (
-            <box flexDirection="column">
-              <text fg="#34d399"><b>{"✦ Grok"}</b></text>
-              <text fg="#e2e8f0">{streamContent}</text>
-            </box>
-          )}
-          {isProcessing && !streamContent && activeToolCalls.length === 0 && (
-            <text fg="#a78bfa">{"⏳ Thinking..."}</text>
-          )}
-        </box>
-      </scrollbox>
+            <Footer t={t} cwd={agent.getCwd()} model={model} />
+          </>
+        )}
+      </box>
+      {/* Footer when in session */}
+      {hasMessages && <Footer t={t} cwd={agent.getCwd()} model={model} />}
+    </box>
+  );
+}
+
+function Header({ t, model, cwd, isProcessing }: { t: Theme; model: string; cwd: string; isProcessing: boolean }) {
+  const info = getModelInfo(model);
+  const modelLabel = info ? `${info.name} · ${model}` : model;
+
+  return (
+    <box flexShrink={0}>
       <box
-        border
-        borderStyle="rounded"
-        borderColor={isProcessing ? "#6b7280" : "#3b82f6"}
-        padding={0}
+        paddingTop={1}
+        paddingBottom={1}
+        paddingLeft={2}
+        paddingRight={1}
+        border={["left"]}
+        customBorderChars={SPLIT_BORDER}
+        borderColor={t.border}
+        backgroundColor={t.backgroundPanel}
+        flexDirection="row"
+        justifyContent="space-between"
       >
-        <input
-          ref={inputRef}
-          focused={!isProcessing && !showModelPicker}
-          placeholder={isProcessing ? "Processing... (Esc to cancel)" : "Type a message... (/help for commands)"}
-          textColor="#e2e8f0"
-          backgroundColor="#0f172a"
-          placeholderColor="#6b7280"
-          onSubmit={handleSubmit as any}
-        />
+        <text fg={t.text}>
+          <b>{"# Grok CLI"}</b>
+        </text>
+        <text fg={t.textMuted}>
+          {modelLabel}{isProcessing ? " ⏳" : ""}
+        </text>
       </box>
     </box>
   );
 }
 
-function StatusBar({ model, cwd, isProcessing }: { model: string; cwd: string; isProcessing: boolean }) {
-  const info = getModelInfo(model);
-  const modelName = info?.name || model;
-
-  return (
-    <box
-      flexDirection="row"
-      justifyContent="space-between"
-      backgroundColor="#1e293b"
-      padding={0}
-    >
-      <text fg="#60a5fa">
-        <b>{" GROK CLI "}</b>
-      </text>
-      <text fg="#94a3b8">{` ${cwd} `}</text>
-      <text fg={isProcessing ? "#facc15" : "#34d399"}>
-        {` ${modelName} ${isProcessing ? "⏳" : "●"} `}
-      </text>
-    </box>
-  );
-}
-
-function MessageView({ entry }: { entry: ChatEntry }) {
+function MessageView({ entry, index, t }: { entry: ChatEntry; index: number; t: Theme }) {
   switch (entry.type) {
     case "user":
       return (
-        <box flexDirection="column">
-          <text fg="#60a5fa"><b>{"❯ You"}</b></text>
-          <text fg="#cbd5e1">{entry.content}</text>
+        <box
+          border={["left"]}
+          customBorderChars={SPLIT_BORDER}
+          borderColor={t.primary}
+          marginTop={index === 0 ? 0 : 1}
+        >
+          <box
+            paddingTop={1}
+            paddingBottom={1}
+            paddingLeft={2}
+            backgroundColor={t.backgroundPanel}
+            flexShrink={0}
+          >
+            <text fg={t.text}>{entry.content}</text>
+          </box>
         </box>
       );
 
     case "assistant":
       return (
-        <box flexDirection="column">
-          <text fg="#34d399"><b>{"✦ Grok"}</b></text>
-          <text fg="#e2e8f0">{entry.content}</text>
+        <box paddingLeft={3} marginTop={1} flexShrink={0}>
+          <text fg={t.text}>{entry.content}</text>
         </box>
       );
 
     case "tool_result": {
       const name = entry.toolCall?.function.name || "tool";
       const success = entry.toolResult?.success ?? true;
-      const icon = success ? "✓" : "✗";
-      const color = success ? "#34d399" : "#ef4444";
-      const output = truncate(entry.content, 500);
+      const args = getToolArgs(entry.toolCall);
+      const output = entry.content;
 
+      if (name === "bash" && output && output.split("\n").length > 3) {
+        const lines = output.split("\n");
+        const preview = lines.slice(0, 10).join("\n") + (lines.length > 10 ? "\n…" : "");
+        return (
+          <box
+            border={["left"]}
+            customBorderChars={SPLIT_BORDER}
+            borderColor={t.background}
+            paddingTop={1}
+            paddingBottom={1}
+            paddingLeft={2}
+            marginTop={1}
+            gap={1}
+            backgroundColor={t.backgroundPanel}
+          >
+            <text fg={t.textMuted}>{"# "}{getToolTitle(name, args)}</text>
+            <box gap={1}>
+              <text fg={t.text}>{"$ "}{args}</text>
+              <text fg={t.text}>{preview}</text>
+            </box>
+          </box>
+        );
+      }
+
+      const icon = success ? getToolIcon(name) : "✗";
+      const fg = success ? t.textMuted : t.error;
       return (
-        <box flexDirection="column">
-          <text fg={color}>{`${icon} ${name}`}</text>
-          {output && <text fg="#9ca3af">{output}</text>}
+        <box paddingLeft={3} marginTop={0}>
+          <text fg={fg}>
+            {icon}{" "}{getToolLabel(name, args, success)}
+          </text>
         </box>
       );
     }
 
     default:
-      return <text fg="#6b7280">{entry.content}</text>;
+      return <text fg={t.textMuted}>{entry.content}</text>;
   }
 }
 
-function HelpPanel() {
+function ToolCallPending({ tc, t }: { tc: ToolCall; t: Theme }) {
+  const args = getToolArgs(tc);
   return (
-    <box
-      border
-      borderStyle="rounded"
-      borderColor="#6366f1"
-      flexDirection="column"
-      padding={1}
-      title=" Help "
-      titleAlignment="center"
-    >
-      <text fg="#e2e8f0"><b>{"Commands"}</b></text>
-      <text fg="#94a3b8">{"/model    — Switch model"}</text>
-      <text fg="#94a3b8">{"/clear    — Clear chat history"}</text>
-      <text fg="#94a3b8">{"/help     — Toggle this help"}</text>
-      <text fg="#94a3b8">{"/quit     — Exit"}</text>
-      <text>{" "}</text>
-      <text fg="#e2e8f0"><b>{"Shortcuts"}</b></text>
-      <text fg="#94a3b8">{"Esc       — Cancel current operation"}</text>
-      <text fg="#94a3b8">{"Enter     — Send message"}</text>
+    <box paddingLeft={3} marginTop={0}>
+      <text fg={t.text}>
+        {"~ "}{tc.function.name === "bash" ? args : `${tc.function.name} ${args}`}
+      </text>
     </box>
   );
 }
 
-function ModelPicker({ currentModel, selectedIndex }: { currentModel: string; selectedIndex: number }) {
-  const models = getAvailableModels();
-
+function PromptInput({
+  t,
+  inputRef,
+  isProcessing,
+  showModelPicker,
+  onSubmit,
+}: {
+  t: Theme;
+  inputRef: React.RefObject<InputRenderable | null>;
+  isProcessing: boolean;
+  showModelPicker: boolean;
+  onSubmit: () => void;
+}) {
   return (
-    <box flexDirection="column" width="100%" height="100%" backgroundColor="#0f172a">
-      <box
-        border
-        borderStyle="rounded"
-        borderColor="#6366f1"
-        flexDirection="column"
-        padding={1}
-        title=" Select Model "
-        titleAlignment="center"
-        flexGrow={1}
-      >
-        <text fg="#94a3b8">{"Use ↑/↓ to select, Enter to confirm, Esc to cancel\n"}</text>
-        {models.map((m, i) => {
-          const isSelected = i === selectedIndex;
-          const isCurrent = m === currentModel;
-          const info = getModelInfo(m);
-          const prefix = isSelected ? "❯ " : "  ";
-          const suffix = isCurrent ? " (current)" : "";
-          const desc = info ? ` — ${info.description}` : "";
+    <box
+      border={["left"]}
+      customBorderChars={SPLIT_BORDER}
+      borderColor={isProcessing ? t.warning : t.primary}
+      backgroundColor={t.backgroundPanel}
+      paddingLeft={2}
+      paddingTop={1}
+      paddingBottom={1}
+    >
+      <input
+        ref={inputRef}
+        focused={!isProcessing && !showModelPicker}
+        placeholder={isProcessing ? "Processing... (Esc to cancel)" : "Ask anything..."}
+        textColor={t.text}
+        backgroundColor={t.backgroundPanel}
+        placeholderColor={t.textMuted}
+        onSubmit={onSubmit as any}
+      />
+    </box>
+  );
+}
 
-          return (
-            <text
-              key={i}
-              fg={isSelected ? "#60a5fa" : isCurrent ? "#34d399" : "#e2e8f0"}
-            >
-              {`${prefix}${m}${suffix}${desc}`}
-            </text>
-          );
-        })}
+function Footer({ t, cwd, model }: { t: Theme; cwd: string; model: string }) {
+  return (
+    <box
+      paddingTop={1}
+      paddingBottom={1}
+      paddingLeft={2}
+      paddingRight={2}
+      flexDirection="row"
+      flexShrink={0}
+      gap={2}
+    >
+      <text fg={t.textMuted}>{cwd}</text>
+      <box flexGrow={1} />
+      <text fg={t.textMuted}>{model}</text>
+    </box>
+  );
+}
+
+function HelpPanel({ t }: { t: Theme }) {
+  return (
+    <box
+      border={["left"]}
+      customBorderChars={SPLIT_BORDER}
+      borderColor={t.border}
+      paddingTop={1}
+      paddingBottom={1}
+      paddingLeft={2}
+      marginTop={1}
+      backgroundColor={t.backgroundPanel}
+      gap={1}
+    >
+      <text fg={t.textMuted}>{"# Help"}</text>
+      <box>
+        <text fg={t.text}>{"/model"}<span style={{ fg: t.textMuted }}>{" — Switch model"}</span></text>
+        <text fg={t.text}>{"/clear"}<span style={{ fg: t.textMuted }}>{" — Clear history"}</span></text>
+        <text fg={t.text}>{"/help"}<span style={{ fg: t.textMuted }}>{" — Toggle help"}</span></text>
+        <text fg={t.text}>{"/quit"}<span style={{ fg: t.textMuted }}>{" — Exit"}</span></text>
+      </box>
+      <box>
+        <text fg={t.text}>{"Esc"}<span style={{ fg: t.textMuted }}>{" — Cancel / close"}</span></text>
+        <text fg={t.text}>{"Enter"}<span style={{ fg: t.textMuted }}>{" — Send message"}</span></text>
       </box>
     </box>
   );
 }
 
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max) + "…";
+function ModelPickerView({
+  t,
+  currentModel,
+  selectedIndex,
+  width,
+  height,
+}: {
+  t: Theme;
+  currentModel: string;
+  selectedIndex: number;
+  width: number;
+  height: number;
+}) {
+  const models = getAvailableModels();
+  return (
+    <box width={width} height={height} backgroundColor={t.background} flexDirection="column">
+      <box flexGrow={1} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+        <box
+          border={["left"]}
+          customBorderChars={SPLIT_BORDER}
+          borderColor={t.primary}
+          paddingTop={1}
+          paddingBottom={1}
+          paddingLeft={2}
+          backgroundColor={t.backgroundPanel}
+          gap={1}
+          flexGrow={1}
+        >
+          <text fg={t.text}><b>{"# Switch Model"}</b></text>
+          <text fg={t.textMuted}>{"↑/↓ select · Enter confirm · Esc cancel"}</text>
+          <box marginTop={1}>
+            {models.map((m, i) => {
+              const selected = i === selectedIndex;
+              const current = m === currentModel;
+              const info = getModelInfo(m);
+              return (
+                <box key={i} backgroundColor={selected ? t.backgroundElement : undefined}>
+                  <text fg={selected ? t.primary : current ? t.success : t.text}>
+                    {selected ? " ❯ " : "   "}
+                    {m}
+                    {current ? " (current)" : ""}
+                    {info ? ` — ${info.description}` : ""}
+                  </text>
+                </box>
+              );
+            })}
+          </box>
+        </box>
+      </box>
+      <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexShrink={0}>
+        <text fg={t.textMuted}>{"/models"}</text>
+      </box>
+    </box>
+  );
 }
 
-function getToolArgs(tc: ToolCall): string {
+function getToolIcon(name: string): string {
+  switch (name) {
+    case "bash": return "$";
+    case "search_web": return "◈";
+    case "search_x": return "◇";
+    default: return "⚙";
+  }
+}
+
+function getToolTitle(name: string, args: string): string {
+  if (name === "bash") return "Shell";
+  if (name === "search_web") return `Web Search "${args}"`;
+  if (name === "search_x") return `X Search "${args}"`;
+  return name;
+}
+
+function getToolLabel(name: string, args: string, success: boolean): string {
+  if (!success) return `${name} failed`;
+  if (name === "bash") return args;
+  if (name === "search_web") return `Web Search "${args}"`;
+  if (name === "search_x") return `X Search "${args}"`;
+  return `${name} ${args}`;
+}
+
+function getToolArgs(tc?: ToolCall): string {
+  if (!tc) return "";
   try {
     const args = JSON.parse(tc.function.arguments);
     if (tc.function.name === "bash") return args.command || "";
-    return args.query || JSON.stringify(args);
+    return args.query || "";
   } catch {
-    return tc.function.arguments;
+    return "";
   }
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + "…";
 }
