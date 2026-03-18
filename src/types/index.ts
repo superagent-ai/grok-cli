@@ -60,3 +60,11 @@ export interface ModelInfo {
   reasoning: boolean;
   description: string;
 }
+
+export type AgentMode = "agent" | "plan" | "ask";
+
+export const MODES: { id: AgentMode; label: string; color: string }[] = [
+  { id: "agent", label: "Agent", color: "#fab283" },
+  { id: "plan", label: "Plan", color: "#9d7cd8" },
+  { id: "ask", label: "Ask", color: "#5c9cf5" },
+];

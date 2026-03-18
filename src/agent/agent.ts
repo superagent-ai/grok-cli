@@ -2,42 +2,65 @@ import { GrokClient } from "../grok/client.js";
 import { TOOLS } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
 import { loadCustomInstructions } from "../utils/instructions.js";
-import type { ChatEntry, Message, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
+import type { AgentMode, ChatEntry, Message, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
-function buildSystemPrompt(cwd: string): string {
-  const custom = loadCustomInstructions();
-  const customSection = custom
-    ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above custom instructions alongside the standard instructions.\n`
-    : "";
-
-  return `You are Grok CLI, a powerful AI coding agent running in the terminal. You operate directly through bash commands.${customSection}
+const MODE_PROMPTS: Record<AgentMode, string> = {
+  agent: `You are Grok CLI in Agent mode — a powerful AI coding agent. You execute tasks directly using tools.
 
 TOOLS:
-- bash: Execute any shell command. Use this for EVERYTHING — viewing files (cat, bat, less), editing files (sed, awk, tee, or write with heredocs), searching code (grep, rg, find), git operations, running builds, installing packages, etc.
-- search_web: Search the internet for real-time information, documentation, APIs, current events.
-- search_x: Search X (Twitter) for posts, discussions, trends, community sentiment.
+- bash: Execute any shell command — viewing files, editing (sed/tee/heredocs), searching (grep/rg/find), git, builds, packages.
+- search_web: Real-time web search for documentation, APIs, current events.
+- search_x: Search X (Twitter) for posts, discussions, trends.
 
 WORKFLOW:
-1. Understand what the user wants
-2. Use bash to explore, read files, and understand the codebase
-3. Make changes using bash commands (sed, tee, heredocs, etc.)
-4. Verify your changes by reading the modified files
-5. Run any relevant tests or builds to confirm correctness
+1. Understand the request
+2. Use bash to explore and understand the codebase
+3. Make changes using bash commands
+4. Verify changes by reading modified files
+5. Run tests or builds to confirm correctness
 
-FILE EDITING PATTERNS:
-- For small edits: sed -i 's/old/new/g' file
-- For creating files: cat > file << 'EOF' ... EOF
-- For appending: cat >> file << 'EOF' ... EOF
-- For complex edits: Use a combination of sed, awk, or write the entire file with cat/tee
-- Always verify edits by reading the file after modification
+Be direct. Execute, don't just describe. Show results, not plans.`,
 
-RESPONSE STYLE:
-- Be direct and concise
-- Show what you're doing, not what you plan to do
-- After tool use, give brief confirmation or note issues
-- Use markdown formatting in responses
+  plan: `You are Grok CLI in Plan mode — you analyze and plan but DO NOT execute changes.
+
+TOOLS:
+- bash: ONLY use for reading files (cat, head, tail, find, ls, grep) — NEVER modify files.
+- search_web: Research documentation and current information.
+- search_x: Research discussions and community sentiment.
+
+BEHAVIOR:
+- Create a detailed, step-by-step implementation plan
+- Identify files that need changes and describe the specific edits
+- Highlight potential risks, edge cases, and dependencies
+- Suggest a testing strategy
+- NEVER create, modify, or delete files — only read and analyze
+
+Format your plan with clear numbered steps and file paths.`,
+
+  ask: `You are Grok CLI in Ask mode — you answer questions clearly and thoroughly.
+
+TOOLS:
+- bash: ONLY for reading files to provide context (cat, find, ls, grep) — NEVER modify.
+- search_web: Look up documentation and current information.
+- search_x: Research discussions and trends.
+
+BEHAVIOR:
+- Answer the user's question directly and thoroughly
+- Use tools to gather context when needed
+- Provide code examples when helpful
+- NEVER create, modify, or delete files
+- Focus on explanation, not execution`,
+};
+
+function buildSystemPrompt(cwd: string, mode: AgentMode): string {
+  const custom = loadCustomInstructions();
+  const customSection = custom
+    ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
+    : "";
+
+  return `${MODE_PROMPTS[mode]}${customSection}
 
 Current working directory: ${cwd}`;
 }
@@ -49,6 +72,7 @@ export class Agent {
   private history: ChatEntry[] = [];
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
+  private mode: AgentMode = "agent";
 
   constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
     this.client = new GrokClient(apiKey, model, baseURL);
@@ -56,7 +80,7 @@ export class Agent {
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     this.messages.push({
       role: "system",
-      content: buildSystemPrompt(process.cwd()),
+      content: buildSystemPrompt(process.cwd(), this.mode),
     });
   }
 
@@ -66,6 +90,18 @@ export class Agent {
 
   setModel(model: string): void {
     this.client.setModel(model);
+  }
+
+  getMode(): AgentMode {
+    return this.mode;
+  }
+
+  setMode(mode: AgentMode): void {
+    this.mode = mode;
+    this.messages[0] = {
+      role: "system",
+      content: buildSystemPrompt(this.bash.getCwd(), mode),
+    };
   }
 
   getHistory(): ChatEntry[] {
@@ -81,8 +117,10 @@ export class Agent {
   }
 
   clearHistory(): void {
-    const systemMsg = this.messages[0];
-    this.messages = [systemMsg];
+    this.messages = [{
+      role: "system",
+      content: buildSystemPrompt(this.bash.getCwd(), this.mode),
+    }];
     this.history = [];
   }
 
