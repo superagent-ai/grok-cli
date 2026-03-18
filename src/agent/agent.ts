@@ -1,8 +1,9 @@
-import { GrokClient } from "../grok/client.js";
-import { TOOLS } from "../grok/tools.js";
+import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client.js";
+import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
 import { loadCustomInstructions } from "../utils/instructions.js";
-import type { AgentMode, Message, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
+import type { AgentMode, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -11,8 +12,8 @@ const MODE_PROMPTS: Record<AgentMode, string> = {
 
 TOOLS:
 - bash: Execute any shell command — viewing files, editing (sed/tee/heredocs), searching (grep/rg/find), git, builds, packages.
-- search_web: Real-time web search for documentation, APIs, current events.
-- search_x: Search X (Twitter) for posts, discussions, trends.
+- search_web: Search the web for current information, documentation, APIs, tutorials, etc.
+- search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
 
 WORKFLOW:
 1. Understand the request
@@ -20,6 +21,7 @@ WORKFLOW:
 3. Make changes using bash commands
 4. Verify changes by reading modified files
 5. Run tests or builds to confirm correctness
+6. Use search_web or search_x when you need up-to-date information
 
 Be direct. Execute, don't just describe. Show results, not plans.`,
 
@@ -27,8 +29,6 @@ Be direct. Execute, don't just describe. Show results, not plans.`,
 
 TOOLS:
 - bash: ONLY use for reading files (cat, head, tail, find, ls, grep) — NEVER modify files.
-- search_web: Research documentation and current information.
-- search_x: Research discussions and community sentiment.
 
 BEHAVIOR:
 - Create a detailed, step-by-step implementation plan
@@ -43,8 +43,6 @@ Format your plan with clear numbered steps and file paths.`,
 
 TOOLS:
 - bash: ONLY for reading files to provide context (cat, find, ls, grep) — NEVER modify.
-- search_web: Look up documentation and current information.
-- search_x: Research discussions and trends.
 
 BEHAVIOR:
 - Answer the user's question directly and thoroughly
@@ -66,29 +64,30 @@ Current working directory: ${cwd}`;
 }
 
 export class Agent {
-  private client: GrokClient;
+  private provider: XaiProvider;
   private bash: BashTool;
-  private messages: Message[] = [];
+  private messages: ModelMessage[] = [];
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
   private mode: AgentMode = "agent";
+  private modelId: string;
+  private maxTokens: number;
 
   constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
-    this.client = new GrokClient(apiKey, model, baseURL);
+    this.provider = createProvider(apiKey, baseURL);
     this.bash = new BashTool();
+    this.modelId = model || "grok-4-1-fast";
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
-    this.messages.push({
-      role: "system",
-      content: buildSystemPrompt(process.cwd(), this.mode),
-    });
+    const envMax = Number(process.env.GROK_MAX_TOKENS);
+    this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
   }
 
   getModel(): string {
-    return this.client.getModel();
+    return this.modelId;
   }
 
   setModel(model: string): void {
-    this.client.setModel(model);
+    this.modelId = model;
   }
 
   getMode(): AgentMode {
@@ -97,18 +96,14 @@ export class Agent {
 
   setMode(mode: AgentMode): void {
     this.mode = mode;
-    this.messages[0] = {
-      role: "system",
-      content: buildSystemPrompt(this.bash.getCwd(), mode),
-    };
   }
 
   getCwd(): string {
     return this.bash.getCwd();
   }
 
-  generateTitle(userMessage: string): Promise<string> {
-    return this.client.generateTitle(userMessage);
+  async generateTitle(userMessage: string): Promise<string> {
+    return genTitle(this.provider, userMessage);
   }
 
   abort(): void {
@@ -116,10 +111,7 @@ export class Agent {
   }
 
   clearHistory(): void {
-    this.messages = [{
-      role: "system",
-      content: buildSystemPrompt(this.bash.getCwd(), this.mode),
-    }];
+    this.messages = [];
   }
 
   async *processMessage(userMessage: string): AsyncGenerator<StreamChunk, void, unknown> {
@@ -127,110 +119,113 @@ export class Agent {
 
     this.messages.push({ role: "user", content: userMessage });
 
-    let toolRounds = 0;
+    let assistantText = "";
+    let streamOk = false;
 
     try {
-      while (toolRounds < this.maxToolRounds) {
+      const tools = createTools(this.bash, this.provider);
+      const system = buildSystemPrompt(this.bash.getCwd(), this.mode);
+
+      const result = streamText({
+        model: this.provider(this.modelId),
+        system,
+        messages: this.messages,
+        tools,
+        stopWhen: stepCountIs(this.maxToolRounds),
+        maxRetries: 0,
+        abortSignal: this.abortController.signal,
+        temperature: 0.7,
+        maxOutputTokens: this.maxTokens,
+      });
+
+      for await (const part of result.fullStream) {
         if (this.abortController.signal.aborted) {
           yield { type: "content", content: "\n\n[Cancelled]" };
-          yield { type: "done" };
-          return;
-        }
-
-        let accContent = "";
-        let accToolCalls: ToolCall[] | undefined;
-        let accReasoning = "";
-
-        for await (const delta of this.client.chatStream(this.messages, TOOLS)) {
-          if (this.abortController.signal.aborted) {
-            yield { type: "content", content: "\n\n[Cancelled]" };
-            yield { type: "done" };
-            return;
-          }
-
-          if (delta.content) {
-            accContent += delta.content;
-            yield { type: "content", content: delta.content };
-          }
-
-          if (delta.reasoning) {
-            accReasoning += delta.reasoning;
-            yield { type: "reasoning", content: delta.reasoning };
-          }
-
-          if (delta.toolCalls) {
-            accToolCalls = delta.toolCalls;
-            yield { type: "tool_calls", toolCalls: delta.toolCalls };
-          }
-        }
-
-        this.messages.push({
-          role: "assistant",
-          content: accContent || "",
-          tool_calls: accToolCalls,
-        });
-
-        if (!accToolCalls || accToolCalls.length === 0) {
           break;
         }
 
-        toolRounds++;
+        switch (part.type) {
+          case "text-delta":
+            assistantText += part.text;
+            yield { type: "content", content: part.text };
+            break;
 
-        for (const tc of accToolCalls) {
-          if (this.abortController.signal.aborted) {
-            yield { type: "content", content: "\n\n[Cancelled]" };
-            yield { type: "done" };
-            return;
+          case "reasoning-delta":
+            yield { type: "reasoning", content: part.text };
+            break;
+
+          case "tool-call": {
+            const tc = toToolCall(part);
+            yield { type: "tool_calls", toolCalls: [tc] };
+            break;
           }
 
-          const result = await this.executeTool(tc);
+          case "tool-result": {
+            const tc: ToolCall = {
+              id: part.toolCallId,
+              type: "function",
+              function: { name: part.toolName, arguments: JSON.stringify(part.input ?? {}) },
+            };
+            const tr = toToolResult(part.output);
+            yield { type: "tool_result", toolCall: tc, toolResult: tr };
+            break;
+          }
 
-          yield { type: "tool_result", toolCall: tc, toolResult: result };
-
-          this.messages.push({
-            role: "tool",
-            content: result.success ? (result.output || "Success") : (result.error || "Error"),
-            tool_call_id: tc.id,
-          });
+          case "error":
+            yield { type: "error", content: String(part.error) };
+            break;
         }
       }
 
-      if (toolRounds >= this.maxToolRounds) {
-        yield { type: "content", content: "\n\nMax tool rounds reached." };
+      try {
+        const response = await result.response;
+        this.messages.push(...response.messages);
+        streamOk = true;
+      } catch {
+        // response promise can fail after stream errors — fall back to manual message
+      }
+
+      if (!streamOk && assistantText.trim()) {
+        this.messages.push({ role: "assistant", content: assistantText });
       }
 
       yield { type: "done" };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      yield { type: "error", content: `Error: ${msg}` };
+      if (this.abortController.signal.aborted) {
+        yield { type: "content", content: "\n\n[Cancelled]" };
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        yield { type: "error", content: `Error: ${msg}` };
+      }
+      if (assistantText.trim()) {
+        this.messages.push({ role: "assistant", content: assistantText });
+      }
       yield { type: "done" };
     } finally {
       this.abortController = null;
     }
   }
+}
 
-  private async executeTool(tc: ToolCall): Promise<ToolResult> {
-    try {
-      const args = JSON.parse(tc.function.arguments);
+function toToolCall(part: { toolCallId: string; toolName: string; args?: unknown }): ToolCall {
+  return {
+    id: part.toolCallId,
+    type: "function",
+    function: {
+      name: part.toolName,
+      arguments: JSON.stringify(part.args ?? {}),
+    },
+  };
+}
 
-      switch (tc.function.name) {
-        case "bash":
-          return await this.bash.execute(args.command, args.timeout);
-
-        case "search_web":
-          const webResult = await this.client.searchWeb(args.query);
-          return { success: true, output: webResult };
-
-        case "search_x":
-          const xResult = await this.client.searchX(args.query);
-          return { success: true, output: xResult };
-
-        default:
-          return { success: false, error: `Unknown tool: ${tc.function.name}` };
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, error: `Tool error: ${msg}` };
-    }
+function toToolResult(output: unknown): ToolResult {
+  if (output && typeof output === "object" && "success" in output) {
+    const r = output as { success: boolean; output?: string };
+    return {
+      success: r.success,
+      output: r.output,
+      error: r.success ? undefined : r.output,
+    };
   }
+  return { success: true, output: String(output) };
 }

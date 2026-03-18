@@ -32,12 +32,14 @@
   "author": "Vibe Kit",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/xai": "^3.0.67",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
+    "ai": "^6.0.116",
     "commander": "^12.0.0",
     "dotenv": "^16.4.0",
-    "openai": "^5.10.1",
-    "react": "^19.1.0"
+    "react": "^19.1.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

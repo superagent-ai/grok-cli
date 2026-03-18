@@ -74,6 +74,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const processedInitial = useRef(false);
   const contentAccRef = useRef("");
   const startTimeRef = useRef(0);
+  const isProcessingRef = useRef(false);
 
   const setMode = useCallback((m: AgentMode) => { agent.setMode(m); setModeState(m); }, [agent]);
   const cycleMode = useCallback(() => {
@@ -103,7 +104,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   }, []);
 
   const processMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isProcessing) return;
+    if (!text.trim() || isProcessingRef.current) return;
+    isProcessingRef.current = true;
     setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); contentAccRef.current = "";
     startTimeRef.current = Date.now();
     if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
@@ -152,15 +154,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       const f = contentAccRef.current;
       setMessages((p) => [...p, { type: "assistant", content: f, timestamp: new Date() }]);
     }
-    const elapsed = Date.now() - startTimeRef.current;
-    const dur = formatDuration(elapsed);
-    setMessages((p) => [...p, {
-      type: "tool_call" as const, content: `▣  ${modeInfo.label} · ${model}${dur ? ` · ${dur}` : ""}`,
-      timestamp: new Date(),
-    }]);
+    
     contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]);
+    isProcessingRef.current = false;
     setIsProcessing(false); setTimeout(scrollToBottom, 50);
-  }, [agent, isProcessing, scrollToBottom, modeInfo, model]);
+  }, [agent, scrollToBottom, modeInfo, model]);
 
   useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
 
@@ -408,7 +406,7 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
   return (
     <box>
       <box>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={2} backgroundColor={t.backgroundElement} flexShrink={0}>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
           <textarea
             ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu}
             placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
