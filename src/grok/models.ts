@@ -66,6 +66,21 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
+export const MODEL_GROUPS: { category: string; models: string[] }[] = [
+  {
+    category: "Grok 4",
+    models: ["grok-4-0709", "grok-4.20-beta-0309", "grok-4-fast", "grok-4-1-fast"],
+  },
+  {
+    category: "Grok Code",
+    models: ["grok-code-fast-1"],
+  },
+  {
+    category: "Grok 3",
+    models: ["grok-3", "grok-3-mini"],
+  },
+];
+
 export const DEFAULT_MODEL = "grok-4-1-fast";
 
 export function getModelInfo(modelId: string): ModelInfo | undefined {
@@ -74,4 +89,10 @@ export function getModelInfo(modelId: string): ModelInfo | undefined {
 
 export function getModelIds(): string[] {
   return MODELS.map((m) => m.id);
+}
+
+export function formatPrice(price: number): string {
+  if (price === 0) return "Free";
+  if (price < 1) return `$${price.toFixed(2)}`;
+  return `$${price}`;
 }
