@@ -136,5 +136,56 @@ export function createTools(bash: BashTool, provider: XaiProvider) {
         }
       },
     }),
+
+    generate_plan: tool({
+      description:
+        "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
+      inputSchema: z.object({
+        title: z.string().describe("Plan title"),
+        summary: z.string().describe("Brief summary of what the plan accomplishes"),
+        steps: z
+          .array(
+            z.object({
+              title: z.string().describe("Step title"),
+              description: z
+                .string()
+                .describe("Detailed description of what this step involves"),
+              filePaths: z
+                .array(z.string())
+                .optional()
+                .describe("Files affected by this step"),
+            }),
+          )
+          .describe("Ordered list of implementation steps"),
+        questions: z
+          .array(
+            z.object({
+              id: z.string().describe("Unique question identifier"),
+              question: z.string().describe("The question to ask the user"),
+              type: z
+                .enum(["select", "multiselect", "text"])
+                .describe("Question type: select (pick one), multiselect (pick many), or text (free-form)"),
+              options: z
+                .array(
+                  z.object({
+                    id: z.string().describe("Option identifier"),
+                    label: z.string().describe("Option display text"),
+                  }),
+                )
+                .optional()
+                .describe("Options for select/multiselect questions"),
+            }),
+          )
+          .optional()
+          .describe("Questions for the user to answer before proceeding"),
+      }),
+      execute: async ({ title, summary, steps, questions }) => {
+        return {
+          success: true,
+          output: `Plan "${title}" generated with ${steps.length} steps`,
+          plan: { title, summary, steps, questions },
+        };
+      },
+    }),
   };
 }

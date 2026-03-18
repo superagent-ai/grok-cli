@@ -4,12 +4,13 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
 import { decodePasteBytes, PasteEvent } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
-import type { ChatEntry, ToolCall, AgentMode, ModelInfo, FileDiff } from "../types/index.js";
+import type { ChatEntry, ToolCall, AgentMode, ModelInfo, FileDiff, Plan, PlanQuestion } from "../types/index.js";
 import { MODES } from "../types/index.js";
 import { getModelInfo, MODELS } from "../grok/models.js";
 import { saveProjectSettings } from "../utils/settings.js";
 import { dark, type Theme } from "./theme.js";
 import { Markdown } from "./markdown.js";
+import { PlanView, PlanQuestionsPanel, formatPlanAnswers, initialPlanQuestionsState, type PlanAnswers, type PlanQuestionsState } from "./plan.js";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 
@@ -124,6 +125,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
   const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>([]);
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
   const imageCounterRef = useRef(0);
   const pasteCounterRef = useRef(0);
   const inputRef = useRef<TextareaRenderable>(null);
@@ -197,6 +200,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
                 content: chunk.toolResult!.success ? (chunk.toolResult!.output || "Success") : (chunk.toolResult!.error || "Error"),
                 timestamp: new Date(), toolCall: chunk.toolCall, toolResult: chunk.toolResult,
               }]);
+              if (chunk.toolResult.plan?.questions?.length) {
+                setActivePlan(chunk.toolResult.plan);
+                setPqs(initialPlanQuestionsState());
+              }
               setActiveToolCalls([]); setTimeout(scrollToBottom, 10);
             }
             break;
@@ -222,7 +229,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
 
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
-    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); imageCounterRef.current = 0; return true; }
+    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState()); imageCounterRef.current = 0; return true; }
     if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery(""); return true; }
     if (c === "/quit" || c === "/exit" || c === "/q") { onExit ? onExit() : process.exit(0); }
     return false;
@@ -233,7 +240,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     inputRef.current?.clear();
     switch (item.id) {
       case "new":
-        agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]);
+        agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState());
         break;
       case "models":
         setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery("");
@@ -256,7 +263,167 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
   }, [agent, flatModels, model]);
 
+  const showPlanPanel = !!(activePlan?.questions?.length);
+  const planQuestions = activePlan?.questions ?? [];
+  const isSinglePlan = planQuestions.length === 1 && planQuestions[0]?.type !== "multiselect";
+  const planTabCount = isSinglePlan ? 1 : planQuestions.length + 1;
+  const isPlanConfirmTab = !isSinglePlan && pqs.tab === planQuestions.length;
+
+  const dismissPlan = useCallback(() => {
+    setActivePlan(null);
+    setPqs(initialPlanQuestionsState());
+  }, []);
+
+  const submitPlanAnswers = useCallback(() => {
+    if (!activePlan?.questions?.length) return;
+    const text = formatPlanAnswers(activePlan.questions, pqs.answers);
+    setActivePlan(null);
+    setPqs(initialPlanQuestionsState());
+    processMessage(text);
+  }, [activePlan, pqs.answers, processMessage]);
+
+  const handlePlanSelect = useCallback((q: PlanQuestion, idx: number, options: { id: string; label: string }[], showCustom: boolean) => {
+    const isCustom = showCustom && idx === options.length;
+    if (isCustom) {
+      if (q.type === "multiselect") {
+        const customVal = pqs.customInputs[q.id] ?? "";
+        if (customVal) {
+          const existing = (pqs.answers[q.id] as string[] | undefined) ?? [];
+          if (existing.includes(customVal)) {
+            setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: existing.filter((x) => x !== customVal) } }));
+          } else {
+            setPqs((s) => ({ ...s, editing: true }));
+          }
+        } else {
+          setPqs((s) => ({ ...s, editing: true }));
+        }
+      } else {
+        setPqs((s) => ({ ...s, editing: true }));
+      }
+      return;
+    }
+    const opt = options[idx];
+    if (!opt) return;
+
+    if (q.type === "multiselect") {
+      setPqs((s) => {
+        const existing = (s.answers[q.id] as string[] | undefined) ?? [];
+        const next = existing.includes(opt.id) ? existing.filter((x) => x !== opt.id) : [...existing, opt.id];
+        return { ...s, answers: { ...s.answers, [q.id]: next } };
+      });
+    } else {
+      setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: opt.id } }));
+      if (isSinglePlan) { submitPlanAnswers(); return; }
+      setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+    }
+  }, [pqs, isSinglePlan, submitPlanAnswers]);
+
   useKeyboard((key) => {
+    if (showPlanPanel) {
+      const q = planQuestions[pqs.tab];
+
+      // Escape always dismisses
+      if (key.name === "escape") { dismissPlan(); return; }
+
+      // When editing custom text input
+      if (pqs.editing && !isPlanConfirmTab) {
+        if (key.name === "return") {
+          const qId = q?.id;
+          if (qId) {
+            const text = (pqs.customInputs[qId] ?? "").trim();
+            if (text) {
+              if (q.type === "multiselect") {
+                const existing = (pqs.answers[qId] as string[] | undefined) ?? [];
+                const next = existing.includes(text) ? existing : [...existing, text];
+                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: next } }));
+              } else if (q.type === "text") {
+                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
+                if (isSinglePlan) { submitPlanAnswers(); return; }
+                setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+              } else {
+                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
+                if (isSinglePlan) { submitPlanAnswers(); return; }
+                setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+              }
+            } else {
+              setPqs((s) => ({ ...s, editing: false }));
+            }
+          }
+          return;
+        }
+        if (key.name === "backspace") {
+          const qId = q?.id;
+          if (qId) setPqs((s) => ({ ...s, customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "").slice(0, -1) } }));
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          const qId = q?.id;
+          if (qId) setPqs((s) => ({ ...s, customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "") + key.sequence } }));
+          return;
+        }
+        return;
+      }
+
+      // Tab / left / right — switch between question tabs
+      if (key.name === "tab") {
+        const dir = key.shift ? -1 : 1;
+        setPqs((s) => ({ ...s, tab: (s.tab + dir + planTabCount) % planTabCount, selected: 0 }));
+        return;
+      }
+      if (key.name === "left" || key.name === "h") {
+        setPqs((s) => ({ ...s, tab: (s.tab - 1 + planTabCount) % planTabCount, selected: 0 }));
+        return;
+      }
+      if (key.name === "right" || key.name === "l") {
+        setPqs((s) => ({ ...s, tab: (s.tab + 1) % planTabCount, selected: 0 }));
+        return;
+      }
+
+      // Confirm tab
+      if (isPlanConfirmTab) {
+        if (key.name === "return") { submitPlanAnswers(); return; }
+        return;
+      }
+
+      if (!q) return;
+
+      // Text-only question (no options)
+      if (q.type === "text") {
+        setPqs((s) => ({ ...s, editing: true }));
+        return;
+      }
+
+      // Up/down — navigate options
+      const options = q.options ?? [];
+      const showCustom = true;
+      const totalItems = options.length + 1;
+
+      if (key.name === "up" || key.name === "k") {
+        setPqs((s) => ({ ...s, selected: (s.selected - 1 + totalItems) % totalItems }));
+        return;
+      }
+      if (key.name === "down" || key.name === "j") {
+        setPqs((s) => ({ ...s, selected: (s.selected + 1) % totalItems }));
+        return;
+      }
+
+      // Number keys 1-9 for quick selection
+      const digit = Number(key.name);
+      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(totalItems, 9)) {
+        const idx = digit - 1;
+        setPqs((s) => ({ ...s, selected: idx }));
+        handlePlanSelect(q, idx, options, showCustom);
+        return;
+      }
+
+      // Enter — select current option
+      if (key.name === "return") {
+        handlePlanSelect(q, pqs.selected, options, showCustom);
+        return;
+      }
+
+      return;
+    }
     if (showSlashMenu) {
       if (key.name === "escape") { setShowSlashMenu(false); setSlashSearchQuery(""); inputRef.current?.clear(); return; }
       if (key.name === "up") { setSlashMenuIndex((i) => Math.max(0, i - 1)); return; }
@@ -381,10 +548,18 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             {isProcessing && !streamContent && activeToolCalls.length === 0 && (
               <ShimmerText t={t} text="Planning next moves" />
             )}
+            {/* Plan questions panel — inline, OpenCode-style */}
+            {showPlanPanel && (
+              <PlanQuestionsPanel
+                t={t}
+                questions={planQuestions}
+                state={pqs}
+              />
+            )}
           </scrollbox>
           {/* Prompt */}
           <box flexShrink={0}>
-            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu}
+            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
               onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
               modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
           </box>
@@ -399,7 +574,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             </box>
             <box height={1} minHeight={0} flexShrink={1} />
             <box width="100%" maxWidth={75} flexShrink={0}>
-              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu}
+              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
                 onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
                 modeInfo={modeInfo} model={model} modelInfo={modelInfo}
                 placeholder={"What are we building?"} />
@@ -448,9 +623,9 @@ const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
 ];
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder }: {
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder }: {
   t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
-  isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; onSubmit: () => void;
+  isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; showPlanQuestions: boolean; onSubmit: () => void;
   onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
   modeInfo: typeof MODES[number]; model: string;
   modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
@@ -460,7 +635,7 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
       <box>
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
           <textarea
-            ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu}
+            ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu && !showPlanQuestions}
             placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
             textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
             minHeight={1} maxHeight={10} wrapMode="word"
@@ -527,6 +702,11 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
       const name = entry.toolCall?.function.name || "tool";
       const args = toolArgs(entry.toolCall);
       const diff = entry.toolResult?.diff;
+      const plan = entry.toolResult?.plan;
+
+      if (name === "generate_plan" && plan) {
+        return <PlanView plan={plan} t={t} />;
+      }
 
       if ((name === "write_file" || name === "edit_file") && diff) {
         const label = name === "write_file"
@@ -827,6 +1007,7 @@ function toolLabel(tc: ToolCall): string {
   if (tc.function.name === "edit_file") return `Edit ${args}`;
   if (tc.function.name === "search_web") return `Web Search "${args}"`;
   if (tc.function.name === "search_x") return `X Search "${args}"`;
+  if (tc.function.name === "generate_plan") return "Generating plan...";
   return `${tc.function.name} ${args}`;
 }
 function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }

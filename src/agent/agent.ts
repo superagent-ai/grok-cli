@@ -3,7 +3,7 @@ import { createProvider, generateTitle as genTitle, type XaiProvider } from "../
 import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
 import { loadCustomInstructions } from "../utils/instructions.js";
-import type { AgentMode, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
+import type { AgentMode, Plan, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -51,15 +51,16 @@ ${ENVIRONMENT}
 TOOLS:
 - read_file: Read file contents for analysis.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify files.
+- generate_plan: ALWAYS use this to present your plan. Creates an interactive UI with steps and questions.
 
 BEHAVIOR:
-- Create a detailed, step-by-step implementation plan
-- Identify files that need changes and describe the specific edits
-- Highlight potential risks, edge cases, and dependencies
-- Suggest a testing strategy
-- NEVER create, modify, or delete files — only read and analyze
-
-Format your plan with clear numbered steps and file paths.`,
+- Explore the codebase first using read_file and bash to understand the current state
+- ALWAYS call generate_plan to present your plan — never just describe it in text
+- Include clear, ordered steps with affected file paths
+- Include questions when you need user input on approach, trade-offs, or preferences
+- Use "select" questions for single-choice decisions, "multiselect" for picking multiple options, and "text" for free-form input
+- Highlight potential risks, edge cases, and dependencies in the plan summary
+- NEVER create, modify, or delete files — only read and analyze`,
 
   ask: `You are Grok CLI in Ask mode — you answer questions clearly and thoroughly.
 
@@ -245,12 +246,13 @@ function toToolCall(part: { toolCallId: string; toolName: string; args?: unknown
 
 function toToolResult(output: unknown): ToolResult {
   if (output && typeof output === "object" && "success" in output) {
-    const r = output as { success: boolean; output?: string; diff?: ToolResult["diff"] };
+    const r = output as { success: boolean; output?: string; diff?: ToolResult["diff"]; plan?: Plan };
     return {
       success: r.success,
       output: r.output,
       error: r.success ? undefined : r.output,
       diff: r.diff,
+      plan: r.plan,
     };
   }
   return { success: true, output: String(output) };

@@ -6,11 +6,32 @@ export interface FileDiff {
   isNew: boolean;
 }
 
+export interface PlanStep {
+  title: string;
+  description: string;
+  filePaths?: string[];
+}
+
+export interface PlanQuestion {
+  id: string;
+  question: string;
+  type: "select" | "multiselect" | "text";
+  options?: { id: string; label: string }[];
+}
+
+export interface Plan {
+  title: string;
+  summary: string;
+  steps: PlanStep[];
+  questions?: PlanQuestion[];
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
   diff?: FileDiff;
+  plan?: Plan;
 }
 
 export interface ToolCall {
