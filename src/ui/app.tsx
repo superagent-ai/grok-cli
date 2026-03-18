@@ -5,29 +5,8 @@ import type { Agent } from "../agent/agent.js";
 import type { ChatEntry, ToolCall, AgentMode } from "../types/index.js";
 import { MODES } from "../types/index.js";
 import { getModelInfo, MODEL_GROUPS, MODELS } from "../grok/models.js";
-import { getAvailableModels, saveProjectSettings } from "../utils/settings.js";
+import { saveProjectSettings } from "../utils/settings.js";
 import { dark, type Theme } from "./theme.js";
-
-const SPLIT_BORDER = {
-  topLeft: "", bottomLeft: "", vertical: "┃", topRight: "",
-  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
-  cross: "", leftT: "", rightT: "",
-};
-const SPLIT_BORDER_END = { ...SPLIT_BORDER, bottomLeft: "╹" };
-const EMPTY_BORDER = {
-  topLeft: "", bottomLeft: "", vertical: "", topRight: "",
-  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
-  cross: "", leftT: "", rightT: "",
-};
-
-const GROK_LOGO = [
-  "    ⢀⣴⣶⣦⡀    ",
-  "   ⣰⣿⠟⠁⢹⣷   ",
-  "  ⣰⣿⠋  ⢀⣿⡇  ",
-  "  ⣿⣿  ⢀⣾⡿⠁  ",
-  "  ⠹⣿⣦⣴⣿⠟⠁   ",
-  "   ⠈⠛⠛⠋⠁     ",
-];
 
 interface AppProps {
   agent: Agent;
@@ -59,13 +38,11 @@ export function App({ agent, initialMessage }: AppProps) {
 
   const modeInfo = MODES.find((m) => m.id === mode)!;
   const modelInfo = getModelInfo(model);
+  const flatModels = MODELS.map((m) => m.id);
 
   const scrollToBottom = useCallback(() => {
     try { scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999); } catch { /* */ }
   }, []);
-
-  // Flat model list for picker navigation
-  const flatModels = MODELS.map((m) => m.id);
 
   const processMessage = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return;
@@ -101,7 +78,7 @@ export function App({ agent, initialMessage }: AppProps) {
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
     if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); return true; }
-    if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(flatModels.indexOf(model)); return true; }
+    if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(Math.max(0, flatModels.indexOf(model))); return true; }
     if (c === "/quit" || c === "/exit" || c === "/q") { process.exit(0); }
     return false;
   }, [agent, model, flatModels]);
@@ -123,11 +100,11 @@ export function App({ agent, initialMessage }: AppProps) {
   });
 
   const handleSubmit = useCallback(() => {
-    const value = inputRef.current?.value || "";
-    if (!value.trim()) return;
+    const v = inputRef.current?.value || "";
+    if (!v.trim()) return;
     if (inputRef.current) inputRef.current.value = "";
-    if (handleCommand(value)) return;
-    processMessage(value);
+    if (handleCommand(v)) return;
+    processMessage(v);
   }, [handleCommand, processMessage]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
@@ -135,214 +112,135 @@ export function App({ agent, initialMessage }: AppProps) {
   return (
     <box width={width} height={height} backgroundColor={t.background} flexDirection="column">
       {hasMessages ? (
-        <SessionView
-          t={t} agent={agent} model={model} mode={mode} modeInfo={modeInfo} modelInfo={modelInfo}
-          messages={messages} streamContent={streamContent} streamReasoning={streamReasoning}
-          isProcessing={isProcessing} activeToolCalls={activeToolCalls}
-          scrollRef={scrollRef} inputRef={inputRef} showModelPicker={showModelPicker}
-          handleSubmit={handleSubmit}
-        />
-      ) : (
-        <HomeView
-          t={t} agent={agent} model={model} mode={mode} modeInfo={modeInfo} modelInfo={modelInfo}
-          inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
-          handleSubmit={handleSubmit}
-        />
-      )}
-      {/* Model picker modal overlay */}
-      {showModelPicker && (
-        <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} />
-      )}
-    </box>
-  );
-}
-
-/* ── Home Screen ─────────────────────────────────────────────── */
-
-function HomeView({ t, agent, model, mode, modeInfo, modelInfo, inputRef, isProcessing, showModelPicker, handleSubmit }: {
-  t: Theme; agent: Agent; model: string; mode: AgentMode;
-  modeInfo: typeof MODES[number]; modelInfo: ReturnType<typeof getModelInfo>;
-  inputRef: React.RefObject<InputRenderable | null>;
-  isProcessing: boolean; showModelPicker: boolean; handleSubmit: () => void;
-}) {
-  return (
-    <>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
-        <box flexGrow={1} minHeight={0} />
-        <box height={3} minHeight={0} flexShrink={1} />
-        {/* Grok Logo */}
-        <box flexShrink={0} alignItems="center">
-          <box flexDirection="row" gap={2} alignItems="center">
-            <box>
-              {GROK_LOGO.map((line, i) => (
-                <text key={i} fg={t.text}>{line}</text>
-              ))}
+        <box flexGrow={1} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} gap={1}>
+          {/* Top bar: model on left, mode pill on right */}
+          <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
+            <text fg={t.textMuted}>{modelInfo?.name || model}{isProcessing ? "  working..." : ""}</text>
+            <text fg={modeInfo.color}>{modeInfo.label}</text>
+          </box>
+          {/* Thin separator */}
+          <box height={1} flexShrink={0}><text fg={t.border}>{"─".repeat(Math.max(1, width - 4))}</text></box>
+          {/* Messages */}
+          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
+            {messages.map((msg, i) => <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />)}
+            {activeToolCalls.map((tc, i) => (
+              <box key={i} paddingLeft={2} marginTop={1}>
+                <text fg={t.textMuted}>{"› "}{tc.function.name === "bash" ? toolArgs(tc) : `${tc.function.name} ${toolArgs(tc)}`}</text>
+              </box>
+            ))}
+            {streamReasoning && (
+              <box paddingLeft={2} marginTop={1}><text fg={t.textDim}><i>{"thinking: "}{trunc(streamReasoning, 200)}</i></text></box>
+            )}
+            {streamContent && <box paddingLeft={2} marginTop={1}><text fg={t.text}>{streamContent}</text></box>}
+            {isProcessing && !streamContent && activeToolCalls.length === 0 && (
+              <box paddingLeft={2} marginTop={1}><text fg={t.textMuted}>{"..."}</text></box>
+            )}
+          </scrollbox>
+          {/* Input area */}
+          <box flexShrink={0} border borderStyle="single" borderColor={modeInfo.color} paddingLeft={1} paddingRight={1}>
+            <input
+              ref={inputRef} focused={!isProcessing && !showModelPicker}
+              placeholder={isProcessing ? "Working... (esc to stop)" : "Message Grok..."}
+              textColor={t.text} backgroundColor={t.background} placeholderColor={t.textMuted}
+              onSubmit={handleSubmit as any}
+            />
+          </box>
+          {/* Bottom hints */}
+          <box flexDirection="row" justifyContent="space-between" flexShrink={0}>
+            <text fg={t.textDim}>{agent.getCwd()}</text>
+            <box flexDirection="row" gap={2}>
+              <text fg={t.textDim}>{"tab"}<span style={{ fg: t.textMuted }}>{" mode"}</span></text>
+              <text fg={t.textDim}>{"/model"}</text>
             </box>
-            <text fg={t.text}><b>{"Grok"}</b></text>
           </box>
         </box>
-        <box height={2} minHeight={0} flexShrink={1} />
-        {/* Prompt box */}
-        <box width="100%" maxWidth={75} flexShrink={0}>
-          <PromptBox
-            t={t} inputRef={inputRef} isProcessing={isProcessing}
-            showModelPicker={showModelPicker} onSubmit={handleSubmit}
-            mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo}
-            placeholder={`Ask anything... "Fix broken tests"`}
-          />
-        </box>
-        {/* Keyboard hints */}
-        <box height={3} minHeight={0} width="100%" maxWidth={75} alignItems="center" paddingTop={2} flexShrink={1}>
-          <box flexDirection="row" gap={3}>
-            <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
-            <text fg={t.text}>{"ctrl+p "}<span style={{ fg: t.textMuted }}>{"commands"}</span></text>
+      ) : (
+        /* ── Home Screen ──────────────────────────────────── */
+        <>
+          <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+            <box flexGrow={1} minHeight={0} />
+            {/* Logo: simple bold text */}
+            <box flexShrink={0} alignItems="center">
+              <text fg={t.primary}><b>{"  ✦  G R O K"}</b></text>
+              <box height={1} />
+              <text fg={t.textMuted}>{"AI coding agent for the terminal"}</text>
+            </box>
+            <box height={3} minHeight={0} flexShrink={1} />
+            {/* Prompt area */}
+            <box width="100%" maxWidth={70} flexShrink={0}>
+              <box border borderStyle="single" borderColor={modeInfo.color} paddingLeft={1} paddingRight={1}>
+                <input
+                  ref={inputRef} focused={!isProcessing && !showModelPicker}
+                  placeholder={'Message Grok... "Fix broken tests"'}
+                  textColor={t.text} backgroundColor={t.background} placeholderColor={t.textMuted}
+                  onSubmit={handleSubmit as any}
+                />
+              </box>
+              {/* Mode + model row */}
+              <box flexDirection="row" justifyContent="space-between" paddingTop={1}>
+                <box flexDirection="row" gap={2}>
+                  {MODES.map((m) => (
+                    <text key={m.id} fg={m.id === mode ? m.color : t.textDim}>
+                      {m.id === mode ? `● ${m.label}` : m.label}
+                    </text>
+                  ))}
+                </box>
+                <text fg={t.textMuted}>{modelInfo?.name || model}</text>
+              </box>
+            </box>
+            <box height={2} minHeight={0} flexShrink={1} />
+            {/* Hints */}
+            <box flexDirection="row" gap={3}>
+              <text fg={t.textDim}>{"tab"}<span style={{ fg: t.textMuted }}>{" cycle modes"}</span></text>
+              <text fg={t.textDim}>{"/model"}<span style={{ fg: t.textMuted }}>{" switch"}</span></text>
+              <text fg={t.textDim}>{"/quit"}<span style={{ fg: t.textMuted }}>{" exit"}</span></text>
+            </box>
+            <box flexGrow={1} minHeight={0} />
           </box>
-        </box>
-        <box flexGrow={1} minHeight={0} />
-      </box>
-      <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0} gap={2}>
-        <text fg={t.textMuted}>{agent.getCwd()}</text>
-        <box flexGrow={1} />
-        <text fg={t.textMuted}>{"v1.0.0"}</text>
-      </box>
-    </>
-  );
-}
-
-/* ── Session View ────────────────────────────────────────────── */
-
-function SessionView({ t, agent, model, mode, modeInfo, modelInfo, messages, streamContent, streamReasoning, isProcessing, activeToolCalls, scrollRef, inputRef, showModelPicker, handleSubmit }: {
-  t: Theme; agent: Agent; model: string; mode: AgentMode;
-  modeInfo: typeof MODES[number]; modelInfo: ReturnType<typeof getModelInfo>;
-  messages: ChatEntry[]; streamContent: string; streamReasoning: string;
-  isProcessing: boolean; activeToolCalls: ToolCall[];
-  scrollRef: React.RefObject<ScrollBoxRenderable | null>;
-  inputRef: React.RefObject<InputRenderable | null>;
-  showModelPicker: boolean; handleSubmit: () => void;
-}) {
-  return (
-    <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
-      <Header t={t} model={model} modelInfo={modelInfo} isProcessing={isProcessing} />
-      <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
-        {messages.map((msg, i) => <MessageView key={i} entry={msg} index={i} t={t} />)}
-        {activeToolCalls.length > 0 && activeToolCalls.map((tc, i) => <ToolCallPending key={i} tc={tc} t={t} />)}
-        {streamReasoning && (
-          <box paddingLeft={2} marginTop={1} border={["left"]} customBorderChars={SPLIT_BORDER} borderColor={t.backgroundElement}>
-            <text fg={t.textMuted}><i>{"Thinking: "}{truncate(streamReasoning, 300)}</i></text>
+          {/* Footer */}
+          <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
+            <text fg={t.textDim}>{agent.getCwd()}</text>
+            <box flexGrow={1} />
+            <text fg={t.textDim}>{"grok-cli v1.0"}</text>
           </box>
-        )}
-        {streamContent && <box paddingLeft={3} marginTop={1} flexShrink={0}><text fg={t.text}>{streamContent}</text></box>}
-        {isProcessing && !streamContent && activeToolCalls.length === 0 && (
-          <box paddingLeft={3} marginTop={1}><text fg={t.textMuted}>{"~ Thinking..."}</text></box>
-        )}
-      </scrollbox>
-      <box flexShrink={0}>
-        <PromptBox
-          t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker}
-          onSubmit={handleSubmit} mode={mode} modeInfo={modeInfo} model={model} modelInfo={modelInfo}
-        />
-      </box>
-      <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
-        <text fg={t.textMuted}>{agent.getCwd()}</text>
-        <text fg={t.textMuted}>{model}</text>
-      </box>
-    </box>
-  );
-}
-
-/* ── Prompt Box ──────────────────────────────────────────────── */
-
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, onSubmit, mode, modeInfo, model, modelInfo, placeholder }: {
-  t: Theme; inputRef: React.RefObject<InputRenderable | null>;
-  isProcessing: boolean; showModelPicker: boolean; onSubmit: () => void;
-  mode: AgentMode; modeInfo: typeof MODES[number]; model: string;
-  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
-}) {
-  return (
-    <box>
-      <box border={["left"]} customBorderChars={SPLIT_BORDER_END} borderColor={t.text}>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} backgroundColor={t.backgroundElement} flexShrink={0}>
-          <input
-            ref={inputRef} focused={!isProcessing && !showModelPicker}
-            placeholder={isProcessing ? "Processing... (Esc to cancel)" : (placeholder || "Ask anything...")}
-            textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
-            onSubmit={onSubmit as any}
-          />
-          <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1}>
-            <text fg={t.text}><b>{modeInfo.label}</b>{" "}</text>
-            <text fg={t.text}>{modelInfo?.name || model}</text>
-            <text fg={t.textMuted}>{"xAI"}</text>
-          </box>
-        </box>
-      </box>
-      <box height={1} border={["left"]} borderColor={t.text} customBorderChars={{ ...EMPTY_BORDER, vertical: "╹" }}>
-        <box height={1} border={["bottom"]} borderColor={t.backgroundElement} customBorderChars={{ ...EMPTY_BORDER, horizontal: "▀" }} />
-      </box>
-      <box flexDirection="row" justifyContent="flex-end" gap={3}>
-        {isProcessing ? (
-          <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
-        ) : (
-          <>
-            <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
-            <text fg={t.text}>{"ctrl+p "}<span style={{ fg: t.textMuted }}>{"commands"}</span></text>
-          </>
-        )}
-      </box>
-    </box>
-  );
-}
-
-/* ── Header ──────────────────────────────────────────────────── */
-
-function Header({ t, model, modelInfo, isProcessing }: { t: Theme; model: string; modelInfo: ReturnType<typeof getModelInfo>; isProcessing: boolean }) {
-  return (
-    <box flexShrink={0}>
-      <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={1}
-        border={["left"]} customBorderChars={SPLIT_BORDER} borderColor={t.border}
-        backgroundColor={t.backgroundPanel} flexDirection="row" justifyContent="space-between">
-        <text fg={t.text}><b>{"# Grok CLI"}</b></text>
-        <text fg={t.textMuted}>{modelInfo ? `${modelInfo.name} · ${model}` : model}{isProcessing ? " ⏳" : ""}</text>
-      </box>
+        </>
+      )}
+      {/* Model picker overlay */}
+      {showModelPicker && <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} />}
     </box>
   );
 }
 
 /* ── Messages ────────────────────────────────────────────────── */
 
-function MessageView({ entry, index, t }: { entry: ChatEntry; index: number; t: Theme }) {
+function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: number; t: Theme; modeColor: string }) {
   switch (entry.type) {
     case "user":
       return (
-        <box border={["left"]} customBorderChars={SPLIT_BORDER} borderColor={t.text} marginTop={index === 0 ? 0 : 1}>
-          <box paddingTop={1} paddingBottom={1} paddingLeft={2} backgroundColor={t.backgroundPanel} flexShrink={0}>
-            <text fg={t.text}>{entry.content}</text>
-          </box>
+        <box marginTop={index === 0 ? 0 : 2} paddingLeft={2}>
+          <text fg={modeColor}>{"▸ "}<span style={{ fg: t.text }}>{entry.content}</span></text>
         </box>
       );
     case "assistant":
-      return <box paddingLeft={3} marginTop={1} flexShrink={0}><text fg={t.text}>{entry.content}</text></box>;
+      return <box paddingLeft={2} marginTop={1}><text fg={t.text}>{entry.content}</text></box>;
     case "tool_result": {
       const name = entry.toolCall?.function.name || "tool";
-      const success = entry.toolResult?.success ?? true;
-      const args = getToolArgs(entry.toolCall);
+      const ok = entry.toolResult?.success ?? true;
+      const args = toolArgs(entry.toolCall);
       const output = entry.content;
       if (name === "bash" && output && output.split("\n").length > 3) {
         const lines = output.split("\n");
-        const preview = lines.slice(0, 10).join("\n") + (lines.length > 10 ? "\n…" : "");
+        const preview = lines.slice(0, 8).join("\n") + (lines.length > 8 ? "\n  ..." : "");
         return (
-          <box border={["left"]} customBorderChars={SPLIT_BORDER} borderColor={t.background}
-            paddingTop={1} paddingBottom={1} paddingLeft={2} marginTop={1} gap={1} backgroundColor={t.backgroundPanel}>
-            <text fg={t.textMuted}>{"# Shell"}</text>
-            <box gap={1}>
-              <text fg={t.text}>{"$ "}{args}</text>
-              <text fg={t.text}>{preview}</text>
-            </box>
+          <box marginTop={1} paddingLeft={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundPanel}>
+            <text fg={t.textMuted}>{"$ "}{args}</text>
+            <text fg={t.text}>{preview}</text>
           </box>
         );
       }
       return (
-        <box paddingLeft={3} marginTop={0}>
-          <text fg={success ? t.textMuted : t.text}>{success ? "$" : "✗"}{" "}{name === "bash" ? args : `${name} ${args}`}</text>
+        <box paddingLeft={2}>
+          <text fg={ok ? t.textMuted : t.primary}>{ok ? "$ " : "✗ "}{name === "bash" ? args : `${name} ${args}`}</text>
         </box>
       );
     }
@@ -350,63 +248,42 @@ function MessageView({ entry, index, t }: { entry: ChatEntry; index: number; t: 
   }
 }
 
-function ToolCallPending({ tc, t }: { tc: ToolCall; t: Theme }) {
-  const args = getToolArgs(tc);
-  return <box paddingLeft={3} marginTop={0}><text fg={t.text}>{"~ "}{tc.function.name === "bash" ? args : `${tc.function.name} ${args}`}</text></box>;
-}
-
-/* ── Model Picker Modal (OpenCode-style floating dialog) ─────── */
+/* ── Model Picker Modal ──────────────────────────────────────── */
 
 function ModelPickerModal({ t, currentModel, selectedIndex, width, height }: {
   t: Theme; currentModel: string; selectedIndex: number; width: number; height: number;
 }) {
   let flatIdx = 0;
-
   return (
-    <box
-      position="absolute" left={0} top={0}
-      width={width} height={height}
-      alignItems="center"
-      paddingTop={Math.floor(height / 6)}
-      backgroundColor={"#000000c0" as any}
-    >
-      <box
-        width={Math.min(65, width - 4)}
-        backgroundColor={t.backgroundPanel}
-        paddingTop={1}
-        paddingBottom={1}
-        maxHeight={Math.floor(height * 0.75)}
-      >
-        {/* Title row */}
+    <box position="absolute" left={0} top={0} width={width} height={height}
+      alignItems="center" paddingTop={Math.max(2, Math.floor(height / 6))}
+      backgroundColor={"#000000cc" as any}>
+      <box width={Math.min(60, width - 6)} backgroundColor={t.backgroundPanel}
+        paddingTop={1} paddingBottom={1} maxHeight={Math.floor(height * 0.7)}
+        border borderStyle="single" borderColor={t.border}>
+        {/* Header */}
         <box flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
-          <text fg={t.text}><b>{"Select model"}</b></text>
+          <text fg={t.primary}><b>{"Select model"}</b></text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
-        {/* Search placeholder */}
-        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <text fg={t.textMuted}>{"Search"}</text>
-        </box>
-        {/* Grouped model list */}
+        {/* List */}
         <scrollbox flexGrow={1} paddingTop={1}>
           {MODEL_GROUPS.map((group) => {
-            const groupItems = group.models.map((mid) => {
+            const items = group.models.map((mid) => {
               const info = getModelInfo(mid);
               const idx = flatIdx++;
-              const selected = idx === selectedIndex;
-              const isCurrent = mid === currentModel;
-              return { mid, info, idx, selected, isCurrent };
+              return { mid, info, idx, selected: idx === selectedIndex, current: mid === currentModel };
             });
             return (
               <box key={group.category}>
                 <box paddingLeft={2} paddingTop={1}>
-                  <text fg={t.text}><b>{group.category}</b></text>
+                  <text fg={t.textMuted}>{group.category}</text>
                 </box>
-                {groupItems.map(({ mid, info, selected, isCurrent }) => (
+                {items.map(({ mid, info, selected, current }) => (
                   <box key={mid} backgroundColor={selected ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
                     <box flexDirection="row" justifyContent="space-between">
                       <text fg={selected ? t.selected : t.text}>
-                        {isCurrent ? "● " : "  "}{info?.name || mid}{" "}
-                        <span style={{ fg: t.textMuted }}>{"xAI"}</span>
+                        {current ? "● " : "  "}{info?.name || mid}
                       </text>
                       {info && info.inputPrice < 1 && (
                         <text fg={t.textMuted}>{`$${info.inputPrice}/$${info.outputPrice}`}</text>
@@ -425,8 +302,8 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height }: {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-function getToolArgs(tc?: ToolCall): string {
+function toolArgs(tc?: ToolCall): string {
   if (!tc) return "";
   try { const a = JSON.parse(tc.function.arguments); return tc.function.name === "bash" ? a.command || "" : a.query || ""; } catch { return ""; }
 }
-function truncate(s: string, max: number): string { return s.length <= max ? s : s.slice(0, max) + "…"; }
+function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }

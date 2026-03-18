@@ -64,7 +64,7 @@ export interface ModelInfo {
 export type AgentMode = "agent" | "plan" | "ask";
 
 export const MODES: { id: AgentMode; label: string; color: string }[] = [
-  { id: "agent", label: "Agent", color: "#ffffff" },
-  { id: "plan", label: "Plan", color: "#808080" },
-  { id: "ask", label: "Ask", color: "#808080" },
+  { id: "agent", label: "Agent", color: "#5c9cf5" },
+  { id: "plan", label: "Plan", color: "#e5c07b" },
+  { id: "ask", label: "Ask", color: "#f5a742" },
 ];
