@@ -1,3 +1,5 @@
+import type { ModelMessage } from "ai";
+
 export interface FileDiff {
   filePath: string;
   additions: number;
@@ -112,6 +114,51 @@ export interface ModelInfo {
 }
 
 export type AgentMode = "agent" | "plan" | "ask";
+export type SessionStatus = "active" | "archived";
+export type UsageSource = "message" | "title" | "task" | "delegation" | "other";
+
+export interface WorkspaceInfo {
+  id: string;
+  scopeKey: string;
+  canonicalPath: string;
+  gitRoot: string | null;
+  displayName: string;
+  lastSeenAt: Date;
+}
+
+export interface SessionInfo {
+  id: string;
+  workspaceId: string;
+  title: string | null;
+  model: string;
+  mode: AgentMode;
+  cwdAtStart: string;
+  cwdLast: string;
+  status: SessionStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UsageEvent {
+  id: number;
+  sessionId: string;
+  messageSeq: number | null;
+  source: UsageSource;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costMicros: number;
+  createdAt: Date;
+}
+
+export interface SessionSnapshot {
+  workspace: WorkspaceInfo;
+  session: SessionInfo;
+  messages: ModelMessage[];
+  entries: ChatEntry[];
+  totalTokens: number;
+}
 
 export const MODES: { id: AgentMode; label: string; color: string }[] = [
   { id: "agent", label: "Agent", color: "#5c9cf5" },

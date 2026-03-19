@@ -1,6 +1,6 @@
-import { type ChildProcess, exec, spawn } from "child_process";
-import { createReadStream, createWriteStream } from "fs";
-import { mkdtemp, rm, stat, unlink } from "fs/promises";
+import { exec, spawn, type ChildProcess } from "child_process";
+import { createWriteStream, createReadStream } from "fs";
+import { stat, mkdtemp, readFile, unlink, rm } from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
@@ -44,10 +44,7 @@ export class BashTool {
   async execute(command: string, timeout = 30_000): Promise<ToolResult> {
     try {
       if (command.startsWith("cd ")) {
-        const dir = command
-          .substring(3)
-          .trim()
-          .replace(/^["']|["']$/g, "");
+        const dir = command.substring(3).trim().replace(/^["']|["']$/g, "");
         try {
           const nextCwd = path.resolve(this.cwd, dir);
           const info = await stat(nextCwd);
@@ -77,7 +74,8 @@ export class BashTool {
     } catch (err: unknown) {
       if (err && typeof err === "object" && "stdout" in err) {
         const execErr = err as { stdout?: string; stderr?: string; message: string };
-        const output = (execErr.stdout || "") + (execErr.stderr ? `\nSTDERR: ${execErr.stderr}` : "");
+        const output =
+          (execErr.stdout || "") + (execErr.stderr ? `\nSTDERR: ${execErr.stderr}` : "");
         if (output.trim()) {
           return { success: false, error: output.trim() };
         }
@@ -210,17 +208,10 @@ export class BashTool {
       entry.child.kill("SIGTERM");
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
-          try {
-            entry.child.kill("SIGKILL");
-          } catch {
-            /* already dead */
-          }
+          try { entry.child.kill("SIGKILL"); } catch { /* already dead */ }
           resolve();
         }, 3_000);
-        entry.child.on("exit", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
+        entry.child.on("exit", () => { clearTimeout(timeout); resolve(); });
       });
 
       return {
@@ -254,25 +245,13 @@ export class BashTool {
   async cleanup(): Promise<void> {
     for (const entry of this.bgProcesses.values()) {
       if (entry.alive) {
-        try {
-          entry.child.kill("SIGTERM");
-        } catch {
-          /* */
-        }
+        try { entry.child.kill("SIGTERM"); } catch { /* */ }
       }
-      try {
-        await unlink(entry.logPath);
-      } catch {
-        /* */
-      }
+      try { await unlink(entry.logPath); } catch { /* */ }
     }
     this.bgProcesses.clear();
     if (this.tmpDir) {
-      try {
-        await rm(this.tmpDir, { recursive: true, force: true });
-      } catch {
-        /* */
-      }
+      try { await rm(this.tmpDir, { recursive: true, force: true }); } catch { /* */ }
     }
   }
 

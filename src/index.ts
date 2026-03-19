@@ -1,14 +1,10 @@
 #!/usr/bin/env bun
-import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
 import { program } from "commander";
 import * as dotenv from "dotenv";
-import { createElement } from "react";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
-import { MODELS } from "./grok/models";
-import { App } from "./ui/app";
 import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
+import { MODELS } from "./grok/models";
 
 dotenv.config();
 
@@ -31,26 +27,38 @@ async function startInteractive(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
+  const { createCliRenderer } = await import("@opentui/core");
+  const { createRoot } = await import("@opentui/react");
+  const { createElement } = await import("react");
+  const { App } = await import("./ui/app");
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
   });
 
-  const onExit = () => {
-    renderer.destroy();
-    process.exit(0);
-  };
+  const onExit = () => { renderer.destroy(); process.exit(0); };
 
   createRoot(renderer).render(createElement(App, { agent, initialMessage, onExit }));
 }
 
-async function runHeadless(prompt: string, apiKey: string, baseURL: string, model: string, maxToolRounds: number) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
+async function runHeadless(
+  prompt: string,
+  apiKey: string,
+  baseURL: string,
+  model: string,
+  maxToolRounds: number,
+  session?: string,
+) {
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
 
   process.stdout.write(`\x1b[36m⏳ Processing...\x1b[0m\n`);
+  if (agent.getSessionId()) {
+    process.stderr.write(`\x1b[2mSession: ${agent.getSessionId()}\x1b[0m\n`);
+  }
 
   for await (const chunk of agent.processMessage(prompt)) {
     switch (chunk.type) {
@@ -88,14 +96,16 @@ async function runBackgroundDelegation(jobPath: string, options: Record<string, 
     const delegation = await loadDelegation(jobPath);
     const apiKey = options.apiKey || getApiKey();
     if (!apiKey) {
-      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
+      throw new Error(
+        "API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.",
+      );
     }
 
     const baseURL = options.baseUrl || getBaseURL();
     const model = options.model || delegation.model || getCurrentModel();
-    const maxToolRounds =
-      parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
-    const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
+    const maxToolRounds = parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10)
+      || delegation.maxToolRounds;
+    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { persistSession: false });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
       description: delegation.description,
@@ -125,7 +135,7 @@ function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
   const model = options.model || getCurrentModel();
-  const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
+  const maxToolRounds = parseInt(options.maxToolRounds || "400") || 400;
 
   if (!apiKey) {
     console.error(
@@ -150,6 +160,7 @@ program
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
+  .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .action(async (message: string[], options) => {
@@ -171,12 +182,26 @@ program
     const config = resolveConfig(options);
 
     if (options.prompt) {
-      await runHeadless(options.prompt, config.apiKey, config.baseURL, config.model, config.maxToolRounds);
+      await runHeadless(
+        options.prompt,
+        config.apiKey,
+        config.baseURL,
+        config.model,
+        config.maxToolRounds,
+        options.session,
+      );
       return;
     }
 
     const initialMessage = message.length > 0 ? message.join(" ") : undefined;
-    await startInteractive(config.apiKey, config.baseURL, config.model, config.maxToolRounds, initialMessage);
+    await startInteractive(
+      config.apiKey,
+      config.baseURL,
+      config.model,
+      config.maxToolRounds,
+      options.session,
+      initialMessage,
+    );
   });
 
 program
@@ -186,7 +211,9 @@ program
     console.log("\nAvailable Grok Models:\n");
     for (const m of MODELS) {
       const reasoning = m.reasoning ? " (reasoning)" : "";
-      console.log(`  \x1b[36m${m.id}\x1b[0m — ${m.name}${reasoning}`);
+      console.log(
+        `  \x1b[36m${m.id}\x1b[0m — ${m.name}${reasoning}`,
+      );
       console.log(
         `    ${m.description} | ${formatContext(m.contextWindow)} context | $${m.inputPrice}/$${m.outputPrice} per 1M tokens`,
       );

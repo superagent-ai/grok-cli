@@ -1,20 +1,39 @@
-import { type ModelMessage, stepCountIs, streamText } from "ai";
-import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client.js";
-import { createTools } from "../grok/tools.js";
-import { BashTool } from "../tools/bash.js";
+import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { DelegationManager } from "./delegations";
+import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
+import { createTools } from "../grok/tools";
+import {
+  SessionStore,
+  appendMessages,
+  appendSystemMessage,
+  buildChatEntries,
+  getSessionTotalTokens,
+  loadTranscript,
+  recordUsageEvent,
+} from "../storage/index";
+import { BashTool } from "../tools/bash";
+import { loadCustomInstructions } from "../utils/instructions";
 import type {
   AgentMode,
+  ChatEntry,
   Plan,
+  SessionInfo,
+  SessionSnapshot,
   StreamChunk,
   SubagentStatus,
   TaskRequest,
   ToolCall,
   ToolResult,
-} from "../types/index.js";
-import { loadCustomInstructions } from "../utils/instructions.js";
-import { DelegationManager } from "./delegations.js";
+  UsageSource,
+  WorkspaceInfo,
+} from "../types/index";
 
 const MAX_TOOL_ROUNDS = 400;
+
+interface AgentOptions {
+  persistSession?: boolean;
+  session?: string;
+}
 
 const ENVIRONMENT = `ENVIRONMENT:
 You are running inside a terminal (CLI). Your text output is rendered in a plain terminal — not a browser, not a rich text editor.
@@ -166,6 +185,9 @@ export class Agent {
   private provider: XaiProvider;
   private bash: BashTool;
   private delegations: DelegationManager;
+  private sessionStore: SessionStore | null = null;
+  private workspace: WorkspaceInfo | null = null;
+  private session: SessionInfo | null = null;
   private messages: ModelMessage[] = [];
   private recordedTokens = 0;
   private abortController: AbortController | null = null;
@@ -176,7 +198,13 @@ export class Agent {
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
 
-  constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    model?: string,
+    maxToolRounds?: number,
+    options: AgentOptions = {},
+  ) {
     this.provider = createProvider(apiKey, baseURL);
     this.bash = new BashTool();
     this.delegations = new DelegationManager(() => this.bash.getCwd());
@@ -184,6 +212,16 @@ export class Agent {
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
+
+    if (options.persistSession !== false) {
+      this.sessionStore = new SessionStore(this.bash.getCwd());
+      this.workspace = this.sessionStore.getWorkspace();
+      this.session = this.sessionStore.openSession(options.session, this.modelId, this.mode, this.bash.getCwd());
+      this.mode = this.session.mode;
+      this.messages = loadTranscript(this.session.id);
+      this.recordedTokens = getSessionTotalTokens(this.session.id);
+      this.sessionStore.setModel(this.session.id, this.modelId);
+    }
   }
 
   getModel(): string {
@@ -192,6 +230,10 @@ export class Agent {
 
   setModel(model: string): void {
     this.modelId = model;
+    if (this.sessionStore && this.session) {
+      this.sessionStore.setModel(this.session.id, model);
+      this.session = this.sessionStore.getRequiredSession(this.session.id);
+    }
   }
 
   getMode(): AgentMode {
@@ -201,8 +243,10 @@ export class Agent {
   setMode(mode: AgentMode): void {
     if (mode !== this.mode) {
       this.mode = mode;
-      this.messages = [];
-      this.recordedTokens = 0;
+      if (this.sessionStore && this.session) {
+        this.sessionStore.setMode(this.session.id, mode);
+        this.session = this.sessionStore.getRequiredSession(this.session.id);
+      }
     }
   }
 
@@ -214,10 +258,7 @@ export class Agent {
     return this.bash.getCwd();
   }
 
-  getContextStats(
-    contextWindow: number,
-    inFlightText = "",
-  ): {
+  getContextStats(contextWindow: number, inFlightText = ""): {
     contextWindow: number;
     usedTokens: number;
     remainingTokens: number;
@@ -239,7 +280,13 @@ export class Agent {
   }
 
   async generateTitle(userMessage: string): Promise<string> {
-    return genTitle(this.provider, userMessage);
+    const generated = await genTitle(this.provider, userMessage);
+    this.recordUsage(generated.usage, "title", "grok-3-mini-fast");
+    if (this.sessionStore && this.session && !this.session.title && generated.title) {
+      this.sessionStore.setTitle(this.session.id, generated.title);
+      this.session = this.sessionStore.getRequiredSession(this.session.id);
+    }
+    return generated.title;
   }
 
   abort(): void {
@@ -248,8 +295,50 @@ export class Agent {
   }
 
   clearHistory(): void {
+    this.startNewSession();
+  }
+
+  startNewSession(): SessionSnapshot | null {
+    if (!this.sessionStore) {
+      this.messages = [];
+      this.recordedTokens = 0;
+      return null;
+    }
+
+    this.sessionStore = new SessionStore(this.bash.getCwd());
+    this.workspace = this.sessionStore.getWorkspace();
+    this.session = this.sessionStore.createSession(this.modelId, this.mode, this.bash.getCwd());
     this.messages = [];
     this.recordedTokens = 0;
+    return this.getSessionSnapshot();
+  }
+
+  getSessionInfo(): SessionInfo | null {
+    return this.session;
+  }
+
+  getSessionId(): string | null {
+    return this.session?.id || null;
+  }
+
+  getSessionTitle(): string | null {
+    return this.session?.title || null;
+  }
+
+  getChatEntries(): ChatEntry[] {
+    if (!this.session) return [];
+    return buildChatEntries(this.session.id);
+  }
+
+  getSessionSnapshot(): SessionSnapshot | null {
+    if (!this.session || !this.workspace) return null;
+    return {
+      workspace: this.workspace,
+      session: this.session,
+      messages: loadTranscript(this.session.id),
+      entries: buildChatEntries(this.session.id),
+      totalTokens: getSessionTotalTokens(this.session.id),
+    };
   }
 
   onSubagentStatus(listener: (status: SubagentStatus | null) => void): () => void {
@@ -272,11 +361,18 @@ export class Agent {
     }
   }
 
-  private recordUsage(usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number }): void {
+  private recordUsage(
+    usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number },
+    source: UsageSource = "message",
+    model = this.modelId,
+  ): void {
     if (!usage) return;
-    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    const total = usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
     if (Number.isFinite(total) && total > 0) {
       this.recordedTokens += total;
+    }
+    if (this.session) {
+      recordUsageEvent(this.session.id, source, model, usage);
     }
   }
 
@@ -285,6 +381,9 @@ export class Agent {
       const notifications = await this.delegations.consumeNotifications();
       for (const notification of notifications) {
         this.messages.push({ role: "system", content: notification.message });
+        if (this.session) {
+          appendSystemMessage(this.session.id, notification.message);
+        }
       }
       return notifications.map((notification) => notification.message);
     } catch {
@@ -319,7 +418,7 @@ export class Agent {
         temperature: request.agent === "explore" ? 0.2 : 0.5,
         maxOutputTokens: Math.min(this.maxTokens, 8_192),
         onFinish: ({ totalUsage }) => {
-          this.recordUsage(totalUsage);
+          this.recordUsage(totalUsage, "task");
         },
       });
 
@@ -375,18 +474,14 @@ export class Agent {
 
   private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      return await this.runTaskRequest(
-        request,
-        (detail) => {
-          if (abortSignal?.aborted) return;
-          this.emitSubagentStatus({
-            agent: request.agent,
-            description: request.description,
-            detail,
-          });
-        },
-        abortSignal,
-      );
+      return await this.runTaskRequest(request, (detail) => {
+        if (abortSignal?.aborted) return;
+        this.emitSubagentStatus({
+          agent: request.agent,
+          description: request.description,
+          detail,
+        });
+      }, abortSignal);
     } finally {
       this.emitSubagentStatus(null);
     }
@@ -489,7 +584,7 @@ export class Agent {
         temperature: 0.7,
         maxOutputTokens: this.maxTokens,
         onFinish: ({ totalUsage }) => {
-          this.recordUsage(totalUsage);
+          this.recordUsage(totalUsage, "message");
         },
       });
 
@@ -546,6 +641,11 @@ export class Agent {
         const response = await result.response;
         if (!signal.aborted) {
           this.messages.push(...response.messages);
+          if (this.sessionStore && this.session) {
+            appendMessages(this.session.id, [userModelMessage, ...response.messages]);
+            this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
+            this.session = this.sessionStore.getRequiredSession(this.session.id);
+          }
           streamOk = true;
         }
       } catch {
@@ -559,7 +659,13 @@ export class Agent {
       }
 
       if (!streamOk && assistantText.trim()) {
-        this.messages.push({ role: "assistant", content: assistantText });
+        const fallbackMessage: ModelMessage = { role: "assistant", content: assistantText };
+        this.messages.push(fallbackMessage);
+        if (this.sessionStore && this.session) {
+          appendMessages(this.session.id, [userModelMessage, fallbackMessage]);
+          this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
+          this.session = this.sessionStore.getRequiredSession(this.session.id);
+        }
       }
 
       yield { type: "done" };
@@ -572,7 +678,13 @@ export class Agent {
         yield { type: "error", content: `Error: ${msg}` };
       }
       if (!signal.aborted && assistantText.trim()) {
-        this.messages.push({ role: "assistant", content: assistantText });
+        const fallbackMessage: ModelMessage = { role: "assistant", content: assistantText };
+        this.messages.push(fallbackMessage);
+        if (this.sessionStore && this.session) {
+          appendMessages(this.session.id, [userModelMessage, fallbackMessage]);
+          this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
+          this.session = this.sessionStore.getRequiredSession(this.session.id);
+        }
       }
       yield { type: "done" };
     } finally {
