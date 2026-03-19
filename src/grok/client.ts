@@ -10,10 +10,7 @@ export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
   });
 }
 
-export async function generateTitle(
-  provider: XaiProvider,
-  userMessage: string,
-): Promise<string> {
+export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<string> {
   try {
     const { text } = await generateText({
       model: provider("grok-3-mini-fast"),

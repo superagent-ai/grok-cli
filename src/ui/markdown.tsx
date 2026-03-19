@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { SyntaxStyle, RGBA } from "@opentui/core";
+import { RGBA, SyntaxStyle } from "@opentui/core";
+import { useMemo } from "react";
 import type { Theme } from "./theme.js";
 
 function buildSyntaxStyle(t: Theme): SyntaxStyle {
@@ -36,12 +36,6 @@ export function Markdown({ content, t }: { content: string; t: Theme }) {
   const syntaxStyle = useMemo(() => buildSyntaxStyle(t), [t]);
 
   return (
-    <markdown
-      content={content}
-      syntaxStyle={syntaxStyle}
-      conceal={true}
-      tableOptions={TABLE_OPTIONS}
-      flexShrink={0}
-    />
+    <markdown content={content} syntaxStyle={syntaxStyle} conceal={true} tableOptions={TABLE_OPTIONS} flexShrink={0} />
   );
 }

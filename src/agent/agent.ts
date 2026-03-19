@@ -1,9 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
-import { DelegationManager } from "./delegations.js";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client.js";
 import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
-import { loadCustomInstructions } from "../utils/instructions.js";
 import type {
   AgentMode,
   Plan,
@@ -13,6 +11,8 @@ import type {
   ToolCall,
   ToolResult,
 } from "../types/index.js";
+import { loadCustomInstructions } from "../utils/instructions.js";
+import { DelegationManager } from "./delegations.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -249,10 +249,7 @@ export class Agent {
     }
   }
 
-  async runTaskRequest(
-    request: TaskRequest,
-    onActivity?: (detail: string) => void,
-  ): Promise<ToolResult> {
+  async runTaskRequest(request: TaskRequest, onActivity?: (detail: string) => void): Promise<ToolResult> {
     const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
     const childTools = createTools(childBash, this.provider, childMode);

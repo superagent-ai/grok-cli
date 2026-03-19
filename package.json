@@ -17,7 +17,11 @@
     "dev": "bun run src/index.ts",
     "build": "tsc",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/",
+    "format": "biome format src/",
+    "format:fix": "biome format --write src/",
+    "lint:fix": "biome check --fix src/"
   },
   "keywords": [
     "cli",
