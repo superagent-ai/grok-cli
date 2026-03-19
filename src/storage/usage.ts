@@ -32,44 +32,50 @@ export function recordUsageEvent(
 
   const inputTokens = usage.inputTokens ?? 0;
   const outputTokens = usage.outputTokens ?? 0;
-  const totalTokens = usage.totalTokens ?? (inputTokens + outputTokens);
+  const totalTokens = usage.totalTokens ?? inputTokens + outputTokens;
   if (inputTokens <= 0 && outputTokens <= 0 && totalTokens <= 0) return;
 
   const costMicros = estimateCostMicros(model, inputTokens, outputTokens);
-  getDatabase().prepare(`
+  getDatabase()
+    .prepare(`
     INSERT INTO usage_events (
       session_id, message_seq, source, model, input_tokens, output_tokens, total_tokens, cost_micros, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    sessionId,
-    messageSeq ?? null,
-    source,
-    model,
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    costMicros,
-    new Date().toISOString(),
-  );
+  `)
+    .run(
+      sessionId,
+      messageSeq ?? null,
+      source,
+      model,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      costMicros,
+      new Date().toISOString(),
+    );
 }
 
 export function getSessionTotalTokens(sessionId: string): number {
-  const row = getDatabase().prepare(`
+  const row = getDatabase()
+    .prepare(`
     SELECT COALESCE(SUM(total_tokens), 0) AS total_tokens
     FROM usage_events
     WHERE session_id = ?
-  `).get(sessionId) as { total_tokens: number } | undefined;
+  `)
+    .get(sessionId) as { total_tokens: number } | undefined;
 
   return row?.total_tokens ?? 0;
 }
 
 export function listSessionUsage(sessionId: string): UsageEvent[] {
-  const rows = getDatabase().prepare(`
+  const rows = getDatabase()
+    .prepare(`
     SELECT id, session_id, message_seq, source, model, input_tokens, output_tokens, total_tokens, cost_micros, created_at
     FROM usage_events
     WHERE session_id = ?
     ORDER BY id ASC
-  `).all(sessionId) as UsageRow[];
+  `)
+    .all(sessionId) as UsageRow[];
 
   return rows.map((row) => ({
     id: row.id,
@@ -88,5 +94,5 @@ export function listSessionUsage(sessionId: string): UsageEvent[] {
 function estimateCostMicros(model: string, inputTokens: number, outputTokens: number): number {
   const info = getModelInfo(model);
   if (!info) return 0;
-  return Math.round((inputTokens * info.inputPrice) + (outputTokens * info.outputPrice));
+  return Math.round(inputTokens * info.inputPrice + outputTokens * info.outputPrice);
 }

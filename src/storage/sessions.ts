@@ -72,23 +72,27 @@ export class SessionStore {
   }
 
   getLatestSession(): SessionInfo | null {
-    const row = getDatabase().prepare(`
+    const row = getDatabase()
+      .prepare(`
       SELECT id, workspace_id, title, model, mode, cwd_at_start, cwd_last, status, created_at, updated_at
       FROM sessions
       WHERE workspace_id = ?
       ORDER BY updated_at DESC
       LIMIT 1
-    `).get(this.workspace.id) as SessionRow | undefined;
+    `)
+      .get(this.workspace.id) as SessionRow | undefined;
 
     return row ? toSessionInfo(row) : null;
   }
 
   getSessionById(id: string): SessionInfo | null {
-    const row = getDatabase().prepare(`
+    const row = getDatabase()
+      .prepare(`
       SELECT id, workspace_id, title, model, mode, cwd_at_start, cwd_last, status, created_at, updated_at
       FROM sessions
       WHERE id = ?
-    `).get(id) as SessionRow | undefined;
+    `)
+      .get(id) as SessionRow | undefined;
 
     return row ? toSessionInfo(row) : null;
   }
@@ -103,37 +107,45 @@ export class SessionStore {
 
   setTitle(id: string, title: string | null): void {
     const now = new Date().toISOString();
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare(`
       UPDATE sessions
       SET title = ?, updated_at = ?
       WHERE id = ?
-    `).run(title, now, id);
+    `)
+      .run(title, now, id);
   }
 
   setModel(id: string, model: string): void {
     const now = new Date().toISOString();
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare(`
       UPDATE sessions
       SET model = ?, updated_at = ?
       WHERE id = ?
-    `).run(model, now, id);
+    `)
+      .run(model, now, id);
   }
 
   setMode(id: string, mode: AgentMode): void {
     const now = new Date().toISOString();
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare(`
       UPDATE sessions
       SET mode = ?, updated_at = ?
       WHERE id = ?
-    `).run(mode, now, id);
+    `)
+      .run(mode, now, id);
   }
 
   touchSession(id: string, cwd: string): void {
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare(`
       UPDATE sessions
       SET cwd_last = ?, updated_at = ?
       WHERE id = ?
-    `).run(cwd, new Date().toISOString(), id);
+    `)
+      .run(cwd, new Date().toISOString(), id);
   }
 }
 

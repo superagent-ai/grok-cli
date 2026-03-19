@@ -43,11 +43,13 @@ export function ensureWorkspace(cwd: string): WorkspaceInfo {
     last_seen_at: now,
   });
 
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT id, scope_key, canonical_path, git_root, display_name, last_seen_at
     FROM workspaces
     WHERE scope_key = ?
-  `).get(resolved.scopeKey) as WorkspaceRow | undefined;
+  `)
+    .get(resolved.scopeKey) as WorkspaceRow | undefined;
 
   if (!row) {
     throw new Error(`Failed to resolve workspace for ${cwd}`);

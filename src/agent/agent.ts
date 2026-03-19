@@ -1,18 +1,16 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
-import { DelegationManager } from "./delegations";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
 import { createTools } from "../grok/tools";
 import {
-  SessionStore,
   appendMessages,
   appendSystemMessage,
   buildChatEntries,
   getSessionTotalTokens,
   loadTranscript,
   recordUsageEvent,
+  SessionStore,
 } from "../storage/index";
 import { BashTool } from "../tools/bash";
-import { loadCustomInstructions } from "../utils/instructions";
 import type {
   AgentMode,
   ChatEntry,
@@ -27,6 +25,8 @@ import type {
   UsageSource,
   WorkspaceInfo,
 } from "../types/index";
+import { loadCustomInstructions } from "../utils/instructions";
+import { DelegationManager } from "./delegations";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -198,13 +198,7 @@ export class Agent {
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
 
-  constructor(
-    apiKey: string,
-    baseURL?: string,
-    model?: string,
-    maxToolRounds?: number,
-    options: AgentOptions = {},
-  ) {
+  constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number, options: AgentOptions = {}) {
     this.provider = createProvider(apiKey, baseURL);
     this.bash = new BashTool();
     this.delegations = new DelegationManager(() => this.bash.getCwd());
@@ -258,7 +252,10 @@ export class Agent {
     return this.bash.getCwd();
   }
 
-  getContextStats(contextWindow: number, inFlightText = ""): {
+  getContextStats(
+    contextWindow: number,
+    inFlightText = "",
+  ): {
     contextWindow: number;
     usedTokens: number;
     remainingTokens: number;
@@ -367,7 +364,7 @@ export class Agent {
     model = this.modelId,
   ): void {
     if (!usage) return;
-    const total = usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
+    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
     if (Number.isFinite(total) && total > 0) {
       this.recordedTokens += total;
     }
@@ -474,14 +471,18 @@ export class Agent {
 
   private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      return await this.runTaskRequest(request, (detail) => {
-        if (abortSignal?.aborted) return;
-        this.emitSubagentStatus({
-          agent: request.agent,
-          description: request.description,
-          detail,
-        });
-      }, abortSignal);
+      return await this.runTaskRequest(
+        request,
+        (detail) => {
+          if (abortSignal?.aborted) return;
+          this.emitSubagentStatus({
+            agent: request.agent,
+            description: request.description,
+            detail,
+          });
+        },
+        abortSignal,
+      );
     } finally {
       this.emitSubagentStatus(null);
     }

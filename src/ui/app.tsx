@@ -1,25 +1,32 @@
-import os from "os";
-import { useState, useEffect, useCallback, useRef } from "react";
+import type { KeyBinding, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
+import { decodePasteBytes, type PasteEvent } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
-import { decodePasteBytes, PasteEvent } from "@opentui/core";
+import os from "os";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../agent/agent";
+import { getModelInfo, MODELS } from "../grok/models";
 import type {
-  ChatEntry,
-  ToolCall,
   AgentMode,
-  ModelInfo,
+  ChatEntry,
   FileDiff,
+  ModelInfo,
   Plan,
   PlanQuestion,
   SubagentStatus,
+  ToolCall,
 } from "../types/index";
 import { MODES } from "../types/index";
-import { getModelInfo, MODELS } from "../grok/models";
 import { saveProjectSettings } from "../utils/settings";
-import { dark, type Theme } from "./theme";
 import { Markdown } from "./markdown";
-import { PlanView, PlanQuestionsPanel, formatPlanAnswers, initialPlanQuestionsState, type PlanAnswers, type PlanQuestionsState } from "./plan";
+import {
+  formatPlanAnswers,
+  initialPlanQuestionsState,
+  type PlanAnswers,
+  PlanQuestionsPanel,
+  type PlanQuestionsState,
+  PlanView,
+} from "./plan";
+import { dark, type Theme } from "./theme";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
@@ -35,13 +42,65 @@ type ContextStats = {
 };
 
 const HERO_ROWS: Row[] = [
-  { stars: [{ col: 0, ch: "·" }, { col: 13, ch: "*" }, { col: 21, ch: "·" }, { col: 34, ch: "·" }] },
-  { stars: [{ col: 3, ch: "*" }, { col: 11, ch: "·" }, { col: 17, ch: "·" }, { col: 25, ch: "*" }] },
-  { stars: [{ col: 6, ch: "·" }, { col: 12, ch: "·" }, { col: 15, ch: "·" }, { col: 18, ch: "·" }, { col: 24, ch: "·" }] },
-  { stars: [{ col: 2, ch: "·" }, { col: 10, ch: "·" }, { col: 19, ch: "·" }, { col: 27, ch: "·" }], grok: 13 },
-  { stars: [{ col: 6, ch: "·" }, { col: 12, ch: "·" }, { col: 15, ch: "·" }, { col: 18, ch: "·" }, { col: 24, ch: "·" }] },
-  { stars: [{ col: 3, ch: "·" }, { col: 11, ch: "*" }, { col: 17, ch: "·" }, { col: 25, ch: "·" }] },
-  { stars: [{ col: 0, ch: "*" }, { col: 13, ch: "·" }, { col: 21, ch: "*" }, { col: 34, ch: "·" }] },
+  {
+    stars: [
+      { col: 0, ch: "·" },
+      { col: 13, ch: "*" },
+      { col: 21, ch: "·" },
+      { col: 34, ch: "·" },
+    ],
+  },
+  {
+    stars: [
+      { col: 3, ch: "*" },
+      { col: 11, ch: "·" },
+      { col: 17, ch: "·" },
+      { col: 25, ch: "*" },
+    ],
+  },
+  {
+    stars: [
+      { col: 6, ch: "·" },
+      { col: 12, ch: "·" },
+      { col: 15, ch: "·" },
+      { col: 18, ch: "·" },
+      { col: 24, ch: "·" },
+    ],
+  },
+  {
+    stars: [
+      { col: 2, ch: "·" },
+      { col: 10, ch: "·" },
+      { col: 19, ch: "·" },
+      { col: 27, ch: "·" },
+    ],
+    grok: 13,
+  },
+  {
+    stars: [
+      { col: 6, ch: "·" },
+      { col: 12, ch: "·" },
+      { col: 15, ch: "·" },
+      { col: 18, ch: "·" },
+      { col: 24, ch: "·" },
+    ],
+  },
+  {
+    stars: [
+      { col: 3, ch: "·" },
+      { col: 11, ch: "*" },
+      { col: 17, ch: "·" },
+      { col: 25, ch: "·" },
+    ],
+  },
+  {
+    stars: [
+      { col: 0, ch: "*" },
+      { col: 13, ch: "·" },
+      { col: 21, ch: "*" },
+      { col: 34, ch: "·" },
+    ],
+  },
 ];
 
 function HeroLogo({ t }: { t: Theme }) {
@@ -49,7 +108,7 @@ function HeroLogo({ t }: { t: Theme }) {
   const starIdx = useRef(0);
 
   useEffect(() => {
-    const id = setInterval(() => setTick(n => n + 1), 900);
+    const id = setInterval(() => setTick((n) => n + 1), 900);
     return () => clearInterval(id);
   }, []);
 
@@ -68,18 +127,30 @@ function HeroLogo({ t }: { t: Theme }) {
         for (const star of row.stars) {
           if (row.grok !== undefined && cursor <= row.grok && star.col > row.grok) {
             els.push(" ".repeat(row.grok - cursor));
-            els.push(<span key={`g${r}`} style={{ fg: t.primary }}>{"Grok"}</span>);
+            els.push(
+              <span key={`g${r}`} style={{ fg: t.primary }}>
+                {"Grok"}
+              </span>,
+            );
             cursor = row.grok + 4;
           }
           const gap = star.col - cursor;
           if (gap > 0) els.push(" ".repeat(gap));
-          els.push(<span key={`s${r}-${star.col}`} style={{ fg: nextColor() }}>{star.ch}</span>);
+          els.push(
+            <span key={`s${r}-${star.col}`} style={{ fg: nextColor() }}>
+              {star.ch}
+            </span>,
+          );
           cursor = star.col + 1;
         }
 
         if (row.grok !== undefined && cursor <= row.grok) {
           els.push(" ".repeat(row.grok - cursor));
-          els.push(<span key={`g${r}`} style={{ fg: t.primary }}>{"Grok"}</span>);
+          els.push(
+            <span key={`g${r}`} style={{ fg: t.primary }}>
+              {"Grok"}
+            </span>,
+          );
           cursor = row.grok + 4;
         }
 
@@ -91,20 +162,44 @@ function HeroLogo({ t }: { t: Theme }) {
 }
 
 const SPLIT = {
-  topLeft: "", bottomLeft: "", vertical: "┃", topRight: "",
-  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
-  cross: "", leftT: "", rightT: "",
+  topLeft: "",
+  bottomLeft: "",
+  vertical: "┃",
+  topRight: "",
+  bottomRight: "",
+  horizontal: " ",
+  bottomT: "",
+  topT: "",
+  cross: "",
+  leftT: "",
+  rightT: "",
 };
 const SPLIT_END = { ...SPLIT, bottomLeft: "╹" };
 const EMPTY = {
-  topLeft: "", bottomLeft: "", vertical: "", topRight: "",
-  bottomRight: "", horizontal: " ", bottomT: "", topT: "",
-  cross: "", leftT: "", rightT: "",
+  topLeft: "",
+  bottomLeft: "",
+  vertical: "",
+  topRight: "",
+  bottomRight: "",
+  horizontal: " ",
+  bottomT: "",
+  topT: "",
+  cross: "",
+  leftT: "",
+  rightT: "",
 };
 const LINE = {
-  topLeft: "━", bottomLeft: "━", vertical: "", topRight: "━",
-  bottomRight: "━", horizontal: "━", bottomT: "━", topT: "━",
-  cross: "━", leftT: "━", rightT: "━",
+  topLeft: "━",
+  bottomLeft: "━",
+  vertical: "",
+  topRight: "━",
+  bottomRight: "━",
+  horizontal: "━",
+  bottomT: "━",
+  topT: "━",
+  cross: "━",
+  leftT: "━",
+  rightT: "━",
 };
 
 interface SlashMenuItem {
@@ -123,7 +218,11 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "skills", label: "skills", description: "Manage skills" },
 ];
 
-interface AppProps { agent: Agent; initialMessage?: string; onExit?: () => void }
+interface AppProps {
+  agent: Agent;
+  initialMessage?: string;
+  onExit?: () => void;
+}
 
 export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
@@ -142,7 +241,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
-  const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>([]);
+  const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>(
+    [],
+  );
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
@@ -157,20 +258,29 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const isProcessingRef = useRef(false);
   const queuedMessagesRef = useRef<string[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
-  const modeInfoRef = useRef<typeof MODES[number]>(MODES[0]);
+  const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
   const interruptedRunIdRef = useRef<number | null>(null);
 
-  const setMode = useCallback((m: AgentMode) => {
-    if (m === "agent" && mode === "plan" && activePlan) {
-      const planText = [`# ${activePlan.title}`, activePlan.summary, "",
-        ...activePlan.steps.map((s, i) => `${i + 1}. ${s.title}: ${s.description}${s.filePaths?.length ? ` (${s.filePaths.join(", ")})` : ""}`),
-      ].join("\n");
-      agent.setPlanContext(planText);
-    }
-    agent.setMode(m);
-    setModeState(m);
-  }, [agent, mode, activePlan]);
+  const setMode = useCallback(
+    (m: AgentMode) => {
+      if (m === "agent" && mode === "plan" && activePlan) {
+        const planText = [
+          `# ${activePlan.title}`,
+          activePlan.summary,
+          "",
+          ...activePlan.steps.map(
+            (s, i) =>
+              `${i + 1}. ${s.title}: ${s.description}${s.filePaths?.length ? ` (${s.filePaths.join(", ")})` : ""}`,
+          ),
+        ].join("\n");
+        agent.setPlanContext(planText);
+      }
+      agent.setMode(m);
+      setModeState(m);
+    },
+    [agent, mode, activePlan],
+  );
   const cycleMode = useCallback(() => {
     const idx = MODES.findIndex((m) => m.id === mode);
     setMode(MODES[(idx + 1) % MODES.length].id);
@@ -182,21 +292,27 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
   const flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
-    ? MODELS.filter((m) =>
-        m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
-        m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())
+    ? MODELS.filter(
+        (m) =>
+          m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+          m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()),
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
   const filteredSlashItems = slashSearchQuery
-    ? SLASH_MENU_ITEMS.filter((item) =>
-        item.label.toLowerCase().includes(slashSearchQuery.toLowerCase()) ||
-        item.description.toLowerCase().includes(slashSearchQuery.toLowerCase())
+    ? SLASH_MENU_ITEMS.filter(
+        (item) =>
+          item.label.toLowerCase().includes(slashSearchQuery.toLowerCase()) ||
+          item.description.toLowerCase().includes(slashSearchQuery.toLowerCase()),
       )
     : SLASH_MENU_ITEMS;
 
   const scrollToBottom = useCallback(() => {
-    try { scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999); } catch { /* */ }
+    try {
+      scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
+    } catch {
+      /* */
+    }
   }, []);
 
   const invalidateActiveRun = useCallback(() => {
@@ -224,105 +340,144 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     imageCounterRef.current = 0;
   }, [agent]);
 
-  const processMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isProcessingRef.current) return;
-    const runId = ++activeRunIdRef.current;
-    const isStale = () => activeRunIdRef.current !== runId;
-    isProcessingRef.current = true;
-    setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null); contentAccRef.current = "";
-    startTimeRef.current = Date.now();
-    if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
-    const color = modeInfoRef.current.color;
-    setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color }]);
-    setTimeout(scrollToBottom, 50);
-    try {
-      for await (const chunk of agent.processMessage(text.trim())) {
-        if (isStale()) {
-          break;
-        }
-
-        switch (chunk.type) {
-          case "content":
-            contentAccRef.current += chunk.content || "";
-            setStreamContent(sanitizeContent(contentAccRef.current));
-            setTimeout(scrollToBottom, 10);
-            break;
-          case "reasoning":
-            setStreamReasoning((p) => p + (chunk.content || ""));
-            break;
-          case "tool_calls":
-            if (chunk.toolCalls) {
-              const cleaned = sanitizeContent(contentAccRef.current);
-              if (cleaned) {
-                setMessages((p) => [...p, { type: "assistant", content: cleaned, timestamp: new Date(), modeColor: modeInfoRef.current.color }]);
-              }
-              contentAccRef.current = ""; setStreamContent("");
-              setActiveToolCalls(chunk.toolCalls);
-            }
-            break;
-          case "tool_result":
-            if (chunk.toolCall && chunk.toolResult) {
-              setMessages((p) => [...p, {
-                type: "tool_result",
-                content: chunk.toolResult!.success ? (chunk.toolResult!.output || "Success") : (chunk.toolResult!.error || "Error"),
-                timestamp: new Date(), modeColor: modeInfoRef.current.color, toolCall: chunk.toolCall, toolResult: chunk.toolResult,
-              }]);
-              if (chunk.toolResult.plan?.questions?.length) {
-                setActivePlan(chunk.toolResult.plan);
-                setPqs(initialPlanQuestionsState());
-              }
-              setActiveToolCalls([]); setTimeout(scrollToBottom, 10);
-            }
-            break;
-          case "error":
-            contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
-            setStreamContent(contentAccRef.current);
-            break;
-          case "done": break;
-        }
-      }
-    } catch {
-      if (!isStale()) {
-        contentAccRef.current += "\nAn unexpected error occurred.";
-        setStreamContent(contentAccRef.current);
-      }
-    }
-    const wasInterrupted = interruptedRunIdRef.current === runId;
-    const finalContent = sanitizeContent(contentAccRef.current);
-    if (isStale()) {
-      contentAccRef.current = "";
-      return;
-    }
-
-    if (!wasInterrupted && finalContent) {
-      setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color }]);
-    }
-    
-    contentAccRef.current = "";
-    if (!isStale()) {
+  const processMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim() || isProcessingRef.current) return;
+      const runId = ++activeRunIdRef.current;
+      const isStale = () => activeRunIdRef.current !== runId;
+      isProcessingRef.current = true;
+      setIsProcessing(true);
       setStreamContent("");
       setStreamReasoning("");
       setActiveToolCalls([]);
       setActiveSubagent(null);
-    }
-    if (wasInterrupted) {
-      interruptedRunIdRef.current = null;
-    }
-    const nextQueued = queuedMessagesRef.current.shift();
-    if (nextQueued) {
-      setQueuedMessages([...queuedMessagesRef.current]);
-      isProcessingRef.current = false;
-      processMessage(nextQueued);
-    } else {
-      isProcessingRef.current = false;
-      if (!isStale()) {
-        setIsProcessing(false);
-      }
-    }
-    setTimeout(scrollToBottom, 50);
-  }, [agent, invalidateActiveRun, scrollToBottom, model]);
+      contentAccRef.current = "";
+      startTimeRef.current = Date.now();
+      if (!sessionTitle)
+        agent
+          .generateTitle(text.trim())
+          .then(setSessionTitle)
+          .catch(() => {});
+      const color = modeInfoRef.current.color;
+      setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color }]);
+      setTimeout(scrollToBottom, 50);
+      try {
+        for await (const chunk of agent.processMessage(text.trim())) {
+          if (isStale()) {
+            break;
+          }
 
-  useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
+          switch (chunk.type) {
+            case "content":
+              contentAccRef.current += chunk.content || "";
+              setStreamContent(sanitizeContent(contentAccRef.current));
+              setTimeout(scrollToBottom, 10);
+              break;
+            case "reasoning":
+              setStreamReasoning((p) => p + (chunk.content || ""));
+              break;
+            case "tool_calls":
+              if (chunk.toolCalls) {
+                const cleaned = sanitizeContent(contentAccRef.current);
+                if (cleaned) {
+                  setMessages((p) => [
+                    ...p,
+                    {
+                      type: "assistant",
+                      content: cleaned,
+                      timestamp: new Date(),
+                      modeColor: modeInfoRef.current.color,
+                    },
+                  ]);
+                }
+                contentAccRef.current = "";
+                setStreamContent("");
+                setActiveToolCalls(chunk.toolCalls);
+              }
+              break;
+            case "tool_result":
+              if (chunk.toolCall && chunk.toolResult) {
+                setMessages((p) => [
+                  ...p,
+                  {
+                    type: "tool_result",
+                    content: chunk.toolResult!.success
+                      ? chunk.toolResult!.output || "Success"
+                      : chunk.toolResult!.error || "Error",
+                    timestamp: new Date(),
+                    modeColor: modeInfoRef.current.color,
+                    toolCall: chunk.toolCall,
+                    toolResult: chunk.toolResult,
+                  },
+                ]);
+                if (chunk.toolResult.plan?.questions?.length) {
+                  setActivePlan(chunk.toolResult.plan);
+                  setPqs(initialPlanQuestionsState());
+                }
+                setActiveToolCalls([]);
+                setTimeout(scrollToBottom, 10);
+              }
+              break;
+            case "error":
+              contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
+              setStreamContent(contentAccRef.current);
+              break;
+            case "done":
+              break;
+          }
+        }
+      } catch {
+        if (!isStale()) {
+          contentAccRef.current += "\nAn unexpected error occurred.";
+          setStreamContent(contentAccRef.current);
+        }
+      }
+      const wasInterrupted = interruptedRunIdRef.current === runId;
+      const finalContent = sanitizeContent(contentAccRef.current);
+      if (isStale()) {
+        contentAccRef.current = "";
+        return;
+      }
+
+      if (!wasInterrupted && finalContent) {
+        setMessages((p) => [
+          ...p,
+          { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
+        ]);
+      }
+
+      contentAccRef.current = "";
+      if (!isStale()) {
+        setStreamContent("");
+        setStreamReasoning("");
+        setActiveToolCalls([]);
+        setActiveSubagent(null);
+      }
+      if (wasInterrupted) {
+        interruptedRunIdRef.current = null;
+      }
+      const nextQueued = queuedMessagesRef.current.shift();
+      if (nextQueued) {
+        setQueuedMessages([...queuedMessagesRef.current]);
+        isProcessingRef.current = false;
+        processMessage(nextQueued);
+      } else {
+        isProcessingRef.current = false;
+        if (!isStale()) {
+          setIsProcessing(false);
+        }
+      }
+      setTimeout(scrollToBottom, 50);
+    },
+    [agent, invalidateActiveRun, scrollToBottom, model],
+  );
+
+  useEffect(() => {
+    if (initialMessage && !processedInitial.current) {
+      processedInitial.current = true;
+      processMessage(initialMessage);
+    }
+  }, [initialMessage, processMessage]);
   useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
   useEffect(() => {
     let active = true;
@@ -350,43 +505,77 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     };
   }, [agent, scrollToBottom]);
 
-  const handleCommand = useCallback((cmd: string): boolean => {
-    const c = cmd.trim().toLowerCase();
-    if (c === "/clear") { resetToNewSession(); return true; }
-    if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery(""); return true; }
-    if (c === "/quit" || c === "/exit" || c === "/q") { onExit ? onExit() : process.exit(0); }
-    return false;
-  }, [flatModels, model, onExit, resetToNewSession]);
-
-  const handleSlashMenuSelect = useCallback((item: SlashMenuItem) => {
-    setShowSlashMenu(false);
-    inputRef.current?.clear();
-    switch (item.id) {
-      case "new":
+  const handleCommand = useCallback(
+    (cmd: string): boolean => {
+      const c = cmd.trim().toLowerCase();
+      if (c === "/clear") {
         resetToNewSession();
-        break;
-      case "models":
-        setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery("");
-        break;
-      case "exit":
+        return true;
+      }
+      if (c === "/model" || c === "/models") {
+        setShowModelPicker(true);
+        setModelPickerIndex(0);
+        setModelSearchQuery("");
+        return true;
+      }
+      if (c === "/quit" || c === "/exit" || c === "/q") {
         onExit ? onExit() : process.exit(0);
-        break;
-      case "help":
-        setMessages((p) => [...p, { type: "assistant", content: SLASH_MENU_ITEMS.map((i) => `/${i.label} — ${i.description}`).join("\n"), timestamp: new Date() }]);
-        break;
-      case "skills":
-        setMessages((p) => [...p, { type: "assistant", content: "Skills management coming soon.", timestamp: new Date() }]);
-        break;
-      case "mcps":
-        setMessages((p) => [...p, { type: "assistant", content: "MCP server management coming soon.", timestamp: new Date() }]);
-        break;
-      case "review":
-        setMessages((p) => [...p, { type: "assistant", content: "Review feature coming soon.", timestamp: new Date() }]);
-        break;
-    }
-  }, [flatModels, model, onExit, resetToNewSession]);
+      }
+      return false;
+    },
+    [flatModels, model, onExit, resetToNewSession],
+  );
 
-  const showPlanPanel = !!(activePlan?.questions?.length);
+  const handleSlashMenuSelect = useCallback(
+    (item: SlashMenuItem) => {
+      setShowSlashMenu(false);
+      inputRef.current?.clear();
+      switch (item.id) {
+        case "new":
+          resetToNewSession();
+          break;
+        case "models":
+          setShowModelPicker(true);
+          setModelPickerIndex(0);
+          setModelSearchQuery("");
+          break;
+        case "exit":
+          onExit ? onExit() : process.exit(0);
+          break;
+        case "help":
+          setMessages((p) => [
+            ...p,
+            {
+              type: "assistant",
+              content: SLASH_MENU_ITEMS.map((i) => `/${i.label} — ${i.description}`).join("\n"),
+              timestamp: new Date(),
+            },
+          ]);
+          break;
+        case "skills":
+          setMessages((p) => [
+            ...p,
+            { type: "assistant", content: "Skills management coming soon.", timestamp: new Date() },
+          ]);
+          break;
+        case "mcps":
+          setMessages((p) => [
+            ...p,
+            { type: "assistant", content: "MCP server management coming soon.", timestamp: new Date() },
+          ]);
+          break;
+        case "review":
+          setMessages((p) => [
+            ...p,
+            { type: "assistant", content: "Review feature coming soon.", timestamp: new Date() },
+          ]);
+          break;
+      }
+    },
+    [flatModels, model, onExit, resetToNewSession],
+  );
+
+  const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
   const isSinglePlan = planQuestions.length === 1 && planQuestions[0]?.type !== "multiselect";
   const planTabCount = isSinglePlan ? 1 : planQuestions.length + 1;
@@ -405,48 +594,57 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     processMessage(text);
   }, [activePlan, pqs.answers, processMessage]);
 
-  const handlePlanSelect = useCallback((q: PlanQuestion, idx: number, options: { id: string; label: string }[], showCustom: boolean) => {
-    const isCustom = showCustom && idx === options.length;
-    if (isCustom) {
-      if (q.type === "multiselect") {
-        const customVal = pqs.customInputs[q.id] ?? "";
-        if (customVal) {
-          const existing = (pqs.answers[q.id] as string[] | undefined) ?? [];
-          if (existing.includes(customVal)) {
-            setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: existing.filter((x) => x !== customVal) } }));
+  const handlePlanSelect = useCallback(
+    (q: PlanQuestion, idx: number, options: { id: string; label: string }[], showCustom: boolean) => {
+      const isCustom = showCustom && idx === options.length;
+      if (isCustom) {
+        if (q.type === "multiselect") {
+          const customVal = pqs.customInputs[q.id] ?? "";
+          if (customVal) {
+            const existing = (pqs.answers[q.id] as string[] | undefined) ?? [];
+            if (existing.includes(customVal)) {
+              setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: existing.filter((x) => x !== customVal) } }));
+            } else {
+              setPqs((s) => ({ ...s, editing: true }));
+            }
           } else {
             setPqs((s) => ({ ...s, editing: true }));
           }
         } else {
           setPqs((s) => ({ ...s, editing: true }));
         }
-      } else {
-        setPqs((s) => ({ ...s, editing: true }));
+        return;
       }
-      return;
-    }
-    const opt = options[idx];
-    if (!opt) return;
+      const opt = options[idx];
+      if (!opt) return;
 
-    if (q.type === "multiselect") {
-      setPqs((s) => {
-        const existing = (s.answers[q.id] as string[] | undefined) ?? [];
-        const next = existing.includes(opt.id) ? existing.filter((x) => x !== opt.id) : [...existing, opt.id];
-        return { ...s, answers: { ...s.answers, [q.id]: next } };
-      });
-    } else {
-      setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: opt.id } }));
-      if (isSinglePlan) { submitPlanAnswers(); return; }
-      setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
-    }
-  }, [pqs, isSinglePlan, submitPlanAnswers]);
+      if (q.type === "multiselect") {
+        setPqs((s) => {
+          const existing = (s.answers[q.id] as string[] | undefined) ?? [];
+          const next = existing.includes(opt.id) ? existing.filter((x) => x !== opt.id) : [...existing, opt.id];
+          return { ...s, answers: { ...s.answers, [q.id]: next } };
+        });
+      } else {
+        setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: opt.id } }));
+        if (isSinglePlan) {
+          submitPlanAnswers();
+          return;
+        }
+        setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+      }
+    },
+    [pqs, isSinglePlan, submitPlanAnswers],
+  );
 
   useKeyboard((key) => {
     if (showPlanPanel) {
       const q = planQuestions[pqs.tab];
 
       // Escape always dismisses
-      if (key.name === "escape") { dismissPlan(); return; }
+      if (key.name === "escape") {
+        dismissPlan();
+        return;
+      }
 
       // When editing custom text input
       if (pqs.editing && !isPlanConfirmTab) {
@@ -461,11 +659,17 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
                 setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: next } }));
               } else if (q.type === "text") {
                 setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                if (isSinglePlan) { submitPlanAnswers(); return; }
+                if (isSinglePlan) {
+                  submitPlanAnswers();
+                  return;
+                }
                 setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
               } else {
                 setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                if (isSinglePlan) { submitPlanAnswers(); return; }
+                if (isSinglePlan) {
+                  submitPlanAnswers();
+                  return;
+                }
                 setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
               }
             } else {
@@ -476,12 +680,20 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         }
         if (key.name === "backspace") {
           const qId = q?.id;
-          if (qId) setPqs((s) => ({ ...s, customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "").slice(0, -1) } }));
+          if (qId)
+            setPqs((s) => ({
+              ...s,
+              customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "").slice(0, -1) },
+            }));
           return;
         }
         if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
           const qId = q?.id;
-          if (qId) setPqs((s) => ({ ...s, customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "") + key.sequence } }));
+          if (qId)
+            setPqs((s) => ({
+              ...s,
+              customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "") + key.sequence },
+            }));
           return;
         }
         return;
@@ -504,7 +716,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
 
       // Confirm tab
       if (isPlanConfirmTab) {
-        if (key.name === "return") { submitPlanAnswers(); return; }
+        if (key.name === "return") {
+          submitPlanAnswers();
+          return;
+        }
         return;
       }
 
@@ -548,9 +763,20 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     if (showSlashMenu) {
-      if (key.name === "escape") { setShowSlashMenu(false); setSlashSearchQuery(""); inputRef.current?.clear(); return; }
-      if (key.name === "up") { setSlashMenuIndex((i) => Math.max(0, i - 1)); return; }
-      if (key.name === "down") { setSlashMenuIndex((i) => Math.min(filteredSlashItems.length - 1, i + 1)); return; }
+      if (key.name === "escape") {
+        setShowSlashMenu(false);
+        setSlashSearchQuery("");
+        inputRef.current?.clear();
+        return;
+      }
+      if (key.name === "up") {
+        setSlashMenuIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (key.name === "down") {
+        setSlashMenuIndex((i) => Math.min(filteredSlashItems.length - 1, i + 1));
+        return;
+      }
       if (key.name === "return") {
         const item = filteredSlashItems[slashMenuIndex];
         if (item) handleSlashMenuSelect(item);
@@ -570,13 +796,29 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     if (showModelPicker) {
-      if (key.name === "escape") { setShowModelPicker(false); setModelSearchQuery(""); return; }
-      if (key.name === "up") { setModelPickerIndex((i) => Math.max(0, i - 1)); return; }
-      if (key.name === "down") { setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1)); return; }
+      if (key.name === "escape") {
+        setShowModelPicker(false);
+        setModelSearchQuery("");
+        return;
+      }
+      if (key.name === "up") {
+        setModelPickerIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (key.name === "down") {
+        setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1));
+        return;
+      }
       if (key.name === "return") {
         const sel = filteredModelIds[modelPickerIndex];
-        if (sel) { agent.setModel(sel); setModel(sel); saveProjectSettings({ model: sel }); }
-        setShowModelPicker(false); setModelSearchQuery(""); return;
+        if (sel) {
+          agent.setModel(sel);
+          setModel(sel);
+          saveProjectSettings({ model: sel });
+        }
+        setShowModelPicker(false);
+        setModelSearchQuery("");
+        return;
       }
       if (key.name === "backspace") {
         setModelSearchQuery((q) => q.slice(0, -1));
@@ -602,14 +844,27 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
     if (key.sequence === "/" && !isProcessing) {
       const text = inputRef.current?.plainText || "";
-      if (!text.trim()) { setShowSlashMenu(true); setSlashMenuIndex(0); setSlashSearchQuery(""); return; }
+      if (!text.trim()) {
+        setShowSlashMenu(true);
+        setSlashMenuIndex(0);
+        setSlashSearchQuery("");
+        return;
+      }
     }
     if (key.name === "c" && key.ctrl) {
       const text = inputRef.current?.plainText || "";
-      if (text.trim()) { inputRef.current?.clear(); setPasteBlocks([]); } else { onExit ? onExit() : process.exit(0); }
+      if (text.trim()) {
+        inputRef.current?.clear();
+        setPasteBlocks([]);
+      } else {
+        onExit ? onExit() : process.exit(0);
+      }
       return;
     }
-    if (key.name === "tab" && !isProcessing) { cycleMode(); return; }
+    if (key.name === "tab" && !isProcessing) {
+      cycleMode();
+      return;
+    }
   });
 
   const handlePaste = useCallback((event: PasteEvent) => {
@@ -683,13 +938,23 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
             ))}
             {/* Active tool calls — pending inline */}
-            {activeToolCalls.map((tc, i) => (
-              tc.function.name === "task"
-                ? <SubagentTaskLine key={i} t={t} label={toolArgs(tc) || "Working"} pending />
-                : tc.function.name === "delegate"
-                  ? <DelegationTaskLine key={i} t={t} label={toolArgs(tc) || "Background research"} pending id={undefined} />
-                : <InlineTool key={i} t={t} pending>{toolLabel(tc)}</InlineTool>
-            ))}
+            {activeToolCalls.map((tc, i) =>
+              tc.function.name === "task" ? (
+                <SubagentTaskLine key={i} t={t} label={toolArgs(tc) || "Working"} pending />
+              ) : tc.function.name === "delegate" ? (
+                <DelegationTaskLine
+                  key={i}
+                  t={t}
+                  label={toolArgs(tc) || "Background research"}
+                  pending
+                  id={undefined}
+                />
+              ) : (
+                <InlineTool key={i} t={t} pending>
+                  {toolLabel(tc)}
+                </InlineTool>
+              ),
+            )}
             {activeSubagent && <SubagentActivity t={t} status={activeSubagent} />}
             {/* Streaming assistant content */}
             {streamContent && (
@@ -702,20 +967,27 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               <ShimmerText t={t} text="Planning next moves" />
             )}
             {/* Plan questions panel — inline, OpenCode-style */}
-            {showPlanPanel && (
-              <PlanQuestionsPanel
-                t={t}
-                questions={planQuestions}
-                state={pqs}
-              />
-            )}
+            {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
           </scrollbox>
           {/* Prompt */}
           <box flexShrink={0}>
-              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
-                onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-                modeInfo={modeInfo} model={model} modelInfo={modelInfo} contextStats={contextStats}
-                queuedCount={queuedMessages.length} queuedMessages={queuedMessages} />
+            <PromptBox
+              t={t}
+              inputRef={inputRef}
+              isProcessing={isProcessing}
+              showModelPicker={showModelPicker}
+              showSlashMenu={showSlashMenu}
+              showPlanQuestions={showPlanPanel}
+              onSubmit={handleSubmit}
+              onPaste={handlePaste}
+              pasteBlocks={pasteBlocks}
+              modeInfo={modeInfo}
+              model={model}
+              modelInfo={modelInfo}
+              contextStats={contextStats}
+              queuedCount={queuedMessages.length}
+              queuedMessages={queuedMessages}
+            />
           </box>
         </box>
       ) : (
@@ -728,10 +1000,22 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             </box>
             <box height={1} minHeight={0} flexShrink={1} />
             <box width="100%" maxWidth={75} flexShrink={0}>
-              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
-                onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-                modeInfo={modeInfo} model={model} modelInfo={modelInfo} contextStats={contextStats}
-                placeholder={"What are we building?"} />
+              <PromptBox
+                t={t}
+                inputRef={inputRef}
+                isProcessing={isProcessing}
+                showModelPicker={showModelPicker}
+                showSlashMenu={showSlashMenu}
+                showPlanQuestions={showPlanPanel}
+                onSubmit={handleSubmit}
+                onPaste={handlePaste}
+                pasteBlocks={pasteBlocks}
+                modeInfo={modeInfo}
+                model={model}
+                modelInfo={modelInfo}
+                contextStats={contextStats}
+                placeholder={"What are we building?"}
+              />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
             <box flexGrow={1} minHeight={0} />
@@ -743,28 +1027,69 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           </box>
         </>
       )}
-      {showSlashMenu && <SlashMenuModal t={t} selectedIndex={slashMenuIndex} width={width} height={height} searchQuery={slashSearchQuery} filteredItems={filteredSlashItems} />}
-      {showModelPicker && <ModelPickerModal t={t} currentModel={model} selectedIndex={modelPickerIndex} width={width} height={height} searchQuery={modelSearchQuery} filteredModels={filteredModels} />}
+      {showSlashMenu && (
+        <SlashMenuModal
+          t={t}
+          selectedIndex={slashMenuIndex}
+          width={width}
+          height={height}
+          searchQuery={slashSearchQuery}
+          filteredItems={filteredSlashItems}
+        />
+      )}
+      {showModelPicker && (
+        <ModelPickerModal
+          t={t}
+          currentModel={model}
+          selectedIndex={modelPickerIndex}
+          width={width}
+          height={height}
+          searchQuery={modelSearchQuery}
+          filteredModels={filteredModels}
+        />
+      )}
     </box>
   );
 }
 
 /* ── Session Header ──────────────────────────────────────────── */
 
-function SessionHeader({ t, modeInfo, sessionTitle, sessionId }: {
-  t: Theme; modeInfo: typeof MODES[number]; sessionTitle: string | null; sessionId: string | null;
+function SessionHeader({
+  t,
+  modeInfo,
+  sessionTitle,
+  sessionId,
+}: {
+  t: Theme;
+  modeInfo: (typeof MODES)[number];
+  sessionTitle: string | null;
+  sessionId: string | null;
 }) {
   return (
     <box flexShrink={0}>
       <box
-        paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={1}
-        border={["left"]} customBorderChars={SPLIT} borderColor={t.border}
+        paddingTop={1}
+        paddingBottom={1}
+        paddingLeft={2}
+        paddingRight={1}
+        border={["left"]}
+        customBorderChars={SPLIT}
+        borderColor={t.border}
         backgroundColor={t.backgroundPanel}
       >
         <box flexDirection="row" width="100%">
           <text>
-            <span style={{ fg: modeInfo.color }}><b>{modeInfo.label}</b></span>
-            {sessionTitle ? <span style={{ fg: t.text }}><b>{": "}{sessionTitle}</b></span> : null}
+            <span style={{ fg: modeInfo.color }}>
+              <b>{modeInfo.label}</b>
+            </span>
+            {sessionTitle ? (
+              <span style={{ fg: t.text }}>
+                <b>
+                  {": "}
+                  {sessionTitle}
+                </b>
+              </span>
+            ) : null}
           </text>
           <box flexGrow={1} />
           {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
@@ -796,12 +1121,40 @@ function ContextMeter({ t, stats }: { t: Theme; stats: ContextStats }) {
   );
 }
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, contextStats, placeholder, queuedCount, queuedMessages }: {
-  t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
-  isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; showPlanQuestions: boolean; onSubmit: () => void;
-  onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
-  modeInfo: typeof MODES[number]; model: string;
-  modelInfo: ReturnType<typeof getModelInfo>; contextStats?: ContextStats | null; placeholder?: string; queuedCount?: number; queuedMessages?: string[];
+function PromptBox({
+  t,
+  inputRef,
+  isProcessing,
+  showModelPicker,
+  showSlashMenu,
+  showPlanQuestions,
+  onSubmit,
+  onPaste,
+  pasteBlocks,
+  modeInfo,
+  model,
+  modelInfo,
+  contextStats,
+  placeholder,
+  queuedCount,
+  queuedMessages,
+}: {
+  t: Theme;
+  inputRef: React.RefObject<TextareaRenderable | null>;
+  isProcessing: boolean;
+  showModelPicker: boolean;
+  showSlashMenu: boolean;
+  showPlanQuestions: boolean;
+  onSubmit: () => void;
+  onPaste: (event: PasteEvent) => void;
+  pasteBlocks: { id: number; content: string; lines: number }[];
+  modeInfo: (typeof MODES)[number];
+  model: string;
+  modelInfo: ReturnType<typeof getModelInfo>;
+  contextStats?: ContextStats | null;
+  placeholder?: string;
+  queuedCount?: number;
+  queuedMessages?: string[];
 }) {
   const hasQueue = (queuedMessages?.length ?? 0) > 0;
 
@@ -809,9 +1162,19 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
     <box backgroundColor={t.backgroundPanel}>
       <box>
         {hasQueue && (
-          <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.queueBg} flexShrink={0}>
+          <box
+            paddingLeft={2}
+            paddingRight={2}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={t.queueBg}
+            flexShrink={0}
+          >
             {queuedMessages!.map((msg, i) => (
-              <text key={i} fg={t.text}>{"→ "}{msg}</text>
+              <text key={i} fg={t.text}>
+                {"→ "}
+                {msg}
+              </text>
             ))}
             <box height={1} />
             <text>
@@ -908,8 +1271,11 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
     case "user":
       return (
         <box
-          border={["left"]} customBorderChars={SPLIT} borderColor={entry.modeColor || modeColor}
-          marginTop={index === 0 ? 0 : 1} marginBottom={1}
+          border={["left"]}
+          customBorderChars={SPLIT}
+          borderColor={entry.modeColor || modeColor}
+          marginTop={index === 0 ? 0 : 1}
+          marginBottom={1}
         >
           <box paddingTop={1} paddingBottom={1} paddingLeft={2} backgroundColor={t.backgroundPanel} flexShrink={0}>
             <text fg={t.text}>{entry.content}</text>
@@ -965,7 +1331,9 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
         const label = name === "write_file" ? `Write ${filePath}` : `Edit ${filePath}`;
         return (
           <box gap={0}>
-            <InlineTool t={t} pending={false}>{label}</InlineTool>
+            <InlineTool t={t} pending={false}>
+              {label}
+            </InlineTool>
             {diff && <DiffView t={t} diff={diff} />}
           </box>
         );
@@ -981,13 +1349,33 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
       }
 
       if (name === "process_stop" || name === "process_list") {
-        return <InlineTool t={t} pending={false}>{entry.content}</InlineTool>;
+        return (
+          <InlineTool t={t} pending={false}>
+            {entry.content}
+          </InlineTool>
+        );
       }
 
-      if (name === "read_file") return <InlineTool t={t} pending={false}>{`Read ${trunc(tryParseArg(entry.toolCall, "path") || args, 60)}`}</InlineTool>;
-      if (name === "search_web" || name === "search_x") return <InlineTool t={t} pending={false}>{name === "search_web" ? "Web" : "X"}{` Search "${trunc(args, 60)}"`}</InlineTool>;
+      if (name === "read_file")
+        return (
+          <InlineTool
+            t={t}
+            pending={false}
+          >{`Read ${trunc(tryParseArg(entry.toolCall, "path") || args, 60)}`}</InlineTool>
+        );
+      if (name === "search_web" || name === "search_x")
+        return (
+          <InlineTool t={t} pending={false}>
+            {name === "search_web" ? "Web" : "X"}
+            {` Search "${trunc(args, 60)}"`}
+          </InlineTool>
+        );
 
-      return <InlineTool t={t} pending={false}>{trunc(name === "bash" ? args : `${name} ${args}`, 80)}</InlineTool>;
+      return (
+        <InlineTool t={t} pending={false}>
+          {trunc(name === "bash" ? args : `${name} ${args}`, 80)}
+        </InlineTool>
+      );
     }
 
     default:
@@ -1066,7 +1454,7 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
             <span style={{ fg: t.diffHeaderFg }}>{diff.filePath}</span>
             <span style={{ fg: t.textDim }}>{"  "}</span>
             <span style={{ fg: t.diffRemovedFg }}>{`-${diff.removals}`}</span>
-            <span style={{ fg: t.textDim }}>{" "}</span>
+            <span style={{ fg: t.textDim }}> </span>
             <span style={{ fg: t.diffAddedFg }}>{`+${diff.additions}`}</span>
           </text>
         </box>
@@ -1076,7 +1464,11 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
           if (row.kind === "separator") {
             return (
               <box key={i} backgroundColor={t.diffSeparator} paddingLeft={1}>
-                <text fg={t.diffSeparatorFg}>{"⌃  "}{row.count}{" unmodified lines"}</text>
+                <text fg={t.diffSeparatorFg}>
+                  {"⌃  "}
+                  {row.count}
+                  {" unmodified lines"}
+                </text>
               </box>
             );
           }
@@ -1106,7 +1498,11 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
 
         {truncated && (
           <box backgroundColor={t.diffSeparator} paddingLeft={1}>
-            <text fg={t.diffSeparatorFg}>{"⌃  "}{rows.length - MAX_DIFF_ROWS}{" more lines"}</text>
+            <text fg={t.diffSeparatorFg}>
+              {"⌃  "}
+              {rows.length - MAX_DIFF_ROWS}
+              {" more lines"}
+            </text>
           </box>
         )}
       </box>
@@ -1121,7 +1517,7 @@ function ShimmerText({ t, text }: { t: Theme; text: string }) {
         <span style={{ fg: t.textMuted }}>
           <LoadingSpinner />
         </span>
-        <span style={{ fg: t.textMuted }}>{" "}{text}</span>
+        <span style={{ fg: t.textMuted }}> {text}</span>
       </text>
     </box>
   );
@@ -1131,7 +1527,8 @@ function InlineTool({ t, pending, children }: { t: Theme; pending: boolean; chil
   return (
     <box paddingLeft={3}>
       <text fg={t.textMuted}>
-        {"→ "}{children}
+        {"→ "}
+        {children}
       </text>
     </box>
   );
@@ -1169,12 +1566,14 @@ function DelegationTaskLine({ t, label, pending, id }: { t: Theme; label: string
           </span>
         ) : (
           <span style={{ fg: t.subagentAccent }}>{"◆"}</span>
-        )}
-        {" "}
+        )}{" "}
         <span style={{ fg: t.subagentAccent }}>
           <b>{"Background"}</b>
         </span>
-        <span style={{ fg: t.textMuted }}>{" — "}{displayLabel}</span>
+        <span style={{ fg: t.textMuted }}>
+          {" — "}
+          {displayLabel}
+        </span>
         {id ? <span style={{ fg: t.textDim }}>{`  (${id})`}</span> : null}
       </text>
     </box>
@@ -1196,7 +1595,8 @@ function SubagentActivity({ t, status }: { t: Theme; status: SubagentStatus }) {
   return (
     <box paddingLeft={5}>
       <text fg={t.textMuted}>
-        {"→ "}{truncateLine(status.detail, 100)}
+        {"→ "}
+        {truncateLine(status.detail, 100)}
       </text>
     </box>
   );
@@ -1224,25 +1624,31 @@ function DelegationResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
   const delegation = entry.toolResult?.delegation;
   if (!delegation) return null;
 
-  return (
-    <DelegationTaskLine t={t} label={delegation.description} pending={false} id={delegation.id} />
-  );
+  return <DelegationTaskLine t={t} label={delegation.description} pending={false} id={delegation.id} />;
 }
 
 function DelegationListView({ t, content }: { t: Theme; content: string }) {
   const items = parseDelegationList(content);
 
   if (items.length === 0) {
-    return <InlineTool t={t} pending={false}>{"No background delegations"}</InlineTool>;
+    return (
+      <InlineTool t={t} pending={false}>
+        {"No background delegations"}
+      </InlineTool>
+    );
   }
 
   return (
     <box paddingLeft={3} gap={0}>
       {items.map((item, i) => {
-        const statusColor = item.status === "complete" ? "#8adf8a"
-          : item.status === "running" ? t.subagentAccent
-          : item.status === "error" ? "#df8a8a"
-          : t.textMuted;
+        const statusColor =
+          item.status === "complete"
+            ? "#8adf8a"
+            : item.status === "running"
+              ? t.subagentAccent
+              : item.status === "error"
+                ? "#df8a8a"
+                : t.textMuted;
 
         return (
           <box key={i}>
@@ -1250,7 +1656,10 @@ function DelegationListView({ t, content }: { t: Theme; content: string }) {
               <span style={{ fg: statusColor }}>{"◆ "}</span>
               <span style={{ fg: t.text }}>{item.id}</span>
               <span style={{ fg: statusColor }}>{` ${item.status}`}</span>
-              <span style={{ fg: t.textMuted }}>{" — "}{truncateLine(item.label, 60)}</span>
+              <span style={{ fg: t.textMuted }}>
+                {" — "}
+                {truncateLine(item.label, 60)}
+              </span>
             </text>
           </box>
         );
@@ -1275,9 +1684,14 @@ function BackgroundProcessLine({ t, id, pid, command }: { t: Theme; id: number; 
     <box paddingLeft={3}>
       <text>
         <span style={{ fg: t.subagentAccent }}>{"◆ "}</span>
-        <span style={{ fg: t.subagentAccent }}><b>{"Background process"}</b></span>
+        <span style={{ fg: t.subagentAccent }}>
+          <b>{"Background process"}</b>
+        </span>
         <span style={{ fg: t.textMuted }}>{` id:${id} pid:${pid}`}</span>
-        <span style={{ fg: t.textDim }}>{" — "}{truncateLine(command, 60)}</span>
+        <span style={{ fg: t.textDim }}>
+          {" — "}
+          {truncateLine(command, 60)}
+        </span>
       </text>
     </box>
   );
@@ -1290,7 +1704,10 @@ function ProcessLogsView({ t, content }: { t: Theme; content: string }) {
 
   return (
     <box paddingLeft={3} gap={0}>
-      <text fg={t.textMuted}>{"→ "}{header}</text>
+      <text fg={t.textMuted}>
+        {"→ "}
+        {header}
+      </text>
       {body ? (
         <box paddingLeft={2} marginTop={0}>
           <box backgroundColor={t.mdCodeBlockBg} paddingLeft={1} paddingRight={1}>
@@ -1311,7 +1728,9 @@ function truncateBlock(text: string, maxLines: number): string {
 function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; content: string }) {
   return (
     <box gap={0}>
-      <InlineTool t={t} pending={false}>{label}</InlineTool>
+      <InlineTool t={t} pending={false}>
+        {label}
+      </InlineTool>
       <box paddingLeft={5} marginTop={1} flexShrink={0}>
         <Markdown content={content} t={t} />
       </box>
@@ -1321,9 +1740,20 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
 
 /* ── Slash Menu ──────────────────────────────────────────────── */
 
-function SlashMenuModal({ t, selectedIndex, width, height, searchQuery, filteredItems }: {
-  t: Theme; selectedIndex: number; width: number; height: number;
-  searchQuery: string; filteredItems: SlashMenuItem[];
+function SlashMenuModal({
+  t,
+  selectedIndex,
+  width,
+  height,
+  searchQuery,
+  filteredItems,
+}: {
+  t: Theme;
+  selectedIndex: number;
+  width: number;
+  height: number;
+  searchQuery: string;
+  filteredItems: SlashMenuItem[];
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null);
   useEffect(() => {
@@ -1337,13 +1767,27 @@ function SlashMenuModal({ t, selectedIndex, width, height, searchQuery, filtered
   const panelHeight = Math.min(contentHeight, maxH);
   const top = Math.max(2, Math.floor((height - panelHeight) / 2));
   return (
-    <box position="absolute" left={0} top={0} width={width} height={height}
-      alignItems="center" paddingTop={top}
-      backgroundColor={"#000000cc" as any}>
-      <box width={Math.min(50, width - 6)} height={panelHeight} backgroundColor={t.backgroundPanel}
-        paddingTop={1} paddingBottom={1}>
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={"#000000cc" as any}
+    >
+      <box
+        width={Math.min(50, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+      >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
-          <text fg={t.primary}><b>{"Commands"}</b></text>
+          <text fg={t.primary}>
+            <b>{"Commands"}</b>
+          </text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
@@ -1351,15 +1795,26 @@ function SlashMenuModal({ t, selectedIndex, width, height, searchQuery, filtered
         </box>
         <scrollbox ref={listRef} flexGrow={1}>
           {filteredItems.map((item, idx) => (
-            <box key={item.id} id={`slash-${item.id}`} backgroundColor={idx === selectedIndex ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
+            <box
+              key={item.id}
+              id={`slash-${item.id}`}
+              backgroundColor={idx === selectedIndex ? t.selectedBg : undefined}
+              paddingLeft={2}
+              paddingRight={2}
+            >
               <box flexDirection="row" justifyContent="space-between">
-                <text fg={idx === selectedIndex ? t.selected : t.text}>{"/"}{item.label}</text>
+                <text fg={idx === selectedIndex ? t.selected : t.text}>
+                  {"/"}
+                  {item.label}
+                </text>
                 <text fg={t.textMuted}>{item.description}</text>
               </box>
             </box>
           ))}
           {filteredItems.length === 0 && (
-            <box paddingLeft={2}><text fg={t.textMuted}>{"No commands match your search"}</text></box>
+            <box paddingLeft={2}>
+              <text fg={t.textMuted}>{"No commands match your search"}</text>
+            </box>
           )}
         </scrollbox>
       </box>
@@ -1369,9 +1824,22 @@ function SlashMenuModal({ t, selectedIndex, width, height, searchQuery, filtered
 
 /* ── Model Picker ────────────────────────────────────────────── */
 
-function ModelPickerModal({ t, currentModel, selectedIndex, width, height, searchQuery, filteredModels }: {
-  t: Theme; currentModel: string; selectedIndex: number; width: number; height: number;
-  searchQuery: string; filteredModels: ModelInfo[];
+function ModelPickerModal({
+  t,
+  currentModel,
+  selectedIndex,
+  width,
+  height,
+  searchQuery,
+  filteredModels,
+}: {
+  t: Theme;
+  currentModel: string;
+  selectedIndex: number;
+  width: number;
+  height: number;
+  searchQuery: string;
+  filteredModels: ModelInfo[];
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null);
   useEffect(() => {
@@ -1385,13 +1853,27 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height, searc
   const panelHeight = Math.min(contentHeight, maxH);
   const top = Math.max(2, Math.floor((height - panelHeight) / 2));
   return (
-    <box position="absolute" left={0} top={0} width={width} height={height}
-      alignItems="center" paddingTop={top}
-      backgroundColor={"#000000cc" as any}>
-      <box width={Math.min(60, width - 6)} height={panelHeight} backgroundColor={t.backgroundPanel}
-        paddingTop={1} paddingBottom={1}>
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={"#000000cc" as any}
+    >
+      <box
+        width={Math.min(60, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+      >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
-          <text fg={t.primary}><b>{"Select model"}</b></text>
+          <text fg={t.primary}>
+            <b>{"Select model"}</b>
+          </text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
@@ -1402,15 +1884,21 @@ function ModelPickerModal({ t, currentModel, selectedIndex, width, height, searc
             const selected = idx === selectedIndex;
             const current = m.id === currentModel;
             return (
-              <box key={m.id} id={`model-${m.id}`} backgroundColor={selected ? t.selectedBg : undefined} paddingLeft={2} paddingRight={2}>
-                <text fg={current ? t.accent : selected ? t.selected : t.text}>
-                  {m.name}
-                </text>
+              <box
+                key={m.id}
+                id={`model-${m.id}`}
+                backgroundColor={selected ? t.selectedBg : undefined}
+                paddingLeft={2}
+                paddingRight={2}
+              >
+                <text fg={current ? t.accent : selected ? t.selected : t.text}>{m.name}</text>
               </box>
             );
           })}
           {filteredModels.length === 0 && (
-            <box paddingLeft={2}><text fg={t.textMuted}>{"No models match your search"}</text></box>
+            <box paddingLeft={2}>
+              <text fg={t.textMuted}>{"No models match your search"}</text>
+            </box>
           )}
         </scrollbox>
       </box>
@@ -1425,17 +1913,25 @@ function toolArgs(tc?: ToolCall): string {
   try {
     const a = JSON.parse(tc.function.arguments);
     if (tc.function.name === "bash") return a.command || "";
-    if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file") return a.path || "";
+    if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file")
+      return a.path || "";
     if (tc.function.name === "task") return a.description || "";
     if (tc.function.name === "delegate") return a.description || "";
     if (tc.function.name === "delegation_read") return a.id || "";
-    if (tc.function.name === "process_logs" || tc.function.name === "process_stop") return a.id != null ? String(a.id) : "";
+    if (tc.function.name === "process_logs" || tc.function.name === "process_stop")
+      return a.id != null ? String(a.id) : "";
     return a.query || "";
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 function tryParseArg(tc: ToolCall | undefined, key: string): string {
   if (!tc) return "";
-  try { return JSON.parse(tc.function.arguments)[key] || ""; } catch { return ""; }
+  try {
+    return JSON.parse(tc.function.arguments)[key] || "";
+  } catch {
+    return "";
+  }
 }
 function toolLabel(tc: ToolCall): string {
   const args = toolArgs(tc);
@@ -1443,7 +1939,9 @@ function toolLabel(tc: ToolCall): string {
     try {
       const parsed = JSON.parse(tc.function.arguments);
       if (parsed.background) return `Background: ${trunc(args || "Starting process...", 70)}`;
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
     return trunc(args || "Running command...", 80);
   }
   if (tc.function.name === "read_file") return `Read ${trunc(args, 60)}`;
@@ -1471,5 +1969,9 @@ function compactTaskLabel(label: string): string {
   if (words.length <= 3) return label.trim() || "Working";
   return `${words.slice(0, 3).join(" ")}...`;
 }
-function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }
-function truncateLine(s: string, n: number): string { return trunc(s.replace(/\s+/g, " ").trim(), n); }
+function trunc(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n) + "…";
+}
+function truncateLine(s: string, n: number): string {
+  return trunc(s.replace(/\s+/g, " ").trim(), n);
+}

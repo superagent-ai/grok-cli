@@ -23,12 +23,14 @@ interface StoredToolResultRow {
 }
 
 export function loadTranscript(sessionId: string): ModelMessage[] {
-  const rows = getDatabase().prepare(`
+  const rows = getDatabase()
+    .prepare(`
     SELECT session_id, seq, role, message_json, created_at
     FROM messages
     WHERE session_id = ?
     ORDER BY seq ASC
-  `).all(sessionId) as MessageRow[];
+  `)
+    .all(sessionId) as MessageRow[];
 
   return rows.map((row) => JSON.parse(row.message_json) as ModelMessage);
 }
@@ -101,16 +103,7 @@ export function appendMessages(sessionId: string, messages: ModelMessage[]): voi
           if (part.type !== "tool-result") continue;
           let toolCall = selectToolCall.get(sessionId, part.toolCallId) as StoredToolCallRow | undefined;
           if (!toolCall) {
-            insertToolCall.run(
-              sessionId,
-              seq,
-              part.toolCallId,
-              part.toolName,
-              "{}",
-              "completed",
-              createdAt,
-              createdAt,
-            );
+            insertToolCall.run(sessionId, seq, part.toolCallId, part.toolName, "{}", "completed", createdAt, createdAt);
             toolCall = selectToolCall.get(sessionId, part.toolCallId) as StoredToolCallRow | undefined;
           }
           if (!toolCall) continue;
@@ -137,12 +130,14 @@ export function appendSystemMessage(sessionId: string, content: string): void {
 
 export function buildChatEntries(sessionId: string): ChatEntry[] {
   const db = getDatabase();
-  const messageRows = db.prepare(`
+  const messageRows = db
+    .prepare(`
     SELECT session_id, seq, role, message_json, created_at
     FROM messages
     WHERE session_id = ?
     ORDER BY seq ASC
-  `).all(sessionId) as MessageRow[];
+  `)
+    .all(sessionId) as MessageRow[];
   const toolResults = loadStoredToolResults(sessionId);
   const callMap = new Map<string, ToolCall>();
   const entries: ChatEntry[] = [];
@@ -179,13 +174,14 @@ export function buildChatEntries(sessionId: string): ChatEntry[] {
       for (const part of message.content) {
         if (part.type !== "tool-result") continue;
         const toolCall = callMap.get(part.toolCallId) ?? toFallbackToolCall(part.toolCallId, part.toolName);
-        const toolResult = toolResults.get(part.toolCallId) ?? extractToolResultFromOutput(part.output) ?? {
-          success: isOutputSuccess(part.output),
-          output: JSON.stringify(part.output),
-        };
+        const toolResult = toolResults.get(part.toolCallId) ??
+          extractToolResultFromOutput(part.output) ?? {
+            success: isOutputSuccess(part.output),
+            output: JSON.stringify(part.output),
+          };
         entries.push({
           type: "tool_result",
-          content: toolResult.success ? (toolResult.output || "Success") : (toolResult.error || "Error"),
+          content: toolResult.success ? toolResult.output || "Success" : toolResult.error || "Error",
           timestamp,
           toolCall,
           toolResult,
@@ -198,11 +194,13 @@ export function buildChatEntries(sessionId: string): ChatEntry[] {
 }
 
 function getNextSequence(db: ReturnType<typeof getDatabase>, sessionId: string): number {
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT COALESCE(MAX(seq), 0) AS max_seq
     FROM messages
     WHERE session_id = ?
-  `).get(sessionId) as { max_seq: number } | undefined;
+  `)
+    .get(sessionId) as { max_seq: number } | undefined;
 
   return (row?.max_seq ?? 0) + 1;
 }
@@ -250,17 +248,17 @@ function renderAssistantContent(content: ModelMessage["content"], callMap: Map<s
 }
 
 function loadStoredToolResults(sessionId: string): Map<string, ToolResult> {
-  const rows = getDatabase().prepare(`
+  const rows = getDatabase()
+    .prepare(`
     SELECT tc.tool_call_id, tr.output_json
     FROM tool_results tr
     JOIN tool_calls tc ON tc.id = tr.tool_call_row_id
     WHERE tc.session_id = ?
     ORDER BY tr.id ASC
-  `).all(sessionId) as StoredToolResultRow[];
+  `)
+    .all(sessionId) as StoredToolResultRow[];
 
-  return new Map(
-    rows.map((row) => [row.tool_call_id, JSON.parse(row.output_json) as ToolResult]),
-  );
+  return new Map(rows.map((row) => [row.tool_call_id, JSON.parse(row.output_json) as ToolResult]));
 }
 
 function toFallbackToolCall(toolCallId: string, toolName: string): ToolCall {
