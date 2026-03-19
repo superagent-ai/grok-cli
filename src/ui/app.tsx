@@ -159,6 +159,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<typeof MODES[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
+  const interruptedRunIdRef = useRef<number | null>(null);
 
   const setMode = useCallback((m: AgentMode) => {
     if (m === "agent" && mode === "plan" && activePlan) {
@@ -286,8 +287,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         setStreamContent(contentAccRef.current);
       }
     }
+    const wasInterrupted = interruptedRunIdRef.current === runId;
     const finalContent = sanitizeContent(contentAccRef.current);
-    if (!isStale() && finalContent) {
+    if (isStale()) {
+      contentAccRef.current = "";
+      return;
+    }
+
+    if (!wasInterrupted && finalContent) {
       setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color }]);
     }
     
@@ -297,6 +304,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       setStreamReasoning("");
       setActiveToolCalls([]);
       setActiveSubagent(null);
+    }
+    if (wasInterrupted) {
+      interruptedRunIdRef.current = null;
     }
     const nextQueued = queuedMessagesRef.current.shift();
     if (nextQueued) {
@@ -626,7 +636,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     const raw = inputRef.current?.plainText || "";
     if (!raw.trim() && pasteBlocks.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
-        invalidateActiveRun();
+        interruptedRunIdRef.current = activeRunIdRef.current;
+        setStreamContent("");
+        setStreamReasoning("");
+        setActiveToolCalls([]);
+        setActiveSubagent(null);
         agent.abort();
       }
       return;

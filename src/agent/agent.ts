@@ -565,8 +565,8 @@ export class Agent {
 
     try {
       const tools = createTools(this.bash, this.provider, this.mode, {
-        runTask: (request, abortSignal) => this.runTask(request, abortSignal ?? signal),
-        runDelegation: (request, abortSignal) => this.runDelegation(request, abortSignal ?? signal),
+        runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
+        runDelegation: (request, abortSignal) => this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
         readDelegation: (id) => this.readDelegation(id),
         listDelegations: () => this.listDelegations(),
       });
@@ -761,4 +761,26 @@ function truncate(text: string, max: number): string {
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+  const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
+  if (activeSignals.length === 0) return undefined;
+  if (activeSignals.length === 1) return activeSignals[0];
+
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(activeSignals);
+  }
+
+  const controller = new AbortController();
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+
+    signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  return controller.signal;
 }
