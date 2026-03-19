@@ -21,7 +21,6 @@ import { Markdown } from "./markdown";
 import {
   formatPlanAnswers,
   initialPlanQuestionsState,
-  type PlanAnswers,
   PlanQuestionsPanel,
   type PlanQuestionsState,
   PlanView,
@@ -128,7 +127,7 @@ function HeroLogo({ t }: { t: Theme }) {
           if (row.grok !== undefined && cursor <= row.grok && star.col > row.grok) {
             els.push(" ".repeat(row.grok - cursor));
             els.push(
-              <span key={`g${r}`} style={{ fg: t.primary }}>
+              <span key="grok" style={{ fg: t.primary }}>
                 {"Grok"}
               </span>,
             );
@@ -137,7 +136,7 @@ function HeroLogo({ t }: { t: Theme }) {
           const gap = star.col - cursor;
           if (gap > 0) els.push(" ".repeat(gap));
           els.push(
-            <span key={`s${r}-${star.col}`} style={{ fg: nextColor() }}>
+            <span key={`s-${star.col}`} style={{ fg: nextColor() }}>
               {star.ch}
             </span>,
           );
@@ -147,7 +146,7 @@ function HeroLogo({ t }: { t: Theme }) {
         if (row.grok !== undefined && cursor <= row.grok) {
           els.push(" ".repeat(row.grok - cursor));
           els.push(
-            <span key={`g${r}`} style={{ fg: t.primary }}>
+            <span key="grok" style={{ fg: t.primary }}>
               {"Grok"}
             </span>,
           );
@@ -155,6 +154,7 @@ function HeroLogo({ t }: { t: Theme }) {
         }
 
         els.push(" ".repeat(Math.max(0, 35 - cursor)));
+        // biome-ignore lint/suspicious/noArrayIndexKey: static constant array that never reorders
         return <text key={r}>{els}</text>;
       })}
     </box>
@@ -174,8 +174,8 @@ const SPLIT = {
   leftT: "",
   rightT: "",
 };
-const SPLIT_END = { ...SPLIT, bottomLeft: "╹" };
-const EMPTY = {
+const _SPLIT_END = { ...SPLIT, bottomLeft: "╹" };
+const _EMPTY = {
   topLeft: "",
   bottomLeft: "",
   vertical: "",
@@ -188,7 +188,7 @@ const EMPTY = {
   leftT: "",
   rightT: "",
 };
-const LINE = {
+const _LINE = {
   topLeft: "━",
   bottomLeft: "━",
   vertical: "",
@@ -228,7 +228,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
   const [messages, setMessages] = useState<ChatEntry[]>(() => agent.getChatEntries());
   const [streamContent, setStreamContent] = useState("");
-  const [streamReasoning, setStreamReasoning] = useState("");
+  const [_streamReasoning, setStreamReasoning] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [model, setModel] = useState(agent.getModel());
   const [mode, setModeState] = useState<AgentMode>(agent.getMode());
@@ -290,7 +290,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
   const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
-  const flatModels = MODELS.map((m) => m.id);
+  const _flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
     ? MODELS.filter(
         (m) =>
@@ -469,7 +469,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       setTimeout(scrollToBottom, 50);
     },
-    [agent, invalidateActiveRun, scrollToBottom, model],
+    [agent, scrollToBottom, sessionTitle],
   );
 
   useEffect(() => {
@@ -523,7 +523,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       return false;
     },
-    [flatModels, model, onExit, resetToNewSession],
+    [onExit, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -572,7 +572,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           break;
       }
     },
-    [flatModels, model, onExit, resetToNewSession],
+    [onExit, resetToNewSession],
   );
 
   const showPlanPanel = !!activePlan?.questions?.length;
@@ -922,7 +922,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     processMessage(message);
-  }, [agent, handleCommand, invalidateActiveRun, processMessage, pasteBlocks, scrollToBottom]);
+  }, [agent, handleCommand, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -933,24 +933,26 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           {/* Session header — ┃ left-border panel like OpenCode's Header */}
           <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} sessionId={sessionId} />
           {/* Scrollable messages */}
+          {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
           <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
             {messages.map((msg, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: append-only message list without stable IDs
               <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
             ))}
             {/* Active tool calls — pending inline */}
-            {activeToolCalls.map((tc, i) =>
+            {activeToolCalls.map((tc) =>
               tc.function.name === "task" ? (
-                <SubagentTaskLine key={i} t={t} label={toolArgs(tc) || "Working"} pending />
+                <SubagentTaskLine key={tc.id} t={t} label={toolArgs(tc) || "Working"} pending />
               ) : tc.function.name === "delegate" ? (
                 <DelegationTaskLine
-                  key={i}
+                  key={tc.id}
                   t={t}
                   label={toolArgs(tc) || "Background research"}
                   pending
                   id={undefined}
                 />
               ) : (
-                <InlineTool key={i} t={t} pending>
+                <InlineTool key={tc.id} t={t} pending>
                   {toolLabel(tc)}
                 </InlineTool>
               ),
@@ -1130,7 +1132,7 @@ function PromptBox({
   showPlanQuestions,
   onSubmit,
   onPaste,
-  pasteBlocks,
+  pasteBlocks: _pasteBlocks,
   modeInfo,
   model,
   modelInfo,
@@ -1171,6 +1173,7 @@ function PromptBox({
             flexShrink={0}
           >
             {queuedMessages!.map((msg, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: append-only queue of plain strings
               <text key={i} fg={t.text}>
                 {"→ "}
                 {msg}
@@ -1463,7 +1466,8 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
         {visible.map((row, i) => {
           if (row.kind === "separator") {
             return (
-              <box key={i} backgroundColor={t.diffSeparator} paddingLeft={1}>
+              // biome-ignore lint/suspicious/noArrayIndexKey: separator rows lack unique identifiers
+              <box key={`sep-${i}`} backgroundColor={t.diffSeparator} paddingLeft={1}>
                 <text fg={t.diffSeparatorFg}>
                   {"⌃  "}
                   {row.count}
@@ -1474,24 +1478,24 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
           }
           if (row.kind === "removed") {
             return (
-              <box key={i} backgroundColor={t.diffRemoved} flexDirection="row">
+              <box key={`rm-${row.oldNum}`} backgroundColor={t.diffRemoved} flexDirection="row">
                 <text fg={t.diffRemovedLineNum}>{pad(row.oldNum)}</text>
-                <text fg={t.diffRemovedFg}>{" " + row.text}</text>
+                <text fg={t.diffRemovedFg}>{` ${row.text}`}</text>
               </box>
             );
           }
           if (row.kind === "added") {
             return (
-              <box key={i} backgroundColor={t.diffAdded} flexDirection="row">
+              <box key={`add-${row.newNum}`} backgroundColor={t.diffAdded} flexDirection="row">
                 <text fg={t.diffAddedLineNum}>{pad(row.newNum)}</text>
-                <text fg={t.diffAddedFg}>{" " + row.text}</text>
+                <text fg={t.diffAddedFg}>{` ${row.text}`}</text>
               </box>
             );
           }
           return (
-            <box key={i} backgroundColor={t.diffContext} flexDirection="row">
+            <box key={`ctx-${row.oldNum}`} backgroundColor={t.diffContext} flexDirection="row">
               <text fg={t.diffLineNumber}>{pad(row.oldNum)}</text>
-              <text fg={t.diffContextFg}>{" " + row.text}</text>
+              <text fg={t.diffContextFg}>{` ${row.text}`}</text>
             </box>
           );
         })}
@@ -1523,7 +1527,7 @@ function ShimmerText({ t, text }: { t: Theme; text: string }) {
   );
 }
 
-function InlineTool({ t, pending, children }: { t: Theme; pending: boolean; children: React.ReactNode }) {
+function InlineTool({ t, pending: _pending, children }: { t: Theme; pending: boolean; children: React.ReactNode }) {
   return (
     <box paddingLeft={3}>
       <text fg={t.textMuted}>
@@ -1640,7 +1644,7 @@ function DelegationListView({ t, content }: { t: Theme; content: string }) {
 
   return (
     <box paddingLeft={3} gap={0}>
-      {items.map((item, i) => {
+      {items.map((item) => {
         const statusColor =
           item.status === "complete"
             ? "#8adf8a"
@@ -1651,7 +1655,7 @@ function DelegationListView({ t, content }: { t: Theme; content: string }) {
                 : t.textMuted;
 
         return (
-          <box key={i}>
+          <box key={item.id}>
             <text>
               <span style={{ fg: statusColor }}>{"◆ "}</span>
               <span style={{ fg: t.text }}>{item.id}</span>
@@ -1766,6 +1770,7 @@ function SlashMenuModal({
   const maxH = Math.floor(height * 0.6);
   const panelHeight = Math.min(contentHeight, maxH);
   const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  const overlayBg = "#000000cc" as string;
   return (
     <box
       position="absolute"
@@ -1775,7 +1780,7 @@ function SlashMenuModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as any}
+      backgroundColor={overlayBg}
     >
       <box
         width={Math.min(50, width - 6)}
@@ -1852,6 +1857,7 @@ function ModelPickerModal({
   const maxH = Math.floor(height * 0.6);
   const panelHeight = Math.min(contentHeight, maxH);
   const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  const overlayBg = "#000000cc" as string;
   return (
     <box
       position="absolute"
@@ -1861,7 +1867,7 @@ function ModelPickerModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as any}
+      backgroundColor={overlayBg}
     >
       <box
         width={Math.min(60, width - 6)}
@@ -1970,7 +1976,7 @@ function compactTaskLabel(label: string): string {
   return `${words.slice(0, 3).join(" ")}...`;
 }
 function trunc(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, n) + "…";
+  return s.length <= n ? s : `${s.slice(0, n)}…`;
 }
 function truncateLine(s: string, n: number): string {
   return trunc(s.replace(/\s+/g, " ").trim(), n);

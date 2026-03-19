@@ -1,6 +1,6 @@
 import { type ChildProcess, exec, spawn } from "child_process";
 import { createReadStream, createWriteStream } from "fs";
-import { mkdtemp, readFile, rm, stat, unlink } from "fs/promises";
+import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
