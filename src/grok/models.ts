@@ -1,4 +1,4 @@
-import type { ModelInfo } from "../types/index.js";
+import type { ModelInfo } from "../types/index";
 
 export const MODELS: ModelInfo[] = [
   {

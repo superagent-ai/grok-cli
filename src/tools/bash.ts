@@ -4,7 +4,7 @@ import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
-import type { ToolResult } from "../types/index.js";
+import type { ToolResult } from "../types/index";
 
 const execAsync = promisify(exec);
 

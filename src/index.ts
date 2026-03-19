@@ -4,11 +4,11 @@ import { createRoot } from "@opentui/react";
 import { program } from "commander";
 import * as dotenv from "dotenv";
 import { createElement } from "react";
-import { Agent } from "./agent/agent.js";
-import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations.js";
-import { MODELS } from "./grok/models.js";
-import { App } from "./ui/app.js";
-import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings.js";
+import { Agent } from "./agent/agent";
+import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
+import { MODELS } from "./grok/models";
+import { App } from "./ui/app";
+import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
 

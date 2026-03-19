@@ -800,6 +800,15 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       return;
     }
+    if (isProcessing && key.name === "up" && queuedMessagesRef.current.length > 0) {
+      const queued = queuedMessagesRef.current.pop();
+      setQueuedMessages([...queuedMessagesRef.current]);
+      if (queued) {
+        inputRef.current?.clear();
+        inputRef.current?.insertText(queued);
+      }
+      return;
+    }
     if (key.sequence === "/" && !isProcessing) {
       const text = inputRef.current?.plainText || "";
       if (!text.trim()) {
@@ -847,7 +856,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
 
   const handleSubmit = useCallback(() => {
     const raw = inputRef.current?.plainText || "";
-    if (!raw.trim() && pasteBlocks.length === 0) return;
+    if (!raw.trim() && pasteBlocks.length === 0) {
+      if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
+        setActiveToolCalls([]);
+        setActiveSubagent(null);
+        agent.abort();
+      }
+      return;
+    }
     inputRef.current?.clear();
     let message = raw;
     const blocks = [...pasteBlocks];
@@ -870,7 +886,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     processMessage(message);
-  }, [handleCommand, processMessage, pasteBlocks, scrollToBottom]);
+  }, [agent, handleCommand, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -881,7 +897,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           {/* Session header — ┃ left-border panel like OpenCode's Header */}
           <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} />
           {/* Scrollable messages */}
-          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
+          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as unknown as undefined}>
             {messages.map((msg, i) => (
               <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
             ))}
@@ -1131,8 +1147,8 @@ function PromptBox({
             maxHeight={10}
             wrapMode="word"
             keyBindings={TEXTAREA_KEYBINDINGS}
-            onSubmit={onSubmit as any}
-            onPaste={onPaste as any}
+            onSubmit={onSubmit as unknown as () => void}
+            onPaste={onPaste as unknown as (event: PasteEvent) => void}
           />
         </box>
       </box>
@@ -1693,7 +1709,7 @@ function SlashMenuModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as any}
+      backgroundColor={"#000000cc" as unknown as string}
     >
       <box
         width={Math.min(50, width - 6)}
@@ -1779,7 +1795,7 @@ function ModelPickerModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as any}
+      backgroundColor={"#000000cc" as unknown as string}
     >
       <box
         width={Math.min(60, width - 6)}

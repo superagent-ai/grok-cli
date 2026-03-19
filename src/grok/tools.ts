@@ -1,4 +1,4 @@
-import { generateText, tool } from "ai";
+import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { BashTool } from "../tools/bash.js";
 import { editFile, readFile, writeFile } from "../tools/file.js";
@@ -8,8 +8,8 @@ import type { XaiProvider } from "./client.js";
 const SEARCH_MODEL = "grok-3-mini-fast";
 
 interface CreateToolsOptions {
-  runTask?: (request: TaskRequest) => Promise<ToolResult>;
-  runDelegation?: (request: TaskRequest) => Promise<ToolResult>;
+  runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
+  runDelegation?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
   readDelegation?: (id: string) => Promise<ToolResult>;
   listDelegations?: () => Promise<ToolResult>;
 }
@@ -160,7 +160,7 @@ export function createTools(
     }),
   };
 
-  const tools: Record<string, any> = { ...base };
+  const tools: ToolSet = { ...base };
 
   if (mode === "agent") {
     tools.write_file = tool({
@@ -199,8 +199,8 @@ export function createTools(
             .describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
           prompt: z.string().describe("Detailed instructions for the sub-agent to complete"),
         }),
-        execute: async ({ agent, description, prompt }) => {
-          return options.runTask!({ agent, description, prompt });
+        execute: async ({ agent, description, prompt }, { abortSignal }) => {
+          return options.runTask!({ agent, description, prompt }, abortSignal);
         },
       });
     }
@@ -217,8 +217,8 @@ export function createTools(
           description: z.string().describe("A short label for the delegation, such as 'OAuth callback research'"),
           prompt: z.string().describe("Detailed instructions for the background agent to complete"),
         }),
-        execute: async ({ agent, description, prompt }) => {
-          return options.runDelegation!({ agent, description, prompt });
+        execute: async ({ agent, description, prompt }, { abortSignal }) => {
+          return options.runDelegation!({ agent, description, prompt }, abortSignal);
         },
       });
     }

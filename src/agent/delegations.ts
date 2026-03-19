@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import type { DelegationRun, DelegationStatus, TaskRequest, ToolResult } from "../types/index.js";
+import type { DelegationRun, DelegationStatus, TaskRequest, ToolResult } from "../types/index";
 
 const ID_ADJECTIVES = ["brisk", "calm", "clever", "eager", "gentle", "keen", "lively", "nimble", "quiet", "steady"];
 
