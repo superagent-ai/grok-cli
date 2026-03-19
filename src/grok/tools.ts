@@ -3,13 +3,14 @@ import { z } from "zod";
 import type { BashTool } from "../tools/bash.js";
 import { readFile, writeFile, editFile } from "../tools/file.js";
 import type { XaiProvider } from "./client.js";
+import type { AgentMode } from "../types/index.js";
 
 const SEARCH_MODEL = "grok-3-mini-fast";
 
-export function createTools(bash: BashTool, provider: XaiProvider) {
+export function createTools(bash: BashTool, provider: XaiProvider, mode: AgentMode = "agent") {
   const cwd = () => bash.getCwd();
 
-  return {
+  const base = {
     bash: tool({
       description:
         "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. For file read/write/edit, prefer the dedicated file tools instead.",
@@ -137,6 +138,12 @@ export function createTools(bash: BashTool, provider: XaiProvider) {
       },
     }),
 
+  };
+
+  if (mode !== "plan") return base;
+
+  return {
+    ...base,
     generate_plan: tool({
       description:
         "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
@@ -162,6 +169,10 @@ export function createTools(bash: BashTool, provider: XaiProvider) {
             z.object({
               id: z.string().describe("Unique question identifier"),
               question: z.string().describe("The question to ask the user"),
+              header: z
+                .string()
+                .optional()
+                .describe("Single-word tab label (e.g. 'Format', 'Storage', 'Testing')"),
               type: z
                 .enum(["select", "multiselect", "text"])
                 .describe("Question type: select (pick one), multiselect (pick many), or text (free-form)"),

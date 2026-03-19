@@ -78,13 +78,17 @@ BEHAVIOR:
 - Focus on explanation, not execution`,
 };
 
-function buildSystemPrompt(cwd: string, mode: AgentMode): string {
+function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | null): string {
   const custom = loadCustomInstructions();
   const customSection = custom
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${customSection}
+  const planSection = planContext
+    ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
+    : "";
+
+  return `${MODE_PROMPTS[mode]}${customSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
@@ -98,6 +102,7 @@ export class Agent {
   private mode: AgentMode = "agent";
   private modelId: string;
   private maxTokens: number;
+  private planContext: string | null = null;
 
   constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
     this.provider = createProvider(apiKey, baseURL);
@@ -121,7 +126,14 @@ export class Agent {
   }
 
   setMode(mode: AgentMode): void {
-    this.mode = mode;
+    if (mode !== this.mode) {
+      this.mode = mode;
+      this.messages = [];
+    }
+  }
+
+  setPlanContext(ctx: string | null): void {
+    this.planContext = ctx;
   }
 
   getCwd(): string {
@@ -149,8 +161,9 @@ export class Agent {
     let streamOk = false;
 
     try {
-      const tools = createTools(this.bash, this.provider);
-      const system = buildSystemPrompt(this.bash.getCwd(), this.mode);
+      const tools = createTools(this.bash, this.provider, this.mode);
+      const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+      this.planContext = null;
 
       const result = streamText({
         model: this.provider(this.modelId),

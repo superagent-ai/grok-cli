@@ -137,7 +137,16 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const startTimeRef = useRef(0);
   const isProcessingRef = useRef(false);
 
-  const setMode = useCallback((m: AgentMode) => { agent.setMode(m); setModeState(m); }, [agent]);
+  const setMode = useCallback((m: AgentMode) => {
+    if (m === "agent" && mode === "plan" && activePlan) {
+      const planText = [`# ${activePlan.title}`, activePlan.summary, "",
+        ...activePlan.steps.map((s, i) => `${i + 1}. ${s.title}: ${s.description}${s.filePaths?.length ? ` (${s.filePaths.join(", ")})` : ""}`),
+      ].join("\n");
+      agent.setPlanContext(planText);
+    }
+    agent.setMode(m);
+    setModeState(m);
+  }, [agent, mode, activePlan]);
   const cycleMode = useCallback(() => {
     const idx = MODES.findIndex((m) => m.id === mode);
     setMode(MODES[(idx + 1) % MODES.length].id);
@@ -170,14 +179,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); contentAccRef.current = "";
     startTimeRef.current = Date.now();
     if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
-    setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date() }]);
+    setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: modeInfo.color }]);
     setTimeout(scrollToBottom, 50);
     try {
       for await (const chunk of agent.processMessage(text.trim())) {
         switch (chunk.type) {
           case "content":
             contentAccRef.current += chunk.content || "";
-            setStreamContent(contentAccRef.current);
+            setStreamContent(sanitizeContent(contentAccRef.current));
             setTimeout(scrollToBottom, 10);
             break;
           case "reasoning":
@@ -185,11 +194,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             break;
           case "tool_calls":
             if (chunk.toolCalls) {
-              if (contentAccRef.current.trim()) {
-                const s = contentAccRef.current;
-                setMessages((p) => [...p, { type: "assistant", content: s, timestamp: new Date() }]);
-                contentAccRef.current = ""; setStreamContent("");
+              const cleaned = sanitizeContent(contentAccRef.current);
+              if (cleaned) {
+                setMessages((p) => [...p, { type: "assistant", content: cleaned, timestamp: new Date(), modeColor: modeInfo.color }]);
               }
+              contentAccRef.current = ""; setStreamContent("");
               setActiveToolCalls(chunk.toolCalls);
             }
             break;
@@ -198,7 +207,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               setMessages((p) => [...p, {
                 type: "tool_result",
                 content: chunk.toolResult!.success ? (chunk.toolResult!.output || "Success") : (chunk.toolResult!.error || "Error"),
-                timestamp: new Date(), toolCall: chunk.toolCall, toolResult: chunk.toolResult,
+                timestamp: new Date(), modeColor: modeInfo.color, toolCall: chunk.toolCall, toolResult: chunk.toolResult,
               }]);
               if (chunk.toolResult.plan?.questions?.length) {
                 setActivePlan(chunk.toolResult.plan);
@@ -215,9 +224,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         }
       }
     } catch { contentAccRef.current += "\nAn unexpected error occurred."; setStreamContent(contentAccRef.current); }
-    if (contentAccRef.current.trim()) {
-      const f = contentAccRef.current;
-      setMessages((p) => [...p, { type: "assistant", content: f, timestamp: new Date() }]);
+    const finalContent = sanitizeContent(contentAccRef.current);
+    if (finalContent) {
+      setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfo.color }]);
     }
     
     contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]);
@@ -672,7 +681,7 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
     case "user":
       return (
         <box
-          border={["left"]} customBorderChars={SPLIT} borderColor={modeColor}
+          border={["left"]} customBorderChars={SPLIT} borderColor={entry.modeColor || modeColor}
           marginTop={index === 0 ? 0 : 1} marginBottom={1}
         >
           <box paddingTop={1} paddingBottom={1} paddingLeft={2} backgroundColor={t.backgroundPanel} flexShrink={0}>
@@ -692,7 +701,7 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
       return (
         <box paddingLeft={3} marginTop={1}>
           <text>
-            <span style={{ fg: modeColor }}>{"▣ "}</span>
+            <span style={{ fg: entry.modeColor || modeColor }}>{"▣ "}</span>
             <span style={{ fg: t.textMuted }}>{entry.content.replace("▣  ", "")}</span>
           </text>
         </box>
@@ -708,22 +717,21 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
         return <PlanView plan={plan} t={t} />;
       }
 
-      if ((name === "write_file" || name === "edit_file") && diff) {
-        const label = name === "write_file"
-          ? `Write ${diff.filePath}`
-          : `Edit ${diff.filePath}`;
+      if (name === "write_file" || name === "edit_file") {
+        const filePath = diff?.filePath || tryParseArg(entry.toolCall, "path") || args;
+        const label = name === "write_file" ? `Write ${filePath}` : `Edit ${filePath}`;
         return (
           <box gap={0}>
             <InlineTool t={t} pending={false}>{label}</InlineTool>
-            <DiffView t={t} diff={diff} />
+            {diff && <DiffView t={t} diff={diff} />}
           </box>
         );
       }
 
-      if (name === "read_file") return <InlineTool t={t} pending={false}>{`Read ${tryParseArg(entry.toolCall, "path") || args}`}</InlineTool>;
-      if (name === "search_web" || name === "search_x") return <InlineTool t={t} pending={false}>{name === "search_web" ? "Web" : "X"}{` Search "${args}"`}</InlineTool>;
+      if (name === "read_file") return <InlineTool t={t} pending={false}>{`Read ${trunc(tryParseArg(entry.toolCall, "path") || args, 60)}`}</InlineTool>;
+      if (name === "search_web" || name === "search_x") return <InlineTool t={t} pending={false}>{name === "search_web" ? "Web" : "X"}{` Search "${trunc(args, 60)}"`}</InlineTool>;
 
-      return <InlineTool t={t} pending={false}>{name === "bash" ? args : `${name} ${args}`}</InlineTool>;
+      return <InlineTool t={t} pending={false}>{trunc(name === "bash" ? args : `${name} ${args}`, 80)}</InlineTool>;
     }
 
     default:
@@ -1001,14 +1009,19 @@ function tryParseArg(tc: ToolCall | undefined, key: string): string {
 }
 function toolLabel(tc: ToolCall): string {
   const args = toolArgs(tc);
-  if (tc.function.name === "bash") return args || "Running command...";
-  if (tc.function.name === "read_file") return `Read ${args}`;
-  if (tc.function.name === "write_file") return `Write ${args}`;
-  if (tc.function.name === "edit_file") return `Edit ${args}`;
-  if (tc.function.name === "search_web") return `Web Search "${args}"`;
-  if (tc.function.name === "search_x") return `X Search "${args}"`;
+  if (tc.function.name === "bash") return trunc(args || "Running command...", 80);
+  if (tc.function.name === "read_file") return `Read ${trunc(args, 60)}`;
+  if (tc.function.name === "write_file") return `Write ${trunc(args, 60)}`;
+  if (tc.function.name === "edit_file") return `Edit ${trunc(args, 60)}`;
+  if (tc.function.name === "search_web") return `Web Search "${trunc(args, 60)}"`;
+  if (tc.function.name === "search_x") return `X Search "${trunc(args, 60)}"`;
   if (tc.function.name === "generate_plan") return "Generating plan...";
-  return `${tc.function.name} ${args}`;
+  return trunc(`${tc.function.name} ${args}`, 80);
+}
+function sanitizeContent(raw: string): string {
+  let s = raw.replace(/^[\s\n]*assistant:\s*/gi, "");
+  s = s.replace(/\{"success"\s*:\s*(true|false)\s*,\s*"output"\s*:\s*"[\s\S]*$/m, "");
+  return s.trim();
 }
 function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }
 function formatDuration(ms: number): string {

@@ -121,6 +121,7 @@ export function PlanQuestionsPanel({
           {questions.map((q, i) => {
             const isActive = i === state.tab;
             const isAnswered = hasAnswer(state.answers, q);
+            const label = tabLabel(q);
             return (
               <text key={q.id}>
                 <span
@@ -132,7 +133,7 @@ export function PlanQuestionsPanel({
                         : t.textMuted,
                   }}
                 >
-                  {isActive ? <b>{q.question.slice(0, 20)}{q.question.length > 20 ? "…" : ""}</b> : `${q.question.slice(0, 20)}${q.question.length > 20 ? "…" : ""}`}
+                  {isActive ? <b>{label}</b> : label}
                   {isAnswered && !isActive ? " ✓" : ""}
                 </span>
               </text>
@@ -333,7 +334,7 @@ function ConfirmView({
           <box key={q.id} paddingLeft={1}>
             <text>
               <span style={{ fg: t.text }}>
-                <b>{q.question.slice(0, 30)}{q.question.length > 30 ? "…" : ""}:</b>
+                <b>{tabLabel(q)}:</b>
               </span>
               <span style={{ fg: answered ? t.planOptionCheck : t.textMuted }}>
                 {" "}{val}
@@ -347,6 +348,13 @@ function ConfirmView({
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
+
+function tabLabel(q: PlanQuestion): string {
+  if (q.header) return q.header;
+  const words = q.question.replace(/[?.,!:]+$/, "").split(/\s+/);
+  const key = words.find((w) => w.length > 2 && !/^(what|how|should|which|does|the|and|for|are|can|will|you|this|that|with|from)$/i.test(w));
+  return key ?? words[0] ?? "Question";
+}
 
 function hasAnswer(answers: PlanAnswers, q: PlanQuestion): boolean {
   const a = answers[q.id];

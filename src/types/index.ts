@@ -15,6 +15,7 @@ export interface PlanStep {
 export interface PlanQuestion {
   id: string;
   question: string;
+  header?: string;
   type: "select" | "multiselect" | "text";
   options?: { id: string; label: string }[];
 }
@@ -47,6 +48,7 @@ export interface ChatEntry {
   type: "user" | "assistant" | "tool_call" | "tool_result";
   content: string;
   timestamp: Date;
+  modeColor?: string;
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
@@ -68,6 +70,13 @@ export interface ModelInfo {
   outputPrice: number;
   reasoning: boolean;
   description: string;
+}
+
+export interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  executable?: boolean;
 }
 
 export type AgentMode = "agent" | "plan" | "ask";
