@@ -3,11 +3,20 @@ import { z } from "zod";
 import type { BashTool } from "../tools/bash.js";
 import { readFile, writeFile, editFile } from "../tools/file.js";
 import type { XaiProvider } from "./client.js";
-import type { AgentMode } from "../types/index.js";
+import type { AgentMode, TaskRequest, ToolResult } from "../types/index.js";
 
 const SEARCH_MODEL = "grok-3-mini-fast";
 
-export function createTools(bash: BashTool, provider: XaiProvider, mode: AgentMode = "agent") {
+interface CreateToolsOptions {
+  runTask?: (request: TaskRequest) => Promise<ToolResult>;
+}
+
+export function createTools(
+  bash: BashTool,
+  provider: XaiProvider,
+  mode: AgentMode = "agent",
+  options: CreateToolsOptions = {},
+) {
   const cwd = () => bash.getCwd();
 
   const base = {
@@ -50,31 +59,6 @@ export function createTools(bash: BashTool, provider: XaiProvider, mode: AgentMo
       }),
       execute: async ({ path, start_line, end_line }) => {
         return readFile(path, cwd(), start_line, end_line);
-      },
-    }),
-
-    write_file: tool({
-      description:
-        "Create or overwrite a file with the given content. Use for creating new files or completely rewriting existing ones. Returns a diff of the changes.",
-      inputSchema: z.object({
-        path: z.string().describe("File path (relative to cwd or absolute)"),
-        content: z.string().describe("The full file content to write"),
-      }),
-      execute: async ({ path, content }) => {
-        return writeFile(path, content, cwd());
-      },
-    }),
-
-    edit_file: tool({
-      description:
-        "Edit a file by replacing a unique string with new content. The old_string must appear exactly once in the file. Include enough surrounding context lines in old_string to make it unique. Returns a diff of the changes.",
-      inputSchema: z.object({
-        path: z.string().describe("File path (relative to cwd or absolute)"),
-        old_string: z.string().describe("The exact text to find (must be unique in the file)"),
-        new_string: z.string().describe("The replacement text"),
-      }),
-      execute: async ({ path, old_string, new_string }) => {
-        return editFile(path, old_string, new_string, cwd());
       },
     }),
 
@@ -140,11 +124,60 @@ export function createTools(bash: BashTool, provider: XaiProvider, mode: AgentMo
 
   };
 
-  if (mode !== "plan") return base;
+  const tools: Record<string, any> = { ...base };
 
-  return {
-    ...base,
-    generate_plan: tool({
+  if (mode === "agent") {
+    tools.write_file = tool({
+      description:
+        "Create or overwrite a file with the given content. Use for creating new files or completely rewriting existing ones. Returns a diff of the changes.",
+      inputSchema: z.object({
+        path: z.string().describe("File path (relative to cwd or absolute)"),
+        content: z.string().describe("The full file content to write"),
+      }),
+      execute: async ({ path, content }) => {
+        return writeFile(path, content, cwd());
+      },
+    });
+
+    tools.edit_file = tool({
+      description:
+        "Edit a file by replacing a unique string with new content. The old_string must appear exactly once in the file. Include enough surrounding context lines in old_string to make it unique. Returns a diff of the changes.",
+      inputSchema: z.object({
+        path: z.string().describe("File path (relative to cwd or absolute)"),
+        old_string: z.string().describe("The exact text to find (must be unique in the file)"),
+        new_string: z.string().describe("The replacement text"),
+      }),
+      execute: async ({ path, old_string, new_string }) => {
+        return editFile(path, old_string, new_string, cwd());
+      },
+    });
+
+    if (options.runTask) {
+      tools.task = tool({
+        description:
+          "Delegate a focused task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
+        inputSchema: z.object({
+          agent: z
+            .enum(["general", "explore"])
+            .default("general")
+            .describe("Which sub-agent to use"),
+          description: z
+            .string()
+            .describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
+          prompt: z
+            .string()
+            .describe("Detailed instructions for the sub-agent to complete"),
+        }),
+        execute: async ({ agent, description, prompt }) => {
+          return options.runTask!({ agent, description, prompt });
+        },
+      });
+    }
+  }
+
+  if (mode !== "plan") return tools;
+
+  tools.generate_plan = tool({
       description:
         "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
       inputSchema: z.object({
@@ -197,6 +230,7 @@ export function createTools(bash: BashTool, provider: XaiProvider, mode: AgentMo
           plan: { title, summary, steps, questions },
         };
       },
-    }),
-  };
+    });
+
+  return tools;
 }
