@@ -5,6 +5,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createElement } from "react";
 import { Agent } from "./agent/agent.js";
+import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations.js";
 import { App } from "./ui/app.js";
 import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings.js";
 import { MODELS } from "./grok/models.js";
@@ -83,6 +84,48 @@ async function runHeadless(
   }
 }
 
+async function runBackgroundDelegation(jobPath: string, options: Record<string, string | undefined>) {
+  let output = "";
+
+  try {
+    const delegation = await loadDelegation(jobPath);
+    const apiKey = options.apiKey || getApiKey();
+    if (!apiKey) {
+      throw new Error(
+        "API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.",
+      );
+    }
+
+    const baseURL = options.baseUrl || getBaseURL();
+    const model = options.model || delegation.model || getCurrentModel();
+    const maxToolRounds = parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10)
+      || delegation.maxToolRounds;
+    const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
+    const result = await agent.runTaskRequest({
+      agent: delegation.agent,
+      description: delegation.description,
+      prompt: delegation.prompt,
+    });
+
+    output = (result.output || "").trim();
+
+    if (!result.success) {
+      await failDelegation(jobPath, result.output || result.error || "Background delegation failed.", output);
+      return;
+    }
+
+    await completeDelegation(jobPath, output, result.task?.summary);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    try {
+      await failDelegation(jobPath, msg, output);
+    } catch {
+      // Best effort — background tasks should fail silently if persistence is unavailable.
+    }
+    process.exit(1);
+  }
+}
+
 function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
@@ -112,6 +155,7 @@ program
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
+  .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .action(async (message: string[], options) => {
     if (options.directory) {
@@ -122,6 +166,11 @@ program
         console.error(`Cannot change to directory ${options.directory}: ${msg}`);
         process.exit(1);
       }
+    }
+
+    if (options.backgroundTaskFile) {
+      await runBackgroundDelegation(options.backgroundTaskFile, options);
+      return;
     }
 
     const config = resolveConfig(options);

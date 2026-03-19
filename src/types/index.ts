@@ -40,10 +40,26 @@ export interface TaskRun {
   activity?: string;
 }
 
+export type DelegationStatus = "running" | "complete" | "error";
+
+export interface DelegationRun {
+  id: string;
+  agent: "explore";
+  description: string;
+  summary: string;
+  status: DelegationStatus;
+}
+
 export interface SubagentStatus {
   agent: "general" | "explore";
   description: string;
   detail: string;
+}
+
+export interface BackgroundProcessInfo {
+  id: number;
+  pid: number;
+  command: string;
 }
 
 export interface ToolResult {
@@ -53,6 +69,8 @@ export interface ToolResult {
   diff?: FileDiff;
   plan?: Plan;
   task?: TaskRun;
+  delegation?: DelegationRun;
+  backgroundProcess?: BackgroundProcessInfo;
 }
 
 export interface ToolCall {
