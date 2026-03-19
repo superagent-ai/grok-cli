@@ -1336,10 +1336,3 @@ function compactTaskLabel(label: string): string {
 }
 function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }
 function truncateLine(s: string, n: number): string { return trunc(s.replace(/\s+/g, " ").trim(), n); }
-function formatDuration(ms: number): string {
-  if (ms < 1000) return "";
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${s % 60}s`;
-}
