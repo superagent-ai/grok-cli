@@ -104,3 +104,4 @@ temp/
 # Cursor config (tracked — do not ignore)
 # .cursor/
 .agents
+skills-lock.json
