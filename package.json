@@ -1,7 +1,7 @@
 {
   "name": "@vibe-kit/grok-cli",
-  "version": "0.0.34",
-  "description": "An open-source AI agent that brings the power of Grok directly into your terminal.",
+  "version": "1.0.0",
+  "description": "An open-source AI coding agent powered by Grok, built with Bun and OpenTUI.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -14,51 +14,42 @@
     "grok": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
-    "build:bun": "bun run tsc",
     "dev": "bun run src/index.ts",
-    "dev:node": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "start:bun": "bun run dist/index.js",
+    "build": "tsc",
+    "start": "bun run dist/index.js",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "typecheck": "tsc --noEmit",
-    "install:bun": "bun install"
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "cli",
     "agent",
-    "text-editor",
     "grok",
-    "ai"
+    "ai",
+    "coding",
+    "terminal",
+    "opentui"
   ],
-  "author": "Your Name",
+  "author": "Vibe Kit",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.0",
-    "axios": "^1.7.0",
-    "cfonts": "^3.3.0",
-    "chalk": "^5.3.0",
+    "@ai-sdk/xai": "^3.0.67",
+    "@opentui/core": "^0.1.88",
+    "@opentui/react": "^0.1.88",
+    "ai": "^6.0.116",
     "commander": "^12.0.0",
+    "diff": "^8.0.3",
     "dotenv": "^16.4.0",
-    "enquirer": "^2.4.1",
-    "fs-extra": "^11.2.0",
-    "ink": "^4.4.1",
-    "marked": "^15.0.12",
-    "marked-terminal": "^7.3.0",
-    "openai": "^5.10.1",
-    "react": "^18.3.1",
-    "ripgrep-node": "^1.0.0",
-    "tiktoken": "^1.0.21"
+    "react": "^19.1.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/fs-extra": "^11.0.2",
-    "@types/node": "^20.8.0",
-    "@types/react": "^18.3.3",
+    "@types/diff": "^8.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
     "@typescript-eslint/eslint-plugin": "^8.37.0",
     "@typescript-eslint/parser": "^8.37.0",
     "eslint": "^9.31.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.8.0"
   },
   "engines": {
     "node": ">=18.0.0"

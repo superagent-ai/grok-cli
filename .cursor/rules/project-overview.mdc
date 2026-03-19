@@ -1,49 +1,62 @@
 ---
-description: Project overview and architecture for Grok CLI
-globs:
+description: Project overview and architecture reference
+globs: "**/*"
 alwaysApply: true
 ---
 
 # Grok CLI — Project Overview
 
-Grok CLI (`@vibe-kit/grok-cli`) is an open-source conversational AI CLI tool powered by Grok that brings AI assistance directly into the terminal.
+Grok CLI (`@vibe-kit/grok-cli`) is an open-source AI coding agent powered by Grok that brings AI assistance directly into the terminal.
 
 ## Tech Stack
 
 - **Language**: TypeScript (ES2022, ESNext modules)
-- **Runtime**: Node.js 18+ (Bun preferred)
-- **UI Framework**: React with [Ink](https://github.com/vadimdemedes/ink) for terminal rendering
+- **Runtime**: Bun (primary)
+- **UI Framework**: React with [OpenTUI](https://github.com/anomalyco/opentui) for terminal rendering
 - **Build**: `tsc` (TypeScript compiler)
-- **Package Manager**: Bun (primary), npm (fallback)
-- **Linting**: ESLint with `@typescript-eslint`
-- **API Client**: OpenAI SDK (used for OpenAI-compatible APIs including Grok)
+- **Package Manager**: Bun
+- **API Client**: OpenAI SDK (for OpenAI-compatible xAI API)
+- **Tools**: Bash-only (all file operations via shell commands)
+- **Search**: X Search API + Web Search via xAI Responses API
 
 ## Architecture
 
 ```
 src/
-├── index.ts              # CLI entry point (Commander.js)
-├── agent/                # GrokAgent — orchestrates client, tools, MCP
-├── grok/                 # Grok API client and tool definitions
-├── mcp/                  # Model Context Protocol integration
-├── commands/             # CLI subcommands (e.g. mcp)
-├── tools/                # Built-in tools (bash, text-editor, search, etc.)
-├── ui/                   # Ink-based terminal UI
-│   ├── app.tsx
-│   ├── components/       # Chat interface, diff renderer, inputs, etc.
-│   └── utils/            # Colors, markdown rendering, code colorizer
-├── hooks/                # React hooks for input handling
-├── utils/                # Settings, token counting, custom instructions
-└── types/                # Shared TypeScript type definitions
+├── index.ts          # CLI entry point (Commander.js + OpenTUI)
+├── agent/
+│   └── agent.ts      # Agent — orchestrates client, bash tool, search
+├── grok/
+│   ├── client.ts     # Grok API client (Chat Completions + Responses API)
+│   ├── models.ts     # Model definitions and metadata
+│   └── tools.ts      # Tool schemas (bash, search_web, search_x)
+├── tools/
+│   └── bash.ts       # Bash command execution
+├── ui/
+│   └── app.tsx       # OpenTUI React terminal UI
+├── utils/
+│   ├── settings.ts   # User and project settings
+│   └── instructions.ts # Custom instructions loader (.grok/GROK.md)
+└── types/
+    └── index.ts      # Shared TypeScript types
 ```
 
 ## Key Patterns
 
-- **Agent loop**: `GrokAgent` runs an iterative tool-call loop — the LLM responds, tools execute, results feed back until no more tool calls remain or the round limit is hit.
-- **Streaming**: `processUserMessageStream` is an async generator that yields chunks for real-time UI updates.
-- **Settings hierarchy**: User-level (`~/.grok/user-settings.json`) → Project-level (`.grok/settings.json`) → System defaults.
-- **MCP**: External tools are integrated via Model Context Protocol servers (stdio, HTTP, SSE transports).
+- **Agent loop**: `Agent.processMessage()` is an async generator that yields `StreamChunk` objects — the LLM responds, tools execute, results feed back until no more tool calls remain.
+- **Bash-only tools**: The agent uses bash for everything (file editing, searching, git, builds, etc.).
+- **X Search & Web Search**: Integrated via the xAI Responses API for real-time information.
+- **Settings hierarchy**: Environment variables → User-level (`~/.grok/user-settings.json`) → Project-level (`.grok/settings.json`).
 - **ESM only**: The project uses `"type": "module"` — all imports use `.js` extensions for compiled output.
+
+## Latest Grok Models
+
+- grok-4-0709 (flagship reasoning)
+- grok-4.20-beta-0309 (multi-agent, 2M context)
+- grok-4-fast (fast reasoning, 2M context)
+- grok-4-1-fast (latest fast, 2M context)
+- grok-code-fast-1 (code optimized)
+- grok-3, grok-3-mini
 
 ## CI/CD
 

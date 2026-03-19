@@ -1,375 +1,236 @@
-import { GrokTool } from "./client.js";
-import { MCPManager, MCPTool } from "../mcp/client.js";
-import { loadMCPConfig } from "../mcp/config.js";
+import { tool, generateText } from "ai";
+import { z } from "zod";
+import type { BashTool } from "../tools/bash.js";
+import { readFile, writeFile, editFile } from "../tools/file.js";
+import type { XaiProvider } from "./client.js";
+import type { AgentMode, TaskRequest, ToolResult } from "../types/index.js";
 
-const BASE_GROK_TOOLS: GrokTool[] = [
-  {
-    type: "function",
-    function: {
-      name: "view_file",
-      description: "View contents of a file or list directory contents",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description: "Path to file or directory to view",
-          },
-          start_line: {
-            type: "number",
-            description:
-              "Starting line number for partial file view (optional)",
-          },
-          end_line: {
-            type: "number",
-            description: "Ending line number for partial file view (optional)",
-          },
-        },
-        required: ["path"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_file",
-      description: "Create a new file with specified content",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description: "Path where the file should be created",
-          },
-          content: {
-            type: "string",
-            description: "Content to write to the file",
-          },
-        },
-        required: ["path", "content"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "str_replace_editor",
-      description: "Replace specific text in a file. Use this for single line edits only",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description: "Path to the file to edit",
-          },
-          old_str: {
-            type: "string",
-            description:
-              "Text to replace (must match exactly, or will use fuzzy matching for multi-line strings)",
-          },
-          new_str: {
-            type: "string",
-            description: "Text to replace with",
-          },
-          replace_all: {
-            type: "boolean",
-            description:
-              "Replace all occurrences (default: false, only replaces first occurrence)",
-          },
-        },
-        required: ["path", "old_str", "new_str"],
-      },
-    },
-  },
+const SEARCH_MODEL = "grok-3-mini-fast";
 
-  {
-    type: "function",
-    function: {
-      name: "bash",
-      description: "Execute a bash command",
-      parameters: {
-        type: "object",
-        properties: {
-          command: {
-            type: "string",
-            description: "The bash command to execute",
-          },
-        },
-        required: ["command"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "search",
+interface CreateToolsOptions {
+  runTask?: (request: TaskRequest) => Promise<ToolResult>;
+}
+
+export function createTools(
+  bash: BashTool,
+  provider: XaiProvider,
+  mode: AgentMode = "agent",
+  options: CreateToolsOptions = {},
+) {
+  const cwd = () => bash.getCwd();
+
+  const base = {
+    bash: tool({
       description:
-        "Unified search tool for finding text content or files (similar to Cursor's search)",
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "Text to search for or file name/path pattern",
-          },
-          search_type: {
-            type: "string",
-            enum: ["text", "files", "both"],
-            description:
-              "Type of search: 'text' for content search, 'files' for file names, 'both' for both (default: 'both')",
-          },
-          include_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to include (e.g. '*.ts', '*.js')",
-          },
-          exclude_pattern: {
-            type: "string",
-            description:
-              "Glob pattern for files to exclude (e.g. '*.log', 'node_modules')",
-          },
-          case_sensitive: {
-            type: "boolean",
-            description:
-              "Whether search should be case sensitive (default: false)",
-          },
-          whole_word: {
-            type: "boolean",
-            description: "Whether to match whole words only (default: false)",
-          },
-          regex: {
-            type: "boolean",
-            description: "Whether query is a regex pattern (default: false)",
-          },
-          max_results: {
-            type: "number",
-            description: "Maximum number of results to return (default: 50)",
-          },
-          file_types: {
-            type: "array",
-            items: { type: "string" },
-            description: "File types to search (e.g. ['js', 'ts', 'py'])",
-          },
-          include_hidden: {
-            type: "boolean",
-            description: "Whether to include hidden files (default: false)",
-          },
-        },
-        required: ["query"],
+        "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. For file read/write/edit, prefer the dedicated file tools instead.",
+      inputSchema: z.object({
+        command: z.string().describe("The bash command to execute"),
+        timeout: z
+          .number()
+          .optional()
+          .describe(
+            "Timeout in milliseconds (default: 30000). Use higher values for long-running commands.",
+          ),
+      }),
+      execute: async ({ command, timeout }) => {
+        const result = await bash.execute(command, timeout);
+        return {
+          success: result.success,
+          output: result.success
+            ? result.output || "Command executed successfully (no output)"
+            : result.error || "Command failed",
+        };
       },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_todo_list",
-      description: "Create a new todo list for planning and tracking tasks",
-      parameters: {
-        type: "object",
-        properties: {
-          todos: {
-            type: "array",
-            description: "Array of todo items",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "Unique identifier for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "Description of the todo item",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "Current status of the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "Priority level of the todo item",
-                },
-              },
-              required: ["id", "content", "status", "priority"],
-            },
-          },
-        },
-        required: ["todos"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "update_todo_list",
-      description: "Update existing todos in the todo list",
-      parameters: {
-        type: "object",
-        properties: {
-          updates: {
-            type: "array",
-            description: "Array of todo updates",
-            items: {
-              type: "object",
-              properties: {
-                id: {
-                  type: "string",
-                  description: "ID of the todo item to update",
-                },
-                status: {
-                  type: "string",
-                  enum: ["pending", "in_progress", "completed"],
-                  description: "New status for the todo item",
-                },
-                content: {
-                  type: "string",
-                  description: "New content for the todo item",
-                },
-                priority: {
-                  type: "string",
-                  enum: ["high", "medium", "low"],
-                  description: "New priority for the todo item",
-                },
-              },
-              required: ["id"],
-            },
-          },
-        },
-        required: ["updates"],
-      },
-    },
-  },
-];
+    }),
 
-// Morph Fast Apply tool (conditional)
-const MORPH_EDIT_TOOL: GrokTool = {
-  type: "function",
-  function: {
-    name: "edit_file",
-    description: "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nMake edits to a file in a single edit_file call instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
-    parameters: {
-      type: "object",
-      properties: {
-        target_file: {
-          type: "string",
-          description: "The target file to modify."
-        },
-        instructions: {
-          type: "string",
-          description: "A single sentence instruction describing what you are going to do for the sketched edit. This is used to assist the less intelligent model in applying the edit. Use the first person to describe what you are going to do. Use it to disambiguate uncertainty in the edit."
-        },
-        code_edit: {
-          type: "string",
-          description: "Specify ONLY the precise lines of code that you wish to edit. NEVER specify or write out unchanged code. Instead, represent all unchanged code using the comment of the language you're editing in - example: // ... existing code ..."
+    read_file: tool({
+      description:
+        "Read the contents of a file. Returns numbered lines with a header showing the range and total line count. Use start_line/end_line to read specific sections of large files iteratively.",
+      inputSchema: z.object({
+        path: z.string().describe("File path (relative to cwd or absolute)"),
+        start_line: z
+          .number()
+          .optional()
+          .describe("First line to read (1-indexed, default: 1)"),
+        end_line: z
+          .number()
+          .optional()
+          .describe("Last line to read (inclusive, default: end of file)"),
+      }),
+      execute: async ({ path, start_line, end_line }) => {
+        return readFile(path, cwd(), start_line, end_line);
+      },
+    }),
+
+    search_web: tool({
+      description:
+        "Search the web for current information, documentation, APIs, tutorials, news, or any real-time data. Returns summarized results with sources.",
+      inputSchema: z.object({
+        query: z.string().describe("The search query"),
+      }),
+      execute: async ({ query }) => {
+        try {
+          const { text } = await generateText({
+            model: provider(SEARCH_MODEL),
+            maxOutputTokens: 4096,
+            providerOptions: {
+              xai: {
+                searchParameters: {
+                  mode: "on",
+                  returnCitations: true,
+                  sources: [{ type: "web" }],
+                },
+              },
+            },
+            prompt: query,
+          });
+          return { success: true, output: text };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { success: false, output: `Web search failed: ${msg}` };
         }
       },
-      required: ["target_file", "instructions", "code_edit"]
+    }),
+
+    search_x: tool({
+      description:
+        "Search X (Twitter) for real-time posts, discussions, opinions, and trends. Returns relevant posts with authors and engagement data.",
+      inputSchema: z.object({
+        query: z.string().describe("The search query"),
+      }),
+      execute: async ({ query }) => {
+        try {
+          const { text } = await generateText({
+            model: provider(SEARCH_MODEL),
+            maxOutputTokens: 4096,
+            providerOptions: {
+              xai: {
+                searchParameters: {
+                  mode: "on",
+                  returnCitations: true,
+                  sources: [{ type: "x" }],
+                },
+              },
+            },
+            prompt: query,
+          });
+          return { success: true, output: text };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { success: false, output: `X search failed: ${msg}` };
+        }
+      },
+    }),
+
+  };
+
+  const tools: Record<string, any> = { ...base };
+
+  if (mode === "agent") {
+    tools.write_file = tool({
+      description:
+        "Create or overwrite a file with the given content. Use for creating new files or completely rewriting existing ones. Returns a diff of the changes.",
+      inputSchema: z.object({
+        path: z.string().describe("File path (relative to cwd or absolute)"),
+        content: z.string().describe("The full file content to write"),
+      }),
+      execute: async ({ path, content }) => {
+        return writeFile(path, content, cwd());
+      },
+    });
+
+    tools.edit_file = tool({
+      description:
+        "Edit a file by replacing a unique string with new content. The old_string must appear exactly once in the file. Include enough surrounding context lines in old_string to make it unique. Returns a diff of the changes.",
+      inputSchema: z.object({
+        path: z.string().describe("File path (relative to cwd or absolute)"),
+        old_string: z.string().describe("The exact text to find (must be unique in the file)"),
+        new_string: z.string().describe("The replacement text"),
+      }),
+      execute: async ({ path, old_string, new_string }) => {
+        return editFile(path, old_string, new_string, cwd());
+      },
+    });
+
+    if (options.runTask) {
+      tools.task = tool({
+        description:
+          "Delegate a focused task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
+        inputSchema: z.object({
+          agent: z
+            .enum(["general", "explore"])
+            .default("general")
+            .describe("Which sub-agent to use"),
+          description: z
+            .string()
+            .describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
+          prompt: z
+            .string()
+            .describe("Detailed instructions for the sub-agent to complete"),
+        }),
+        execute: async ({ agent, description, prompt }) => {
+          return options.runTask!({ agent, description, prompt });
+        },
+      });
     }
   }
-};
 
-// Function to build tools array conditionally
-function buildGrokTools(): GrokTool[] {
-  const tools = [...BASE_GROK_TOOLS];
-  
-  // Add Morph Fast Apply tool if API key is available
-  if (process.env.MORPH_API_KEY) {
-    tools.splice(3, 0, MORPH_EDIT_TOOL); // Insert after str_replace_editor
-  }
-  
+  if (mode !== "plan") return tools;
+
+  tools.generate_plan = tool({
+      description:
+        "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
+      inputSchema: z.object({
+        title: z.string().describe("Plan title"),
+        summary: z.string().describe("Brief summary of what the plan accomplishes"),
+        steps: z
+          .array(
+            z.object({
+              title: z.string().describe("Step title"),
+              description: z
+                .string()
+                .describe("Detailed description of what this step involves"),
+              filePaths: z
+                .array(z.string())
+                .optional()
+                .describe("Files affected by this step"),
+            }),
+          )
+          .describe("Ordered list of implementation steps"),
+        questions: z
+          .array(
+            z.object({
+              id: z.string().describe("Unique question identifier"),
+              question: z.string().describe("The question to ask the user"),
+              header: z
+                .string()
+                .optional()
+                .describe("Single-word tab label (e.g. 'Format', 'Storage', 'Testing')"),
+              type: z
+                .enum(["select", "multiselect", "text"])
+                .describe("Question type: select (pick one), multiselect (pick many), or text (free-form)"),
+              options: z
+                .array(
+                  z.object({
+                    id: z.string().describe("Option identifier"),
+                    label: z.string().describe("Option display text"),
+                  }),
+                )
+                .optional()
+                .describe("Options for select/multiselect questions"),
+            }),
+          )
+          .optional()
+          .describe("Questions for the user to answer before proceeding"),
+      }),
+      execute: async ({ title, summary, steps, questions }) => {
+        return {
+          success: true,
+          output: `Plan "${title}" generated with ${steps.length} steps`,
+          plan: { title, summary, steps, questions },
+        };
+      },
+    });
+
   return tools;
-}
-
-// Export dynamic tools array
-export const GROK_TOOLS: GrokTool[] = buildGrokTools();
-
-// Global MCP manager instance
-let mcpManager: MCPManager | null = null;
-
-export function getMCPManager(): MCPManager {
-  if (!mcpManager) {
-    mcpManager = new MCPManager();
-  }
-  return mcpManager;
-}
-
-export async function initializeMCPServers(): Promise<void> {
-  const manager = getMCPManager();
-  const config = loadMCPConfig();
-  
-  // Store original stderr.write
-  const originalStderrWrite = process.stderr.write;
-  
-  // Temporarily suppress stderr to hide verbose MCP connection logs
-  process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-    // Filter out mcp-remote verbose logs
-    const chunkStr = chunk.toString();
-    if (chunkStr.includes('[') && (
-        chunkStr.includes('Using existing client port') ||
-        chunkStr.includes('Connecting to remote server') ||
-        chunkStr.includes('Using transport strategy') ||
-        chunkStr.includes('Connected to remote server') ||
-        chunkStr.includes('Local STDIO server running') ||
-        chunkStr.includes('Proxy established successfully') ||
-        chunkStr.includes('Local→Remote') ||
-        chunkStr.includes('Remote→Local')
-      )) {
-      // Suppress these verbose logs
-      if (callback) callback();
-      return true;
-    }
-    
-    // Allow other stderr output
-    return originalStderrWrite.call(this, chunk, encoding, callback);
-  };
-  
-  try {
-    for (const serverConfig of config.servers) {
-      try {
-        await manager.addServer(serverConfig);
-      } catch (error) {
-        console.warn(`Failed to initialize MCP server ${serverConfig.name}:`, error);
-      }
-    }
-  } finally {
-    // Restore original stderr.write
-    process.stderr.write = originalStderrWrite;
-  }
-}
-
-export function convertMCPToolToGrokTool(mcpTool: MCPTool): GrokTool {
-  return {
-    type: "function",
-    function: {
-      name: mcpTool.name,
-      description: mcpTool.description,
-      parameters: mcpTool.inputSchema || {
-        type: "object",
-        properties: {},
-        required: []
-      }
-    }
-  };
-}
-
-export function addMCPToolsToGrokTools(baseTools: GrokTool[]): GrokTool[] {
-  if (!mcpManager) {
-    return baseTools;
-  }
-  
-  const mcpTools = mcpManager.getTools();
-  const grokMCPTools = mcpTools.map(convertMCPToolToGrokTool);
-  
-  return [...baseTools, ...grokMCPTools];
-}
-
-export async function getAllGrokTools(): Promise<GrokTool[]> {
-  const manager = getMCPManager();
-  // Try to initialize servers if not already done, but don't block
-  manager.ensureServersInitialized().catch(() => {
-    // Ignore initialization errors to avoid blocking
-  });
-  return addMCPToolsToGrokTools(GROK_TOOLS);
 }

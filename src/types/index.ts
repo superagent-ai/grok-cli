@@ -1,34 +1,108 @@
+export interface FileDiff {
+  filePath: string;
+  additions: number;
+  removals: number;
+  patch: string;
+  isNew: boolean;
+}
+
+export interface PlanStep {
+  title: string;
+  description: string;
+  filePaths?: string[];
+}
+
+export interface PlanQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  type: "select" | "multiselect" | "text";
+  options?: { id: string; label: string }[];
+}
+
+export interface Plan {
+  title: string;
+  summary: string;
+  steps: PlanStep[];
+  questions?: PlanQuestion[];
+}
+
+export interface TaskRequest {
+  agent: "general" | "explore";
+  description: string;
+  prompt: string;
+}
+
+export interface TaskRun {
+  agent: "general" | "explore";
+  description: string;
+  summary: string;
+  activity?: string;
+}
+
+export interface SubagentStatus {
+  agent: "general" | "explore";
+  description: string;
+  detail: string;
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
-  data?: any;
+  diff?: FileDiff;
+  plan?: Plan;
+  task?: TaskRun;
 }
 
-export interface Tool {
-  name: string;
-  description: string;
-  execute: (...args: any[]) => Promise<ToolResult>;
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
 }
 
-export interface EditorCommand {
-  command: 'view' | 'str_replace' | 'create' | 'insert' | 'undo_edit';
-  path?: string;
-  old_str?: string;
-  new_str?: string;
+export interface ChatEntry {
+  type: "user" | "assistant" | "tool_call" | "tool_result";
+  content: string;
+  timestamp: Date;
+  modeColor?: string;
+  toolCalls?: ToolCall[];
+  toolCall?: ToolCall;
+  toolResult?: ToolResult;
+}
+
+export interface StreamChunk {
+  type: "content" | "tool_calls" | "tool_result" | "done" | "error" | "reasoning";
   content?: string;
-  insert_line?: number;
-  view_range?: [number, number];
-  replace_all?: boolean;
+  toolCalls?: ToolCall[];
+  toolCall?: ToolCall;
+  toolResult?: ToolResult;
 }
 
-export interface AgentState {
-  currentDirectory: string;
-  editHistory: EditorCommand[];
-  tools: Tool[];
+export interface ModelInfo {
+  id: string;
+  name: string;
+  contextWindow: number;
+  inputPrice: number;
+  outputPrice: number;
+  reasoning: boolean;
+  description: string;
 }
 
-export interface ConfirmationState {
-  skipThisSession: boolean;
-  pendingOperation: boolean;
+export interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  executable?: boolean;
 }
+
+export type AgentMode = "agent" | "plan" | "ask";
+
+export const MODES: { id: AgentMode; label: string; color: string }[] = [
+  { id: "agent", label: "Agent", color: "#5c9cf5" },
+  { id: "plan", label: "Plan", color: "#e5c07b" },
+  { id: "ask", label: "Ask", color: "#22c55e" },
+];

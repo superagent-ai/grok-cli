@@ -6,27 +6,25 @@ alwaysApply: false
 
 # Agent & Tools System
 
-## GrokAgent
+## Agent
 
-`GrokAgent` (in `src/agent/grok-agent.ts`) is the core orchestrator. It extends `EventEmitter` and manages:
+`Agent` (in `src/agent/agent.ts`) is the core orchestrator. It manages:
 
 - The Grok API client (`GrokClient`)
-- Built-in tools (text editor, bash, search, todo, confirmation)
-- Optional Morph Fast Apply editor
-- MCP server integration
+- Bash tool for all shell operations
+- Web search and X search via the Responses API
 - Chat history and message accumulation
 - Abort/cancellation support
 
 ### Agent Loop
 
-The agent uses an iterative tool-call pattern:
+The agent uses an iterative tool-call pattern via `processMessage` (async generator):
 
-1. Send messages to the LLM.
+1. Send messages to the LLM via Chat Completions API (streaming).
 2. If the response contains `tool_calls`, execute each tool.
 3. Append tool results to the message history.
 4. Repeat until no tool calls remain or `maxToolRounds` is reached.
-
-Both `processUserMessage` (non-streaming) and `processUserMessageStream` (async generator) implement this loop.
+5. Yield `StreamChunk` objects for real-time UI updates.
 
 ## Tool Interface
 
@@ -37,7 +35,6 @@ interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
-  data?: any;
 }
 ```
 
@@ -47,23 +44,19 @@ Tools should never throw — wrap errors in `{ success: false, error: "..." }`.
 
 | Tool | File | Purpose |
 |------|------|---------|
-| `TextEditorTool` | `src/tools/text-editor.ts` | View, create, and str_replace files |
-| `MorphEditorTool` | `src/tools/morph-editor.ts` | Fast Apply editing (requires MORPH_API_KEY) |
-| `BashTool` | `src/tools/bash.ts` | Execute shell commands |
-| `SearchTool` | `src/tools/search.ts` | Unified text/file search (uses ripgrep) |
-| `TodoTool` | `src/tools/todo-tool.ts` | Create/update visual todo lists |
-| `ConfirmationTool` | `src/tools/confirmation-tool.ts` | User confirmation for operations |
+| `BashTool` | `src/tools/bash.ts` | Execute any shell command |
+| `search_web` | via `GrokClient.searchWeb()` | Web search using Responses API |
+| `search_x` | via `GrokClient.searchX()` | X/Twitter search using Responses API |
+
+## Grok Client
+
+`GrokClient` (in `src/grok/client.ts`) handles two API endpoints:
+
+- **Chat Completions** (`/v1/chat/completions`): Main agent loop with streaming and tool calling
+- **Responses API** (`/v1/responses`): X Search and Web Search with server-side tools
 
 ## Adding a New Tool
 
-1. Create a new file in `src/tools/` implementing the tool class.
-2. Export it from `src/tools/index.ts`.
-3. Register the tool schema in `src/grok/tools.ts` (add to `GROK_TOOLS` array).
-4. Add the execution case in `GrokAgent.executeTool()`.
-5. Update the system prompt in the `GrokAgent` constructor to document the tool.
-
-## MCP Integration
-
-- MCP tools are prefixed with `mcp__` and dispatched through `executeMCPTool`.
-- MCP config is loaded from `.grok/settings.json` under `mcpServers`.
-- Supported transports: stdio, HTTP, SSE (defined in `src/mcp/transports.ts`).
+1. Add the tool schema to `src/grok/tools.ts` (in the `TOOLS` array).
+2. Add the execution case in `Agent.executeTool()`.
+3. Update the system prompt in `Agent` to document the tool.
