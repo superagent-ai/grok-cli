@@ -34,6 +34,19 @@ export const dark = {
   mdLinkText: "#d4a0d4",
   mdHr: "#333333",
   mdListBullet: "#666666",
+  planBorder: "#e5c07b",
+  planTitle: "#e5c07b",
+  planStepNum: "#e5c07b",
+  planStepTitle: "#e0e0e0",
+  planStepDesc: "#999999",
+  planStepFile: "#5c9cf5",
+  planQuestionText: "#e0e0e0",
+  planOptionDefault: "#888888",
+  planOptionSelected: "#e5c07b",
+  planOptionCheck: "#22c55e",
+  planInputBg: "#1a1a1a",
+  planInputText: "#e0e0e0",
+  planHint: "#555555",
 } as const;
 
 export type Theme = typeof dark;

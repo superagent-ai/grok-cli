@@ -3,7 +3,7 @@ import { createProvider, generateTitle as genTitle, type XaiProvider } from "../
 import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
 import { loadCustomInstructions } from "../utils/instructions.js";
-import type { AgentMode, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
+import type { AgentMode, Plan, StreamChunk, ToolCall, ToolResult } from "../types/index.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -51,15 +51,16 @@ ${ENVIRONMENT}
 TOOLS:
 - read_file: Read file contents for analysis.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify files.
+- generate_plan: ALWAYS use this to present your plan. Creates an interactive UI with steps and questions.
 
 BEHAVIOR:
-- Create a detailed, step-by-step implementation plan
-- Identify files that need changes and describe the specific edits
-- Highlight potential risks, edge cases, and dependencies
-- Suggest a testing strategy
-- NEVER create, modify, or delete files — only read and analyze
-
-Format your plan with clear numbered steps and file paths.`,
+- Explore the codebase first using read_file and bash to understand the current state
+- ALWAYS call generate_plan to present your plan — never just describe it in text
+- Include clear, ordered steps with affected file paths
+- Include questions when you need user input on approach, trade-offs, or preferences
+- Use "select" questions for single-choice decisions, "multiselect" for picking multiple options, and "text" for free-form input
+- Highlight potential risks, edge cases, and dependencies in the plan summary
+- NEVER create, modify, or delete files — only read and analyze`,
 
   ask: `You are Grok CLI in Ask mode — you answer questions clearly and thoroughly.
 
@@ -77,13 +78,17 @@ BEHAVIOR:
 - Focus on explanation, not execution`,
 };
 
-function buildSystemPrompt(cwd: string, mode: AgentMode): string {
+function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | null): string {
   const custom = loadCustomInstructions();
   const customSection = custom
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${customSection}
+  const planSection = planContext
+    ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
+    : "";
+
+  return `${MODE_PROMPTS[mode]}${customSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
@@ -97,6 +102,7 @@ export class Agent {
   private mode: AgentMode = "agent";
   private modelId: string;
   private maxTokens: number;
+  private planContext: string | null = null;
 
   constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
     this.provider = createProvider(apiKey, baseURL);
@@ -120,7 +126,14 @@ export class Agent {
   }
 
   setMode(mode: AgentMode): void {
-    this.mode = mode;
+    if (mode !== this.mode) {
+      this.mode = mode;
+      this.messages = [];
+    }
+  }
+
+  setPlanContext(ctx: string | null): void {
+    this.planContext = ctx;
   }
 
   getCwd(): string {
@@ -148,8 +161,9 @@ export class Agent {
     let streamOk = false;
 
     try {
-      const tools = createTools(this.bash, this.provider);
-      const system = buildSystemPrompt(this.bash.getCwd(), this.mode);
+      const tools = createTools(this.bash, this.provider, this.mode);
+      const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+      this.planContext = null;
 
       const result = streamText({
         model: this.provider(this.modelId),
@@ -245,12 +259,13 @@ function toToolCall(part: { toolCallId: string; toolName: string; args?: unknown
 
 function toToolResult(output: unknown): ToolResult {
   if (output && typeof output === "object" && "success" in output) {
-    const r = output as { success: boolean; output?: string; diff?: ToolResult["diff"] };
+    const r = output as { success: boolean; output?: string; diff?: ToolResult["diff"]; plan?: Plan };
     return {
       success: r.success,
       output: r.output,
       error: r.success ? undefined : r.output,
       diff: r.diff,
+      plan: r.plan,
     };
   }
   return { success: true, output: String(output) };

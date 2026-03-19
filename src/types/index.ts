@@ -6,11 +6,33 @@ export interface FileDiff {
   isNew: boolean;
 }
 
+export interface PlanStep {
+  title: string;
+  description: string;
+  filePaths?: string[];
+}
+
+export interface PlanQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  type: "select" | "multiselect" | "text";
+  options?: { id: string; label: string }[];
+}
+
+export interface Plan {
+  title: string;
+  summary: string;
+  steps: PlanStep[];
+  questions?: PlanQuestion[];
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
   diff?: FileDiff;
+  plan?: Plan;
 }
 
 export interface ToolCall {
@@ -26,6 +48,7 @@ export interface ChatEntry {
   type: "user" | "assistant" | "tool_call" | "tool_result";
   content: string;
   timestamp: Date;
+  modeColor?: string;
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
@@ -47,6 +70,13 @@ export interface ModelInfo {
   outputPrice: number;
   reasoning: boolean;
   description: string;
+}
+
+export interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  executable?: boolean;
 }
 
 export type AgentMode = "agent" | "plan" | "ask";
