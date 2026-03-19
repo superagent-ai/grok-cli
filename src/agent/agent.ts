@@ -167,6 +167,7 @@ export class Agent {
   private bash: BashTool;
   private delegations: DelegationManager;
   private messages: ModelMessage[] = [];
+  private recordedTokens = 0;
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
   private mode: AgentMode = "agent";
@@ -201,6 +202,7 @@ export class Agent {
     if (mode !== this.mode) {
       this.mode = mode;
       this.messages = [];
+      this.recordedTokens = 0;
     }
   }
 
@@ -210,6 +212,30 @@ export class Agent {
 
   getCwd(): string {
     return this.bash.getCwd();
+  }
+
+  getContextStats(
+    contextWindow: number,
+    inFlightText = "",
+  ): {
+    contextWindow: number;
+    usedTokens: number;
+    remainingTokens: number;
+    ratioUsed: number;
+    ratioRemaining: number;
+  } {
+    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+    const estimatedTokens = estimateTokens(`${system}\n${JSON.stringify(this.messages)}\n${inFlightText}`);
+    const usedTokens = Math.min(contextWindow, Math.max(estimatedTokens, this.recordedTokens));
+    const remainingTokens = Math.max(0, contextWindow - usedTokens);
+
+    return {
+      contextWindow,
+      usedTokens,
+      remainingTokens,
+      ratioUsed: usedTokens / contextWindow,
+      ratioRemaining: remainingTokens / contextWindow,
+    };
   }
 
   async generateTitle(userMessage: string): Promise<string> {
@@ -223,6 +249,7 @@ export class Agent {
 
   clearHistory(): void {
     this.messages = [];
+    this.recordedTokens = 0;
   }
 
   onSubagentStatus(listener: (status: SubagentStatus | null) => void): () => void {
@@ -242,6 +269,14 @@ export class Agent {
     const idx = this.messages.lastIndexOf(userMessage);
     if (idx >= 0) {
       this.messages.splice(idx, 1);
+    }
+  }
+
+  private recordUsage(usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number }): void {
+    if (!usage) return;
+    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    if (Number.isFinite(total) && total > 0) {
+      this.recordedTokens += total;
     }
   }
 
@@ -283,6 +318,9 @@ export class Agent {
         abortSignal: signal,
         temperature: request.agent === "explore" ? 0.2 : 0.5,
         maxOutputTokens: Math.min(this.maxTokens, 8_192),
+        onFinish: ({ totalUsage }) => {
+          this.recordUsage(totalUsage);
+        },
       });
 
       for await (const part of result.fullStream) {
@@ -450,6 +488,9 @@ export class Agent {
         abortSignal: signal,
         temperature: 0.7,
         maxOutputTokens: this.maxTokens,
+        onFinish: ({ totalUsage }) => {
+          this.recordUsage(totalUsage);
+        },
       });
 
       for await (const part of result.fullStream) {
@@ -604,4 +645,8 @@ function firstLine(text: string): string {
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }

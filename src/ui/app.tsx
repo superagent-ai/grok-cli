@@ -32,6 +32,13 @@ const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
 
 type Star = { col: number; ch: string };
 type Row = { stars: Star[]; grok?: number };
+type ContextStats = {
+  contextWindow: number;
+  usedTokens: number;
+  remainingTokens: number;
+  ratioUsed: number;
+  ratioRemaining: number;
+};
 
 const HERO_ROWS: Row[] = [
   {
@@ -250,6 +257,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const queuedMessagesRef = useRef<string[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
+  const activeRunIdRef = useRef(0);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -278,6 +286,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const modeInfo = MODES.find((m) => m.id === mode)!;
   modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
+  const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
   const _flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
     ? MODELS.filter(
@@ -303,9 +312,19 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
   }, []);
 
+  const invalidateActiveRun = useCallback(() => {
+    activeRunIdRef.current += 1;
+    setActiveToolCalls([]);
+    setActiveSubagent(null);
+    setStreamContent("");
+    setStreamReasoning("");
+  }, []);
+
   const processMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || isProcessingRef.current) return;
+      const runId = ++activeRunIdRef.current;
+      const isStale = () => activeRunIdRef.current !== runId;
       isProcessingRef.current = true;
       setIsProcessing(true);
       setStreamContent("");
@@ -324,6 +343,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       setTimeout(scrollToBottom, 50);
       try {
         for await (const chunk of agent.processMessage(text.trim())) {
+          if (isStale()) {
+            break;
+          }
+
           switch (chunk.type) {
             case "content":
               contentAccRef.current += chunk.content || "";
@@ -384,11 +407,13 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           }
         }
       } catch {
-        contentAccRef.current += "\nAn unexpected error occurred.";
-        setStreamContent(contentAccRef.current);
+        if (!isStale()) {
+          contentAccRef.current += "\nAn unexpected error occurred.";
+          setStreamContent(contentAccRef.current);
+        }
       }
       const finalContent = sanitizeContent(contentAccRef.current);
-      if (finalContent) {
+      if (!isStale() && finalContent) {
         setMessages((p) => [
           ...p,
           { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
@@ -396,10 +421,12 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
 
       contentAccRef.current = "";
-      setStreamContent("");
-      setStreamReasoning("");
-      setActiveToolCalls([]);
-      setActiveSubagent(null);
+      if (!isStale()) {
+        setStreamContent("");
+        setStreamReasoning("");
+        setActiveToolCalls([]);
+        setActiveSubagent(null);
+      }
       const nextQueued = queuedMessagesRef.current.shift();
       if (nextQueued) {
         setQueuedMessages([...queuedMessagesRef.current]);
@@ -407,7 +434,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         processMessage(nextQueued);
       } else {
         isProcessingRef.current = false;
-        setIsProcessing(false);
+        if (!isStale()) {
+          setIsProcessing(false);
+        }
       }
       setTimeout(scrollToBottom, 50);
     },
@@ -792,20 +821,12 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     if (isProcessing && key.name === "escape") {
+      invalidateActiveRun();
       if (queuedMessagesRef.current.length > 0) {
         queuedMessagesRef.current = [];
         setQueuedMessages([]);
       } else {
         agent.abort();
-      }
-      return;
-    }
-    if (isProcessing && key.name === "up" && queuedMessagesRef.current.length > 0) {
-      const queued = queuedMessagesRef.current.pop();
-      setQueuedMessages([...queuedMessagesRef.current]);
-      if (queued) {
-        inputRef.current?.clear();
-        inputRef.current?.insertText(queued);
       }
       return;
     }
@@ -858,8 +879,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     const raw = inputRef.current?.plainText || "";
     if (!raw.trim() && pasteBlocks.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
-        setActiveToolCalls([]);
-        setActiveSubagent(null);
+        invalidateActiveRun();
         agent.abort();
       }
       return;
@@ -886,7 +906,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     processMessage(message);
-  }, [agent, handleCommand, processMessage, pasteBlocks, scrollToBottom]);
+  }, [agent, handleCommand, invalidateActiveRun, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -948,6 +968,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               modeInfo={modeInfo}
               model={model}
               modelInfo={modelInfo}
+              contextStats={contextStats}
               queuedCount={queuedMessages.length}
               queuedMessages={queuedMessages}
             />
@@ -976,6 +997,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
                 modeInfo={modeInfo}
                 model={model}
                 modelInfo={modelInfo}
+                contextStats={contextStats}
                 placeholder={"What are we building?"}
               />
             </box>
@@ -1062,6 +1084,21 @@ const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
 ];
 
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
+}
+
+function ContextMeter({ t, stats }: { t: Theme; stats: ContextStats }) {
+  return (
+    <text>
+      <span style={{ fg: t.textMuted }}>{`${Math.round(stats.ratioRemaining * 100)}%`}</span>
+      <span style={{ fg: t.textDim }}>{` ${formatTokenCount(stats.remainingTokens)}`}</span>
+    </text>
+  );
+}
+
 function PromptBox({
   t,
   inputRef,
@@ -1075,6 +1112,7 @@ function PromptBox({
   modeInfo,
   model,
   modelInfo,
+  contextStats,
   placeholder,
   queuedCount,
   queuedMessages,
@@ -1091,6 +1129,7 @@ function PromptBox({
   modeInfo: (typeof MODES)[number];
   model: string;
   modelInfo: ReturnType<typeof getModelInfo>;
+  contextStats?: ContextStats | null;
   placeholder?: string;
   queuedCount?: number;
   queuedMessages?: string[];
@@ -1134,41 +1173,46 @@ function PromptBox({
           paddingTop={1}
           paddingBottom={1}
           backgroundColor={t.backgroundElement}
+          flexDirection="row"
+          gap={2}
+          alignItems="flex-start"
           flexShrink={0}
         >
-          <textarea
-            ref={inputRef}
-            focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
-            placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
-            textColor={t.text}
-            backgroundColor={t.backgroundElement}
-            placeholderColor={t.textMuted}
-            minHeight={1}
-            maxHeight={10}
-            wrapMode="word"
-            keyBindings={TEXTAREA_KEYBINDINGS}
-            onSubmit={onSubmit as unknown as () => void}
-            onPaste={onPaste as unknown as (event: PasteEvent) => void}
-          />
+          <text fg={modeInfo.color}>
+            <b>{modeInfo.label}</b>
+          </text>
+          <box flexGrow={1}>
+            <textarea
+              ref={inputRef}
+              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
+              placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
+              textColor={t.text}
+              backgroundColor={t.backgroundElement}
+              placeholderColor={t.textMuted}
+              minHeight={1}
+              maxHeight={10}
+              wrapMode="word"
+              keyBindings={TEXTAREA_KEYBINDINGS}
+              onSubmit={onSubmit as unknown as () => void}
+              onPaste={onPaste as unknown as (event: PasteEvent) => void}
+            />
+          </box>
         </box>
       </box>
       <box
         flexDirection="row"
         justifyContent="space-between"
         alignItems="center"
-        backgroundColor={t.backgroundPanel}
         paddingLeft={2}
         paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
+        height={1}
+        flexShrink={0}
       >
-        <box flexDirection="row" gap={2} alignItems="center">
-          <text fg={modeInfo.color}>
-            <b>{modeInfo.label}</b>{" "}
-          </text>
+        <box flexDirection="row" gap={1} alignItems="center" height={1}>
           <text fg={t.text}>{modelInfo?.name || model}</text>
+          {contextStats ? <ContextMeter t={t} stats={contextStats} /> : null}
         </box>
-        <box flexDirection="row" gap={3} alignItems="center">
+        <box flexDirection="row" gap={3} alignItems="center" height={1}>
           {isProcessing ? (
             <box flexDirection="row" gap={3}>
               <text fg={t.text}>
