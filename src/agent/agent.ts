@@ -273,7 +273,10 @@ export class Agent {
     return this.bash.getCwd();
   }
 
-  getContextStats(contextWindow: number, inFlightText = ""): {
+  getContextStats(
+    contextWindow: number,
+    inFlightText = "",
+  ): {
     contextWindow: number;
     usedTokens: number;
     remainingTokens: number;
@@ -387,7 +390,7 @@ export class Agent {
     model = this.modelId,
   ): void {
     if (!usage) return;
-    const total = usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
+    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
     if (Number.isFinite(total) && total > 0) {
       this.recordedTokens += total;
     }
@@ -495,14 +498,18 @@ export class Agent {
 
   private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      return await this.runTaskRequest(request, (detail) => {
-        if (abortSignal?.aborted) return;
-        this.emitSubagentStatus({
-          agent: request.agent,
-          description: request.description,
-          detail,
-        });
-      }, abortSignal);
+      return await this.runTaskRequest(
+        request,
+        (detail) => {
+          if (abortSignal?.aborted) return;
+          this.emitSubagentStatus({
+            agent: request.agent,
+            description: request.description,
+            detail,
+          });
+        },
+        abortSignal,
+      );
     } finally {
       this.emitSubagentStatus(null);
     }
