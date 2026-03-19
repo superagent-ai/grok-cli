@@ -21,7 +21,12 @@
     "lint": "biome check src/",
     "format": "biome format src/",
     "format:fix": "biome format --write src/",
-    "lint:fix": "biome check --fix src/"
+    "lint:fix": "biome check --fix src/",
+    "pre-commit": "lint-staged",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json}": "biome check --write --no-errors-on-unmatched"
   },
   "keywords": [
     "cli",
@@ -50,6 +55,8 @@
     "@types/diff": "^8.0.0",
     "@types/node": "^22.19.15",
     "@types/react": "^19.2.14",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "typescript": "^5.9.3"
   },
   "engines": {

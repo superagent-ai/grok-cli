@@ -28,6 +28,10 @@ bun run typecheck
 # Linting
 bun run lint
 
+# Format (check / write)
+bun run format
+bun run format:fix
+
 # Run the built CLI
 bun run start
 ```
@@ -43,10 +47,14 @@ bun run start
 
 Copy `.env.example` to `.env` and fill in your values.
 
+## Git hooks
+
+After `bun install`, **Husky** installs a **pre-commit** hook that runs **`lint-staged`**: Biome **format + lint** (`check --write`) on staged `*.{ts,tsx,js,mjs,cjs,json}` files. Fixes are written to disk and re-staged automatically when possible.
+
 ## Before Submitting Changes
 
 1. Run `bun run typecheck` — CI enforces this on every PR.
-2. Run `bun run lint` — fix any ESLint errors.
+2. Run `bun run lint` — fix any Biome issues (or let pre-commit apply safe fixes).
 3. Ensure no secrets or `.env` files are committed.
 4. Follow the PR template in `.github/pull_request_template.md`.
 

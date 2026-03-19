@@ -10,7 +10,7 @@ Grok CLI (`@vibe-kit/grok-cli`) is a single-package TypeScript CLI tool — no d
 
 | Action | Command |
 |--------|---------|
-| Install deps | `bun install` |
+| Install deps | `bun install` (installs Husky; pre-commit runs Biome on staged files) |
 | Typecheck | `bun run typecheck` |
 | Build | `bun run build` |
 | Run built CLI | `node dist/index.js` |

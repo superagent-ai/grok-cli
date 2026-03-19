@@ -38,6 +38,11 @@ async function startInteractive(
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
+    // Lets terminals (Kitty, iTerm2, WezTerm, …) report Command as `super` on KeyEvent — needed for ⌘C in the TUI.
+    useKittyKeyboard: {
+      disambiguate: true,
+      alternateKeys: true,
+    },
   });
 
   const onExit = () => {
