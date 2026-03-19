@@ -178,6 +178,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const modeInfo = MODES.find((m) => m.id === mode)!;
   modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
+  const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
   const flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
     ? MODELS.filter((m) =>
@@ -697,9 +698,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           </scrollbox>
           {/* Prompt */}
           <box flexShrink={0}>
-            <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
-              onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-              modeInfo={modeInfo} model={model} modelInfo={modelInfo} queuedCount={queuedMessages.length} queuedMessages={queuedMessages} />
+              <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
+                onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
+                modeInfo={modeInfo} model={model} modelInfo={modelInfo} contextStats={contextStats}
+                queuedCount={queuedMessages.length} queuedMessages={queuedMessages} />
           </box>
         </box>
       ) : (
@@ -714,7 +716,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             <box width="100%" maxWidth={75} flexShrink={0}>
               <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
                 onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-                modeInfo={modeInfo} model={model} modelInfo={modelInfo}
+                modeInfo={modeInfo} model={model} modelInfo={modelInfo} contextStats={contextStats}
                 placeholder={"What are we building?"} />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
@@ -745,11 +747,14 @@ function SessionHeader({ t, modeInfo, sessionTitle, sessionId }: {
         border={["left"]} customBorderChars={SPLIT} borderColor={t.border}
         backgroundColor={t.backgroundPanel}
       >
-        <text>
-          <span style={{ fg: modeInfo.color }}><b>{modeInfo.label}</b></span>
-          {sessionTitle ? <span style={{ fg: t.text }}><b>{": "}{sessionTitle}</b></span> : null}
-          {sessionId ? <span style={{ fg: t.textDim }}>{`  (${sessionId})`}</span> : null}
-        </text>
+        <box flexDirection="row" width="100%">
+          <text>
+            <span style={{ fg: modeInfo.color }}><b>{modeInfo.label}</b></span>
+            {sessionTitle ? <span style={{ fg: t.text }}><b>{": "}{sessionTitle}</b></span> : null}
+          </text>
+          <box flexGrow={1} />
+          {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
+        </box>
       </box>
     </box>
   );
@@ -762,12 +767,27 @@ const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
 ];
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder, queuedCount, queuedMessages }: {
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
+}
+
+function ContextMeter({ t, stats }: { t: Theme; stats: ContextStats }) {
+  return (
+    <text>
+      <span style={{ fg: t.textMuted }}>{`${Math.round(stats.ratioRemaining * 100)}%`}</span>
+      <span style={{ fg: t.textDim }}>{` ${formatTokenCount(stats.remainingTokens)}`}</span>
+    </text>
+  );
+}
+
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, contextStats, placeholder, queuedCount, queuedMessages }: {
   t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
   isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; showPlanQuestions: boolean; onSubmit: () => void;
   onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
   modeInfo: typeof MODES[number]; model: string;
-  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string; queuedCount?: number; queuedMessages?: string[];
+  modelInfo: ReturnType<typeof getModelInfo>; contextStats?: ContextStats | null; placeholder?: string; queuedCount?: number; queuedMessages?: string[];
 }) {
   const hasQueue = (queuedMessages?.length ?? 0) > 0;
 
@@ -792,33 +812,73 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
             </text>
           </box>
         )}
-        <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
-          <textarea
-            ref={inputRef} focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
-            placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : (placeholder || "Message Grok...")}
-            textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
-            minHeight={1} maxHeight={10} wrapMode="word"
-            keyBindings={TEXTAREA_KEYBINDINGS}
-            onSubmit={onSubmit as any}
-            onPaste={onPaste as any}
-          />
+        <box
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          backgroundColor={t.backgroundElement}
+          flexDirection="row"
+          gap={2}
+          alignItems="flex-start"
+          flexShrink={0}
+        >
+          <text fg={modeInfo.color}>
+            <b>{modeInfo.label}</b>
+          </text>
+          <box flexGrow={1}>
+            <textarea
+              ref={inputRef}
+              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
+              placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
+              textColor={t.text}
+              backgroundColor={t.backgroundElement}
+              placeholderColor={t.textMuted}
+              minHeight={1}
+              maxHeight={10}
+              wrapMode="word"
+              keyBindings={TEXTAREA_KEYBINDINGS}
+              onSubmit={onSubmit as unknown as () => void}
+              onPaste={onPaste as unknown as (event: PasteEvent) => void}
+            />
+          </box>
         </box>
       </box>
-      <box flexDirection="row" justifyContent="space-between" alignItems="center" backgroundColor={t.backgroundPanel} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
-        <box flexDirection="row" gap={2} alignItems="center">
-          <text fg={modeInfo.color}><b>{modeInfo.label}</b>{" "}</text>
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        paddingLeft={2}
+        paddingRight={2}
+        height={1}
+        flexShrink={0}
+      >
+        <box flexDirection="row" gap={1} alignItems="center" height={1}>
           <text fg={t.text}>{modelInfo?.name || model}</text>
+          {contextStats ? <ContextMeter t={t} stats={contextStats} /> : null}
         </box>
-        <box flexDirection="row" gap={3} alignItems="center">
+        <box flexDirection="row" gap={3} alignItems="center" height={1}>
           {isProcessing ? (
             <box flexDirection="row" gap={3}>
-              <text fg={t.text}>{"enter "}<span style={{ fg: t.textMuted }}>{"queue"}</span></text>
-              <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{(queuedCount ?? 0) > 0 ? "clear queue" : "interrupt"}</span></text>
+              <text fg={t.text}>
+                {"enter "}
+                <span style={{ fg: t.textMuted }}>{"queue"}</span>
+              </text>
+              <text fg={t.text}>
+                {"esc "}
+                <span style={{ fg: t.textMuted }}>{(queuedCount ?? 0) > 0 ? "clear queue" : "interrupt"}</span>
+              </text>
             </box>
           ) : (
             <>
-              <text fg={t.text}>{"shift+enter "}<span style={{ fg: t.textMuted }}>{"new line"}</span></text>
-              <text fg={t.text}>{"tab "}<span style={{ fg: t.textMuted }}>{"modes"}</span></text>
+              <text fg={t.text}>
+                {"shift+enter "}
+                <span style={{ fg: t.textMuted }}>{"new line"}</span>
+              </text>
+              <text fg={t.text}>
+                {"tab "}
+                <span style={{ fg: t.textMuted }}>{"modes"}</span>
+              </text>
             </>
           )}
         </box>
