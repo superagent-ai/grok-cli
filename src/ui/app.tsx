@@ -147,6 +147,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const contentAccRef = useRef("");
   const startTimeRef = useRef(0);
   const isProcessingRef = useRef(false);
+  const queuedMessagesRef = useRef<string[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const setMode = useCallback((m: AgentMode) => {
     if (m === "agent" && mode === "plan" && activePlan) {
@@ -241,16 +243,49 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
     
     contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null);
-    isProcessingRef.current = false;
-    setIsProcessing(false); setTimeout(scrollToBottom, 50);
+    const nextQueued = queuedMessagesRef.current.shift();
+    if (nextQueued) {
+      setQueuedMessages([...queuedMessagesRef.current]);
+      isProcessingRef.current = false;
+      processMessage(nextQueued);
+    } else {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+    }
+    setTimeout(scrollToBottom, 50);
   }, [agent, scrollToBottom, modeInfo, model]);
 
   useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
   useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
+  useEffect(() => {
+    let active = true;
+    const id = setInterval(() => {
+      agent
+        .consumeBackgroundNotifications()
+        .then((notifications) => {
+          if (!active || notifications.length === 0) return;
+          setMessages((prev) => [
+            ...prev,
+            ...notifications.map((message) => ({
+              type: "assistant" as const,
+              content: message,
+              timestamp: new Date(),
+            })),
+          ]);
+          setTimeout(scrollToBottom, 10);
+        })
+        .catch(() => {});
+    }, 2000);
+
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [agent, scrollToBottom]);
 
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
-    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState()); imageCounterRef.current = 0; return true; }
+    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState()); queuedMessagesRef.current = []; setQueuedMessages([]); imageCounterRef.current = 0; return true; }
     if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery(""); return true; }
     if (c === "/quit" || c === "/exit" || c === "/q") { onExit ? onExit() : process.exit(0); }
     return false;
@@ -262,6 +297,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     switch (item.id) {
       case "new":
         agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState());
+        queuedMessagesRef.current = []; setQueuedMessages([]);
         break;
       case "models":
         setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery("");
@@ -488,7 +524,15 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       return;
     }
-    if (isProcessing && key.name === "escape") { agent.abort(); return; }
+    if (isProcessing && key.name === "escape") {
+      if (queuedMessagesRef.current.length > 0) {
+        queuedMessagesRef.current = [];
+        setQueuedMessages([]);
+      } else {
+        agent.abort();
+      }
+      return;
+    }
     if (key.sequence === "/" && !isProcessing) {
       const text = inputRef.current?.plainText || "";
       if (!text.trim()) { setShowSlashMenu(true); setSlashMenuIndex(0); setSlashSearchQuery(""); return; }
@@ -539,8 +583,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
     if (!message.trim()) return;
     if (handleCommand(message)) return;
+    if (isProcessingRef.current) {
+      queuedMessagesRef.current.push(message.trim());
+      setQueuedMessages([...queuedMessagesRef.current]);
+      setTimeout(scrollToBottom, 10);
+      return;
+    }
     processMessage(message);
-  }, [handleCommand, processMessage, pasteBlocks]);
+  }, [handleCommand, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -559,6 +609,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             {activeToolCalls.map((tc, i) => (
               tc.function.name === "task"
                 ? <SubagentTaskLine key={i} t={t} label={toolArgs(tc) || "Working"} pending />
+                : tc.function.name === "delegate"
+                  ? <DelegationTaskLine key={i} t={t} label={toolArgs(tc) || "Background research"} pending id={undefined} />
                 : <InlineTool key={i} t={t} pending>{toolLabel(tc)}</InlineTool>
             ))}
             {activeSubagent && <SubagentActivity t={t} status={activeSubagent} />}
@@ -585,7 +637,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           <box flexShrink={0}>
             <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
               onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-              modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
+              modeInfo={modeInfo} model={model} modelInfo={modelInfo} queuedCount={queuedMessages.length} queuedMessages={queuedMessages} />
           </box>
         </box>
       ) : (
@@ -647,20 +699,40 @@ const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
 ];
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder }: {
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder, queuedCount, queuedMessages }: {
   t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
   isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; showPlanQuestions: boolean; onSubmit: () => void;
   onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
   modeInfo: typeof MODES[number]; model: string;
-  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
+  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string; queuedCount?: number; queuedMessages?: string[];
 }) {
+  const hasQueue = (queuedMessages?.length ?? 0) > 0;
+
   return (
     <box backgroundColor={t.backgroundPanel}>
       <box>
+        {hasQueue && (
+          <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.queueBg} flexShrink={0}>
+            {queuedMessages!.map((msg, i) => (
+              <text key={i} fg={t.text}>{"→ "}{msg}</text>
+            ))}
+            <box height={1} />
+            <text>
+              <span style={{ fg: t.primary }}>{"enter "}</span>
+              <span style={{ fg: t.textMuted }}>{"send now"}</span>
+              <span style={{ fg: t.textDim }}>{" · "}</span>
+              <span style={{ fg: t.primary }}>{"↑ "}</span>
+              <span style={{ fg: t.textMuted }}>{"edit"}</span>
+              <span style={{ fg: t.textDim }}>{" · "}</span>
+              <span style={{ fg: t.primary }}>{"esc "}</span>
+              <span style={{ fg: t.textMuted }}>{"cancel"}</span>
+            </text>
+          </box>
+        )}
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
           <textarea
-            ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu && !showPlanQuestions}
-            placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
+            ref={inputRef} focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
+            placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : (placeholder || "Message Grok...")}
             textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
             minHeight={1} maxHeight={10} wrapMode="word"
             keyBindings={TEXTAREA_KEYBINDINGS}
@@ -676,7 +748,10 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
         </box>
         <box flexDirection="row" gap={3} alignItems="center">
           {isProcessing ? (
-            <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
+            <box flexDirection="row" gap={3}>
+              <text fg={t.text}>{"enter "}<span style={{ fg: t.textMuted }}>{"queue"}</span></text>
+              <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{(queuedCount ?? 0) > 0 ? "clear queue" : "interrupt"}</span></text>
+            </box>
           ) : (
             <>
               <text fg={t.text}>{"shift+enter "}<span style={{ fg: t.textMuted }}>{"new line"}</span></text>
@@ -736,6 +811,18 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
         return <TaskResultView t={t} entry={entry} />;
       }
 
+      if (name === "delegate" && entry.toolResult?.delegation) {
+        return <DelegationResultView t={t} entry={entry} />;
+      }
+
+      if (name === "delegation_list") {
+        return <DelegationListView t={t} content={entry.content} />;
+      }
+
+      if (name === "delegation_read") {
+        return <ToolTextOutputView t={t} label={toolLabel(entry.toolCall!)} content={entry.content} />;
+      }
+
       if (name === "write_file" || name === "edit_file") {
         const filePath = diff?.filePath || tryParseArg(entry.toolCall, "path") || args;
         const label = name === "write_file" ? `Write ${filePath}` : `Edit ${filePath}`;
@@ -745,6 +832,19 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
             {diff && <DiffView t={t} diff={diff} />}
           </box>
         );
+      }
+
+      if (name === "bash" && entry.toolResult?.backgroundProcess) {
+        const bp = entry.toolResult.backgroundProcess;
+        return <BackgroundProcessLine t={t} id={bp.id} pid={bp.pid} command={bp.command} />;
+      }
+
+      if (name === "process_logs") {
+        return <ProcessLogsView t={t} content={entry.content} />;
+      }
+
+      if (name === "process_stop" || name === "process_list") {
+        return <InlineTool t={t} pending={false}>{entry.content}</InlineTool>;
       }
 
       if (name === "read_file") return <InlineTool t={t} pending={false}>{`Read ${trunc(tryParseArg(entry.toolCall, "path") || args, 60)}`}</InlineTool>;
@@ -920,6 +1020,30 @@ function SubagentTaskLine({ t, label, pending }: { t: Theme; label: string; pend
   );
 }
 
+function DelegationTaskLine({ t, label, pending, id }: { t: Theme; label: string; pending: boolean; id?: string }) {
+  const displayLabel = compactTaskLabel(label);
+
+  return (
+    <box paddingLeft={3}>
+      <text>
+        {pending ? (
+          <span style={{ fg: t.subagentAccent }}>
+            <LoadingSpinner />
+          </span>
+        ) : (
+          <span style={{ fg: t.subagentAccent }}>{"◆"}</span>
+        )}
+        {" "}
+        <span style={{ fg: t.subagentAccent }}>
+          <b>{"Background"}</b>
+        </span>
+        <span style={{ fg: t.textMuted }}>{" — "}{displayLabel}</span>
+        {id ? <span style={{ fg: t.textDim }}>{`  (${id})`}</span> : null}
+      </text>
+    </box>
+  );
+}
+
 function LoadingSpinner() {
   const [frame, setFrame] = useState(0);
 
@@ -954,6 +1078,105 @@ function TaskResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
           {": "}
           {truncateLine(task.summary, 90)}
         </text>
+      </box>
+    </box>
+  );
+}
+
+function DelegationResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
+  const delegation = entry.toolResult?.delegation;
+  if (!delegation) return null;
+
+  return (
+    <DelegationTaskLine t={t} label={delegation.description} pending={false} id={delegation.id} />
+  );
+}
+
+function DelegationListView({ t, content }: { t: Theme; content: string }) {
+  const items = parseDelegationList(content);
+
+  if (items.length === 0) {
+    return <InlineTool t={t} pending={false}>{"No background delegations"}</InlineTool>;
+  }
+
+  return (
+    <box paddingLeft={3} gap={0}>
+      {items.map((item, i) => {
+        const statusColor = item.status === "complete" ? "#8adf8a"
+          : item.status === "running" ? t.subagentAccent
+          : item.status === "error" ? "#df8a8a"
+          : t.textMuted;
+
+        return (
+          <box key={i}>
+            <text>
+              <span style={{ fg: statusColor }}>{"◆ "}</span>
+              <span style={{ fg: t.text }}>{item.id}</span>
+              <span style={{ fg: statusColor }}>{` ${item.status}`}</span>
+              <span style={{ fg: t.textMuted }}>{" — "}{truncateLine(item.label, 60)}</span>
+            </text>
+          </box>
+        );
+      })}
+    </box>
+  );
+}
+
+function parseDelegationList(content: string): { id: string; status: string; label: string }[] {
+  const items: { id: string; status: string; label: string }[] = [];
+  for (const line of content.split("\n")) {
+    const match = line.match(/`([^`]+)`\s+\[(\w+)]\s+(.*)/);
+    if (match) {
+      items.push({ id: match[1], status: match[2], label: match[3].trim() });
+    }
+  }
+  return items;
+}
+
+function BackgroundProcessLine({ t, id, pid, command }: { t: Theme; id: number; pid: number; command: string }) {
+  return (
+    <box paddingLeft={3}>
+      <text>
+        <span style={{ fg: t.subagentAccent }}>{"◆ "}</span>
+        <span style={{ fg: t.subagentAccent }}><b>{"Background process"}</b></span>
+        <span style={{ fg: t.textMuted }}>{` id:${id} pid:${pid}`}</span>
+        <span style={{ fg: t.textDim }}>{" — "}{truncateLine(command, 60)}</span>
+      </text>
+    </box>
+  );
+}
+
+function ProcessLogsView({ t, content }: { t: Theme; content: string }) {
+  const lines = content.split("\n");
+  const header = lines[0] || "";
+  const body = lines.slice(1).join("\n").trim();
+
+  return (
+    <box paddingLeft={3} gap={0}>
+      <text fg={t.textMuted}>{"→ "}{header}</text>
+      {body ? (
+        <box paddingLeft={2} marginTop={0}>
+          <box backgroundColor={t.mdCodeBlockBg} paddingLeft={1} paddingRight={1}>
+            <text fg={t.mdCodeBlockFg}>{truncateBlock(body, 15)}</text>
+          </box>
+        </box>
+      ) : null}
+    </box>
+  );
+}
+
+function truncateBlock(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return [...lines.slice(0, maxLines), `… ${lines.length - maxLines} more lines`].join("\n");
+}
+
+function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; content: string }) {
+  return (
+    <box gap={0}>
+      <InlineTool t={t} pending={false}>{label}</InlineTool>
+      <box paddingLeft={5} marginTop={1} flexShrink={0}>
+        <Markdown content={content} t={t} />
       </box>
     </box>
   );
@@ -1067,6 +1290,9 @@ function toolArgs(tc?: ToolCall): string {
     if (tc.function.name === "bash") return a.command || "";
     if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file") return a.path || "";
     if (tc.function.name === "task") return a.description || "";
+    if (tc.function.name === "delegate") return a.description || "";
+    if (tc.function.name === "delegation_read") return a.id || "";
+    if (tc.function.name === "process_logs" || tc.function.name === "process_stop") return a.id != null ? String(a.id) : "";
     return a.query || "";
   } catch { return ""; }
 }
@@ -1076,13 +1302,25 @@ function tryParseArg(tc: ToolCall | undefined, key: string): string {
 }
 function toolLabel(tc: ToolCall): string {
   const args = toolArgs(tc);
-  if (tc.function.name === "bash") return trunc(args || "Running command...", 80);
+  if (tc.function.name === "bash") {
+    try {
+      const parsed = JSON.parse(tc.function.arguments);
+      if (parsed.background) return `Background: ${trunc(args || "Starting process...", 70)}`;
+    } catch { /* */ }
+    return trunc(args || "Running command...", 80);
+  }
   if (tc.function.name === "read_file") return `Read ${trunc(args, 60)}`;
   if (tc.function.name === "write_file") return `Write ${trunc(args, 60)}`;
   if (tc.function.name === "edit_file") return `Edit ${trunc(args, 60)}`;
   if (tc.function.name === "search_web") return `Web Search "${trunc(args, 60)}"`;
   if (tc.function.name === "search_x") return `X Search "${trunc(args, 60)}"`;
   if (tc.function.name === "task") return `Task ${trunc(args, 60)}`;
+  if (tc.function.name === "delegate") return `Background ${trunc(args, 60)}`;
+  if (tc.function.name === "delegation_read") return `Read delegation ${trunc(args, 60)}`;
+  if (tc.function.name === "delegation_list") return "List delegations";
+  if (tc.function.name === "process_logs") return `Logs for process ${args}`;
+  if (tc.function.name === "process_stop") return `Stop process ${args}`;
+  if (tc.function.name === "process_list") return "List processes";
   if (tc.function.name === "generate_plan") return "Generating plan...";
   return trunc(`${tc.function.name} ${args}`, 80);
 }

@@ -9,6 +9,9 @@ const SEARCH_MODEL = "grok-3-mini-fast";
 
 interface CreateToolsOptions {
   runTask?: (request: TaskRequest) => Promise<ToolResult>;
+  runDelegation?: (request: TaskRequest) => Promise<ToolResult>;
+  readDelegation?: (id: string) => Promise<ToolResult>;
+  listDelegations?: () => Promise<ToolResult>;
 }
 
 export function createTools(
@@ -22,17 +25,26 @@ export function createTools(
   const base = {
     bash: tool({
       description:
-        "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. For file read/write/edit, prefer the dedicated file tools instead.",
+        "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.",
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z
           .number()
           .optional()
           .describe(
-            "Timeout in milliseconds (default: 30000). Use higher values for long-running commands.",
+            "Timeout in milliseconds (default: 30000). Use higher values for long-running commands. Ignored when background=true.",
+          ),
+        background: z
+          .boolean()
+          .optional()
+          .describe(
+            "Run the command as a background process. Returns immediately with a process ID. Use process_logs/process_stop/process_list to manage it.",
           ),
       }),
-      execute: async ({ command, timeout }) => {
+      execute: async ({ command, timeout, background }) => {
+        if (background) {
+          return bash.startBackground(command);
+        }
         const result = await bash.execute(command, timeout);
         return {
           success: result.success,
@@ -40,6 +52,41 @@ export function createTools(
             ? result.output || "Command executed successfully (no output)"
             : result.error || "Command failed",
         };
+      },
+    }),
+
+    process_logs: tool({
+      description:
+        "View recent output (stdout + stderr) from a background process by its ID. Returns the last N lines of the log.",
+      inputSchema: z.object({
+        id: z.number().describe("The background process ID"),
+        tail: z
+          .number()
+          .optional()
+          .describe("Number of lines to return from the end (default: 50)"),
+      }),
+      execute: async ({ id, tail }) => {
+        return bash.getProcessLogs(id, tail);
+      },
+    }),
+
+    process_stop: tool({
+      description:
+        "Stop a running background process by its ID. Sends SIGTERM, then SIGKILL after 3 seconds if still alive.",
+      inputSchema: z.object({
+        id: z.number().describe("The background process ID to stop"),
+      }),
+      execute: async ({ id }) => {
+        return bash.stopProcess(id);
+      },
+    }),
+
+    process_list: tool({
+      description:
+        "List all background processes with their ID, status, PID, age, and command.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        return bash.listProcesses();
       },
     }),
 
@@ -155,7 +202,7 @@ export function createTools(
     if (options.runTask) {
       tools.task = tool({
         description:
-          "Delegate a focused task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
+          "Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
         inputSchema: z.object({
           agent: z
             .enum(["general", "explore"])
@@ -170,6 +217,52 @@ export function createTools(
         }),
         execute: async ({ agent, description, prompt }) => {
           return options.runTask!({ agent, description, prompt });
+        },
+      });
+    }
+
+    if (options.runDelegation) {
+      tools.delegate = tool({
+        description:
+          "Launch a read-only background agent that can keep researching while you continue working. Use this only for `explore` tasks that do not edit files or make shell changes. You will be notified when it completes.",
+        inputSchema: z.object({
+          agent: z
+            .enum(["explore"])
+            .default("explore")
+            .describe("Background delegations currently support only the read-only explore agent"),
+          description: z
+            .string()
+            .describe("A short label for the delegation, such as 'OAuth callback research'"),
+          prompt: z
+            .string()
+            .describe("Detailed instructions for the background agent to complete"),
+        }),
+        execute: async ({ agent, description, prompt }) => {
+          return options.runDelegation!({ agent, description, prompt });
+        },
+      });
+    }
+
+    if (options.readDelegation) {
+      tools.delegation_read = tool({
+        description:
+          "Read the saved output of a background delegation by ID. Use this after a completion notice or when revisiting prior research.",
+        inputSchema: z.object({
+          id: z.string().describe("The delegation ID, such as 'calm-blue-fox'"),
+        }),
+        execute: async ({ id }) => {
+          return options.readDelegation!(id);
+        },
+      });
+    }
+
+    if (options.listDelegations) {
+      tools.delegation_list = tool({
+        description:
+          "List recent background delegations for the current project. Use sparingly to discover IDs or review prior results, not for repeated polling.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          return options.listDelegations!();
         },
       });
     }
