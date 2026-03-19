@@ -1,6 +1,5 @@
-import React from "react";
-import type { Plan, PlanQuestion } from "../types/index.js";
-import type { Theme } from "./theme.js";
+import type { Plan, PlanQuestion } from "../types/index";
+import type { Theme } from "./theme";
 
 export type PlanAnswers = Record<string, string | string[]>;
 
@@ -17,7 +16,10 @@ export function PlanView({ plan, t }: PlanViewProps) {
       <box marginBottom={1}>
         <text>
           <span style={{ fg: t.planTitle }}>
-            <b>{"◆ "}{plan.title}</b>
+            <b>
+              {"◆ "}
+              {plan.title}
+            </b>
           </span>
         </text>
       </box>
@@ -93,11 +95,7 @@ interface PlanQuestionsPanelProps {
   state: PlanQuestionsState;
 }
 
-export function PlanQuestionsPanel({
-  t,
-  questions,
-  state,
-}: PlanQuestionsPanelProps) {
+export function PlanQuestionsPanel({ t, questions, state }: PlanQuestionsPanelProps) {
   const isSingle = questions.length === 1 && questions[0]?.type !== "multiselect";
   const isConfirmTab = !isSingle && state.tab === questions.length;
   const q = questions[state.tab];
@@ -126,11 +124,7 @@ export function PlanQuestionsPanel({
               <text key={q.id}>
                 <span
                   style={{
-                    fg: isActive
-                      ? t.planTitle
-                      : isAnswered
-                        ? t.planOptionCheck
-                        : t.textMuted,
+                    fg: isActive ? t.planTitle : isAnswered ? t.planOptionCheck : t.textMuted,
                   }}
                 >
                   {isActive ? <b>{label}</b> : label}
@@ -155,11 +149,7 @@ export function PlanQuestionsPanel({
       {isConfirmTab ? (
         <ConfirmView t={t} questions={questions} answers={state.answers} />
       ) : q ? (
-        <QuestionBody
-          t={t}
-          question={q}
-          state={state}
-        />
+        <QuestionBody t={t} question={q} state={state} />
       ) : null}
 
       {/* Footer hints */}
@@ -177,13 +167,7 @@ export function PlanQuestionsPanel({
         <text>
           <span style={{ fg: t.text }}>{"enter"}</span>
           <span style={{ fg: t.planHint }}>
-            {isConfirmTab
-              ? " submit"
-              : q?.type === "multiselect"
-                ? " toggle"
-                : isSingle
-                  ? " submit"
-                  : " confirm"}
+            {isConfirmTab ? " submit" : q?.type === "multiselect" ? " toggle" : isSingle ? " submit" : " confirm"}
           </span>
         </text>
         <text>
@@ -197,15 +181,7 @@ export function PlanQuestionsPanel({
 
 /* ── Question Body ────────────────────────────────────────── */
 
-function QuestionBody({
-  t,
-  question: q,
-  state,
-}: {
-  t: Theme;
-  question: PlanQuestion;
-  state: PlanQuestionsState;
-}) {
+function QuestionBody({ t, question: q, state }: { t: Theme; question: PlanQuestion; state: PlanQuestionsState }) {
   const isMulti = q.type === "multiselect";
   const options = q.options ?? [];
   const showCustom = q.type !== "text";
@@ -227,9 +203,11 @@ function QuestionBody({
         /* Free-form text input */
         <box backgroundColor={t.planInputBg} paddingLeft={1} paddingRight={1}>
           <text fg={t.planInputText}>
-            {state.editing || customText
-              ? customText + (state.editing ? "▌" : "")
-              : <span style={{ fg: t.textMuted }}>{"Type your answer..."}</span>}
+            {state.editing || customText ? (
+              customText + (state.editing ? "▌" : "")
+            ) : (
+              <span style={{ fg: t.textMuted }}>{"Type your answer..."}</span>
+            )}
           </text>
         </box>
       ) : (
@@ -246,25 +224,15 @@ function QuestionBody({
                 flexDirection="row"
               >
                 <text>
-                  <span style={{ fg: t.textMuted }}>
-                    {`${i + 1}. `}
-                  </span>
+                  <span style={{ fg: t.textMuted }}>{`${i + 1}. `}</span>
                   <span
                     style={{
-                      fg: isFocused
-                        ? t.selected
-                        : isPicked
-                          ? t.planOptionCheck
-                          : t.text,
+                      fg: isFocused ? t.selected : isPicked ? t.planOptionCheck : t.text,
                     }}
                   >
-                    {isMulti
-                      ? `[${isPicked ? "✓" : " "}] ${opt.label}`
-                      : opt.label}
+                    {isMulti ? `[${isPicked ? "✓" : " "}] ${opt.label}` : opt.label}
                   </span>
-                  {isPicked && !isMulti ? (
-                    <span style={{ fg: t.planOptionCheck }}>{" ✓"}</span>
-                  ) : null}
+                  {isPicked && !isMulti ? <span style={{ fg: t.planOptionCheck }}>{" ✓"}</span> : null}
                 </text>
               </box>
             );
@@ -272,21 +240,14 @@ function QuestionBody({
 
           {/* "Type your own answer" option */}
           {showCustom && (
-            <box
-              backgroundColor={isOnCustom ? t.selectedBg : undefined}
-              paddingLeft={1}
-            >
+            <box backgroundColor={isOnCustom ? t.selectedBg : undefined} paddingLeft={1}>
               {state.editing && isOnCustom ? (
                 <box backgroundColor={t.planInputBg} paddingLeft={1} paddingRight={1} flexGrow={1}>
-                  <text fg={t.planInputText}>
-                    {customText + "▌"}
-                  </text>
+                  <text fg={t.planInputText}>{`${customText}▌`}</text>
                 </box>
               ) : (
                 <text>
-                  <span style={{ fg: t.textMuted }}>
-                    {`${totalItems}. `}
-                  </span>
+                  <span style={{ fg: t.textMuted }}>{`${totalItems}. `}</span>
                   <span
                     style={{
                       fg: isOnCustom ? t.planOptionSelected : t.textMuted,
@@ -296,9 +257,7 @@ function QuestionBody({
                       ? `[${customText && isOptionPicked(state.answers, q, customText) ? "✓" : " "}] Type your own answer`
                       : "Type your own answer"}
                   </span>
-                  {customText ? (
-                    <span style={{ fg: t.textDim }}>{` (${customText})`}</span>
-                  ) : null}
+                  {customText ? <span style={{ fg: t.textDim }}>{` (${customText})`}</span> : null}
                 </text>
               )}
             </box>
@@ -311,15 +270,7 @@ function QuestionBody({
 
 /* ── Confirm/Review Tab ───────────────────────────────────── */
 
-function ConfirmView({
-  t,
-  questions,
-  answers,
-}: {
-  t: Theme;
-  questions: PlanQuestion[];
-  answers: PlanAnswers;
-}) {
+function ConfirmView({ t, questions, answers }: { t: Theme; questions: PlanQuestion[]; answers: PlanAnswers }) {
   return (
     <box flexDirection="column">
       <box marginBottom={1}>
@@ -336,9 +287,7 @@ function ConfirmView({
               <span style={{ fg: t.text }}>
                 <b>{tabLabel(q)}:</b>
               </span>
-              <span style={{ fg: answered ? t.planOptionCheck : t.textMuted }}>
-                {" "}{val}
-              </span>
+              <span style={{ fg: answered ? t.planOptionCheck : t.textMuted }}> {val}</span>
             </text>
           </box>
         );
@@ -352,7 +301,9 @@ function ConfirmView({
 function tabLabel(q: PlanQuestion): string {
   if (q.header) return q.header;
   const words = q.question.replace(/[?.,!:]+$/, "").split(/\s+/);
-  const key = words.find((w) => w.length > 2 && !/^(what|how|should|which|does|the|and|for|are|can|will|you|this|that|with|from)$/i.test(w));
+  const key = words.find(
+    (w) => w.length > 2 && !/^(what|how|should|which|does|the|and|for|are|can|will|you|this|that|with|from)$/i.test(w),
+  );
   return key ?? words[0] ?? "Question";
 }
 
@@ -363,11 +314,7 @@ function hasAnswer(answers: PlanAnswers, q: PlanQuestion): boolean {
   return a.trim().length > 0;
 }
 
-function isOptionPicked(
-  answers: PlanAnswers,
-  q: PlanQuestion,
-  optionId: string,
-): boolean {
+function isOptionPicked(answers: PlanAnswers, q: PlanQuestion, optionId: string): boolean {
   const a = answers[q.id];
   if (!a) return false;
   if (Array.isArray(a)) return a.includes(optionId);
@@ -384,15 +331,10 @@ function formatAnswer(q: PlanQuestion, answers: PlanAnswers): string {
   }
   const arr = a as string[];
   if (arr.length === 0) return "(not answered)";
-  return arr
-    .map((id) => q.options?.find((o) => o.id === id)?.label ?? id)
-    .join(", ");
+  return arr.map((id) => q.options?.find((o) => o.id === id)?.label ?? id).join(", ");
 }
 
-export function formatPlanAnswers(
-  questions: PlanQuestion[],
-  answers: PlanAnswers,
-): string {
+export function formatPlanAnswers(questions: PlanQuestion[], answers: PlanAnswers): string {
   const parts: string[] = ["Here are my answers to the plan questions:\n"];
 
   for (const q of questions) {

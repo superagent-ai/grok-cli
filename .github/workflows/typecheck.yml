@@ -1,4 +1,4 @@
-name: Type Check
+name: CI
 
 on:
   push:
@@ -7,20 +7,25 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  typecheck:
+  ci:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
       with:
-        node-version: '18'
-        cache: 'npm'
+        bun-version: 1.3.11
 
     - name: Install Dependencies
-      run: npm ci
+      run: bun install --frozen-lockfile
 
-    - name: Run TypeScript Type Check
-      run: npm run typecheck
+    - name: Format Check
+      run: bun run format
+
+    - name: Lint
+      run: bun run lint
+
+    - name: Type Check
+      run: bun run typecheck

@@ -1,9 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
-import { DelegationManager } from "./delegations.js";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client.js";
 import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
-import { loadCustomInstructions } from "../utils/instructions.js";
 import type {
   AgentMode,
   Plan,
@@ -13,6 +11,8 @@ import type {
   ToolCall,
   ToolResult,
 } from "../types/index.js";
+import { loadCustomInstructions } from "../utils/instructions.js";
+import { DelegationManager } from "./delegations.js";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -167,6 +167,7 @@ export class Agent {
   private bash: BashTool;
   private delegations: DelegationManager;
   private messages: ModelMessage[] = [];
+  private recordedTokens = 0;
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
   private mode: AgentMode = "agent";
@@ -201,6 +202,7 @@ export class Agent {
     if (mode !== this.mode) {
       this.mode = mode;
       this.messages = [];
+      this.recordedTokens = 0;
     }
   }
 
@@ -212,16 +214,42 @@ export class Agent {
     return this.bash.getCwd();
   }
 
+  getContextStats(
+    contextWindow: number,
+    inFlightText = "",
+  ): {
+    contextWindow: number;
+    usedTokens: number;
+    remainingTokens: number;
+    ratioUsed: number;
+    ratioRemaining: number;
+  } {
+    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+    const estimatedTokens = estimateTokens(`${system}\n${JSON.stringify(this.messages)}\n${inFlightText}`);
+    const usedTokens = Math.min(contextWindow, Math.max(estimatedTokens, this.recordedTokens));
+    const remainingTokens = Math.max(0, contextWindow - usedTokens);
+
+    return {
+      contextWindow,
+      usedTokens,
+      remainingTokens,
+      ratioUsed: usedTokens / contextWindow,
+      ratioRemaining: remainingTokens / contextWindow,
+    };
+  }
+
   async generateTitle(userMessage: string): Promise<string> {
     return genTitle(this.provider, userMessage);
   }
 
   abort(): void {
     this.abortController?.abort();
+    this.emitSubagentStatus(null);
   }
 
   clearHistory(): void {
     this.messages = [];
+    this.recordedTokens = 0;
   }
 
   onSubagentStatus(listener: (status: SubagentStatus | null) => void): () => void {
@@ -234,6 +262,21 @@ export class Agent {
   private emitSubagentStatus(status: SubagentStatus | null): void {
     for (const listener of this.subagentStatusListeners) {
       listener(status);
+    }
+  }
+
+  private discardAbortedTurn(userMessage: ModelMessage): void {
+    const idx = this.messages.lastIndexOf(userMessage);
+    if (idx >= 0) {
+      this.messages.splice(idx, 1);
+    }
+  }
+
+  private recordUsage(usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number }): void {
+    if (!usage) return;
+    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    if (Number.isFinite(total) && total > 0) {
+      this.recordedTokens += total;
     }
   }
 
@@ -252,7 +295,9 @@ export class Agent {
   async runTaskRequest(
     request: TaskRequest,
     onActivity?: (detail: string) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ToolResult> {
+    const signal = abortSignal;
     const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
     const childTools = createTools(childBash, this.provider, childMode);
@@ -270,12 +315,19 @@ export class Agent {
         tools: childTools,
         stopWhen: stepCountIs(Math.min(this.maxToolRounds, request.agent === "explore" ? 60 : 120)),
         maxRetries: 0,
-        abortSignal: this.abortController?.signal,
+        abortSignal: signal,
         temperature: request.agent === "explore" ? 0.2 : 0.5,
         maxOutputTokens: Math.min(this.maxTokens, 8_192),
+        onFinish: ({ totalUsage }) => {
+          this.recordUsage(totalUsage);
+        },
       });
 
       for await (const part of result.fullStream) {
+        if (signal?.aborted) {
+          break;
+        }
+
         if (part.type === "text-delta") {
           assistantText += part.text;
           continue;
@@ -285,6 +337,10 @@ export class Agent {
           lastActivity = formatSubagentActivity(part.toolName, part.input);
           onActivity?.(lastActivity);
         }
+      }
+
+      if (signal?.aborted) {
+        return { success: false, output: "[Cancelled]" };
       }
 
       await result.response;
@@ -301,6 +357,7 @@ export class Agent {
         },
       };
     } catch (err: unknown) {
+      if (signal?.aborted) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       const output = `Task failed: ${msg}`;
       return {
@@ -316,28 +373,38 @@ export class Agent {
     }
   }
 
-  private async runTask(request: TaskRequest): Promise<ToolResult> {
+  private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      return await this.runTaskRequest(request, (detail) => {
-        this.emitSubagentStatus({
-          agent: request.agent,
-          description: request.description,
-          detail,
-        });
-      });
+      return await this.runTaskRequest(
+        request,
+        (detail) => {
+          if (abortSignal?.aborted) return;
+          this.emitSubagentStatus({
+            agent: request.agent,
+            description: request.description,
+            detail,
+          });
+        },
+        abortSignal,
+      );
     } finally {
       this.emitSubagentStatus(null);
     }
   }
 
-  private async runDelegation(request: TaskRequest): Promise<ToolResult> {
+  private async runDelegation(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
+      if (abortSignal?.aborted) {
+        return { success: false, output: "[Cancelled]" };
+      }
+
       return await this.delegations.start(request, {
         model: this.modelId,
         maxToolRounds: this.maxToolRounds,
         maxTokens: this.maxTokens,
       });
     } catch (err: unknown) {
+      if (abortSignal?.aborted) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
@@ -391,18 +458,20 @@ export class Agent {
 
   async *processMessage(userMessage: string): AsyncGenerator<StreamChunk, void, unknown> {
     this.abortController = new AbortController();
+    const signal = this.abortController.signal;
     this.emitSubagentStatus(null);
 
     await this.consumeBackgroundNotifications();
-    this.messages.push({ role: "user", content: userMessage });
+    const userModelMessage: ModelMessage = { role: "user", content: userMessage };
+    this.messages.push(userModelMessage);
 
     let assistantText = "";
     let streamOk = false;
 
     try {
       const tools = createTools(this.bash, this.provider, this.mode, {
-        runTask: (request) => this.runTask(request),
-        runDelegation: (request) => this.runDelegation(request),
+        runTask: (request, abortSignal) => this.runTask(request, abortSignal ?? signal),
+        runDelegation: (request, abortSignal) => this.runDelegation(request, abortSignal ?? signal),
         readDelegation: (id) => this.readDelegation(id),
         listDelegations: () => this.listDelegations(),
       });
@@ -416,13 +485,16 @@ export class Agent {
         tools,
         stopWhen: stepCountIs(this.maxToolRounds),
         maxRetries: 0,
-        abortSignal: this.abortController.signal,
+        abortSignal: signal,
         temperature: 0.7,
         maxOutputTokens: this.maxTokens,
+        onFinish: ({ totalUsage }) => {
+          this.recordUsage(totalUsage);
+        },
       });
 
       for await (const part of result.fullStream) {
-        if (this.abortController.signal.aborted) {
+        if (signal.aborted) {
           yield { type: "content", content: "\n\n[Cancelled]" };
           break;
         }
@@ -457,15 +529,33 @@ export class Agent {
           case "error":
             yield { type: "error", content: String(part.error) };
             break;
+
+          case "abort":
+            yield { type: "content", content: "\n\n[Cancelled]" };
+            break;
         }
+      }
+
+      if (signal.aborted) {
+        this.discardAbortedTurn(userModelMessage);
+        yield { type: "done" };
+        return;
       }
 
       try {
         const response = await result.response;
-        this.messages.push(...response.messages);
-        streamOk = true;
+        if (!signal.aborted) {
+          this.messages.push(...response.messages);
+          streamOk = true;
+        }
       } catch {
         // response promise can fail after stream errors — fall back to manual message
+      }
+
+      if (signal.aborted) {
+        this.discardAbortedTurn(userModelMessage);
+        yield { type: "done" };
+        return;
       }
 
       if (!streamOk && assistantText.trim()) {
@@ -474,18 +564,21 @@ export class Agent {
 
       yield { type: "done" };
     } catch (err: unknown) {
-      if (this.abortController.signal.aborted) {
+      if (signal.aborted) {
+        this.discardAbortedTurn(userModelMessage);
         yield { type: "content", content: "\n\n[Cancelled]" };
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         yield { type: "error", content: `Error: ${msg}` };
       }
-      if (assistantText.trim()) {
+      if (!signal.aborted && assistantText.trim()) {
         this.messages.push({ role: "assistant", content: assistantText });
       }
       yield { type: "done" };
     } finally {
-      this.abortController = null;
+      if (this.abortController?.signal === signal) {
+        this.abortController = null;
+      }
     }
   }
 }
@@ -552,4 +645,8 @@ function firstLine(text: string): string {
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }

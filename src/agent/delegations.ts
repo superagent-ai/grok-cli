@@ -3,46 +3,13 @@ import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import type { DelegationRun, DelegationStatus, TaskRequest, ToolResult } from "../types/index.js";
+import type { DelegationRun, DelegationStatus, TaskRequest, ToolResult } from "../types/index";
 
-const ID_ADJECTIVES = [
-  "brisk",
-  "calm",
-  "clever",
-  "eager",
-  "gentle",
-  "keen",
-  "lively",
-  "nimble",
-  "quiet",
-  "steady",
-];
+const ID_ADJECTIVES = ["brisk", "calm", "clever", "eager", "gentle", "keen", "lively", "nimble", "quiet", "steady"];
 
-const ID_COLORS = [
-  "amber",
-  "blue",
-  "copper",
-  "emerald",
-  "indigo",
-  "ivory",
-  "silver",
-  "teal",
-  "violet",
-  "white",
-];
+const ID_COLORS = ["amber", "blue", "copper", "emerald", "indigo", "ivory", "silver", "teal", "violet", "white"];
 
-const ID_ANIMALS = [
-  "badger",
-  "falcon",
-  "fox",
-  "heron",
-  "lynx",
-  "otter",
-  "owl",
-  "panda",
-  "sparrow",
-  "wolf",
-];
+const ID_ANIMALS = ["badger", "falcon", "fox", "heron", "lynx", "otter", "owl", "panda", "sparrow", "wolf"];
 
 export interface StoredDelegation {
   id: string;
@@ -217,11 +184,7 @@ export async function loadDelegation(jobPath: string): Promise<StoredDelegation>
   return record;
 }
 
-export async function completeDelegation(
-  jobPath: string,
-  output: string,
-  fallbackSummary?: string,
-): Promise<void> {
+export async function completeDelegation(jobPath: string, output: string, fallbackSummary?: string): Promise<void> {
   const record = await loadDelegation(jobPath);
   record.status = "complete";
   record.completedAt = new Date().toISOString();
@@ -306,7 +269,11 @@ function resolveCliArgs(): string[] {
 }
 
 function getProjectId(cwd: string): string {
-  const base = path.basename(cwd).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+  const base =
+    path
+      .basename(cwd)
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "project";
   const hash = createHash("sha1").update(cwd).digest("hex").slice(0, 10);
   return `${base}-${hash}`;
 }
@@ -359,11 +326,7 @@ function formatNotification(record: StoredDelegation): string {
   const title = record.title || record.description || record.id;
   const summary = record.summary || (record.error ? createSummary(record.error) : "No summary available.");
   const statusText = record.status === "complete" ? "complete" : "failed";
-  const lines = [
-    `Background agent ${statusText}: \`${record.id}\``,
-    `Title: ${title}`,
-    `Summary: ${summary}`,
-  ];
+  const lines = [`Background agent ${statusText}: \`${record.id}\``, `Title: ${title}`, `Summary: ${summary}`];
 
   if (record.error) {
     lines.push(`Error: ${record.error}`);
@@ -378,9 +341,7 @@ function toDelegationRun(record: StoredDelegation): DelegationRun {
     id: record.id,
     agent: "explore",
     description: record.description,
-    summary:
-      record.summary ||
-      (record.status === "running" ? "Running in the background." : "No summary available."),
+    summary: record.summary || (record.status === "running" ? "Running in the background." : "No summary available."),
     status: record.status,
   };
 }

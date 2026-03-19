@@ -111,13 +111,6 @@ export interface ModelInfo {
   description: string;
 }
 
-export interface Skill {
-  id: string;
-  title: string;
-  description: string;
-  executable?: boolean;
-}
-
 export type AgentMode = "agent" | "plan" | "ask";
 
 export const MODES: { id: AgentMode; label: string; color: string }[] = [

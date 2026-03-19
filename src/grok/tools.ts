@@ -1,15 +1,15 @@
-import { tool, generateText } from "ai";
+import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { BashTool } from "../tools/bash.js";
-import { readFile, writeFile, editFile } from "../tools/file.js";
-import type { XaiProvider } from "./client.js";
+import { editFile, readFile, writeFile } from "../tools/file.js";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index.js";
+import type { XaiProvider } from "./client.js";
 
 const SEARCH_MODEL = "grok-3-mini-fast";
 
 interface CreateToolsOptions {
-  runTask?: (request: TaskRequest) => Promise<ToolResult>;
-  runDelegation?: (request: TaskRequest) => Promise<ToolResult>;
+  runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
+  runDelegation?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
   readDelegation?: (id: string) => Promise<ToolResult>;
   listDelegations?: () => Promise<ToolResult>;
 }
@@ -60,10 +60,7 @@ export function createTools(
         "View recent output (stdout + stderr) from a background process by its ID. Returns the last N lines of the log.",
       inputSchema: z.object({
         id: z.number().describe("The background process ID"),
-        tail: z
-          .number()
-          .optional()
-          .describe("Number of lines to return from the end (default: 50)"),
+        tail: z.number().optional().describe("Number of lines to return from the end (default: 50)"),
       }),
       execute: async ({ id, tail }) => {
         return bash.getProcessLogs(id, tail);
@@ -82,8 +79,7 @@ export function createTools(
     }),
 
     process_list: tool({
-      description:
-        "List all background processes with their ID, status, PID, age, and command.",
+      description: "List all background processes with their ID, status, PID, age, and command.",
       inputSchema: z.object({}),
       execute: async () => {
         return bash.listProcesses();
@@ -95,14 +91,8 @@ export function createTools(
         "Read the contents of a file. Returns numbered lines with a header showing the range and total line count. Use start_line/end_line to read specific sections of large files iteratively.",
       inputSchema: z.object({
         path: z.string().describe("File path (relative to cwd or absolute)"),
-        start_line: z
-          .number()
-          .optional()
-          .describe("First line to read (1-indexed, default: 1)"),
-        end_line: z
-          .number()
-          .optional()
-          .describe("Last line to read (inclusive, default: end of file)"),
+        start_line: z.number().optional().describe("First line to read (1-indexed, default: 1)"),
+        end_line: z.number().optional().describe("Last line to read (inclusive, default: end of file)"),
       }),
       execute: async ({ path, start_line, end_line }) => {
         return readFile(path, cwd(), start_line, end_line);
@@ -168,10 +158,9 @@ export function createTools(
         }
       },
     }),
-
   };
 
-  const tools: Record<string, any> = { ...base };
+  const tools: ToolSet = { ...base };
 
   if (mode === "agent") {
     tools.write_file = tool({
@@ -204,19 +193,14 @@ export function createTools(
         description:
           "Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
         inputSchema: z.object({
-          agent: z
-            .enum(["general", "explore"])
-            .default("general")
-            .describe("Which sub-agent to use"),
+          agent: z.enum(["general", "explore"]).default("general").describe("Which sub-agent to use"),
           description: z
             .string()
             .describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
-          prompt: z
-            .string()
-            .describe("Detailed instructions for the sub-agent to complete"),
+          prompt: z.string().describe("Detailed instructions for the sub-agent to complete"),
         }),
-        execute: async ({ agent, description, prompt }) => {
-          return options.runTask!({ agent, description, prompt });
+        execute: async ({ agent, description, prompt }, { abortSignal }) => {
+          return options.runTask!({ agent, description, prompt }, abortSignal);
         },
       });
     }
@@ -230,15 +214,11 @@ export function createTools(
             .enum(["explore"])
             .default("explore")
             .describe("Background delegations currently support only the read-only explore agent"),
-          description: z
-            .string()
-            .describe("A short label for the delegation, such as 'OAuth callback research'"),
-          prompt: z
-            .string()
-            .describe("Detailed instructions for the background agent to complete"),
+          description: z.string().describe("A short label for the delegation, such as 'OAuth callback research'"),
+          prompt: z.string().describe("Detailed instructions for the background agent to complete"),
         }),
-        execute: async ({ agent, description, prompt }) => {
-          return options.runDelegation!({ agent, description, prompt });
+        execute: async ({ agent, description, prompt }, { abortSignal }) => {
+          return options.runDelegation!({ agent, description, prompt }, abortSignal);
         },
       });
     }
@@ -271,59 +251,51 @@ export function createTools(
   if (mode !== "plan") return tools;
 
   tools.generate_plan = tool({
-      description:
-        "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
-      inputSchema: z.object({
-        title: z.string().describe("Plan title"),
-        summary: z.string().describe("Brief summary of what the plan accomplishes"),
-        steps: z
-          .array(
-            z.object({
-              title: z.string().describe("Step title"),
-              description: z
-                .string()
-                .describe("Detailed description of what this step involves"),
-              filePaths: z
-                .array(z.string())
-                .optional()
-                .describe("Files affected by this step"),
-            }),
-          )
-          .describe("Ordered list of implementation steps"),
-        questions: z
-          .array(
-            z.object({
-              id: z.string().describe("Unique question identifier"),
-              question: z.string().describe("The question to ask the user"),
-              header: z
-                .string()
-                .optional()
-                .describe("Single-word tab label (e.g. 'Format', 'Storage', 'Testing')"),
-              type: z
-                .enum(["select", "multiselect", "text"])
-                .describe("Question type: select (pick one), multiselect (pick many), or text (free-form)"),
-              options: z
-                .array(
-                  z.object({
-                    id: z.string().describe("Option identifier"),
-                    label: z.string().describe("Option display text"),
-                  }),
-                )
-                .optional()
-                .describe("Options for select/multiselect questions"),
-            }),
-          )
-          .optional()
-          .describe("Questions for the user to answer before proceeding"),
-      }),
-      execute: async ({ title, summary, steps, questions }) => {
-        return {
-          success: true,
-          output: `Plan "${title}" generated with ${steps.length} steps`,
-          plan: { title, summary, steps, questions },
-        };
-      },
-    });
+    description:
+      "Generate an interactive implementation plan with steps and optional questions for the user. The plan is displayed in a structured UI where the user can review steps and answer questions. Always use this tool when creating plans.",
+    inputSchema: z.object({
+      title: z.string().describe("Plan title"),
+      summary: z.string().describe("Brief summary of what the plan accomplishes"),
+      steps: z
+        .array(
+          z.object({
+            title: z.string().describe("Step title"),
+            description: z.string().describe("Detailed description of what this step involves"),
+            filePaths: z.array(z.string()).optional().describe("Files affected by this step"),
+          }),
+        )
+        .describe("Ordered list of implementation steps"),
+      questions: z
+        .array(
+          z.object({
+            id: z.string().describe("Unique question identifier"),
+            question: z.string().describe("The question to ask the user"),
+            header: z.string().optional().describe("Single-word tab label (e.g. 'Format', 'Storage', 'Testing')"),
+            type: z
+              .enum(["select", "multiselect", "text"])
+              .describe("Question type: select (pick one), multiselect (pick many), or text (free-form)"),
+            options: z
+              .array(
+                z.object({
+                  id: z.string().describe("Option identifier"),
+                  label: z.string().describe("Option display text"),
+                }),
+              )
+              .optional()
+              .describe("Options for select/multiselect questions"),
+          }),
+        )
+        .optional()
+        .describe("Questions for the user to answer before proceeding"),
+    }),
+    execute: async ({ title, summary, steps, questions }) => {
+      return {
+        success: true,
+        output: `Plan "${title}" generated with ${steps.length} steps`,
+        plan: { title, summary, steps, questions },
+      };
+    },
+  });
 
   return tools;
 }

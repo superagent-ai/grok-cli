@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { dirname, resolve, isAbsolute } from "path";
 import { createTwoFilesPatch } from "diff";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, isAbsolute, resolve } from "path";
 
 export interface FileDiff {
   filePath: string;
@@ -79,12 +79,7 @@ export function writeFile(filePath: string, content: string, cwd: string): FileR
   }
 }
 
-export function editFile(
-  filePath: string,
-  oldString: string,
-  newString: string,
-  cwd: string,
-): FileResult {
+export function editFile(filePath: string, oldString: string, newString: string, cwd: string): FileResult {
   try {
     const full = resolvePath(filePath, cwd);
     if (!existsSync(full)) {

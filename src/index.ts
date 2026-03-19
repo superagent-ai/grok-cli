@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
-import { program } from "commander";
-import * as dotenv from "dotenv";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import { program } from "commander";
+import * as dotenv from "dotenv";
 import { createElement } from "react";
-import { Agent } from "./agent/agent.js";
-import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations.js";
-import { App } from "./ui/app.js";
-import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings.js";
-import { MODELS } from "./grok/models.js";
+import { Agent } from "./agent/agent";
+import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
+import { MODELS } from "./grok/models";
+import { App } from "./ui/app";
+import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
 
@@ -39,18 +39,15 @@ async function startInteractive(
     exitOnCtrlC: false,
   });
 
-  const onExit = () => { renderer.destroy(); process.exit(0); };
+  const onExit = () => {
+    renderer.destroy();
+    process.exit(0);
+  };
 
   createRoot(renderer).render(createElement(App, { agent, initialMessage, onExit }));
 }
 
-async function runHeadless(
-  prompt: string,
-  apiKey: string,
-  baseURL: string,
-  model: string,
-  maxToolRounds: number,
-) {
+async function runHeadless(prompt: string, apiKey: string, baseURL: string, model: string, maxToolRounds: number) {
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
 
   process.stdout.write(`\x1b[36m⏳ Processing...\x1b[0m\n`);
@@ -91,15 +88,13 @@ async function runBackgroundDelegation(jobPath: string, options: Record<string, 
     const delegation = await loadDelegation(jobPath);
     const apiKey = options.apiKey || getApiKey();
     if (!apiKey) {
-      throw new Error(
-        "API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.",
-      );
+      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
     }
 
     const baseURL = options.baseUrl || getBaseURL();
     const model = options.model || delegation.model || getCurrentModel();
-    const maxToolRounds = parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10)
-      || delegation.maxToolRounds;
+    const maxToolRounds =
+      parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const agent = new Agent(apiKey, baseURL, model, maxToolRounds);
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
@@ -130,7 +125,7 @@ function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
   const model = options.model || getCurrentModel();
-  const maxToolRounds = parseInt(options.maxToolRounds || "400") || 400;
+  const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
 
   if (!apiKey) {
     console.error(
@@ -191,9 +186,7 @@ program
     console.log("\nAvailable Grok Models:\n");
     for (const m of MODELS) {
       const reasoning = m.reasoning ? " (reasoning)" : "";
-      console.log(
-        `  \x1b[36m${m.id}\x1b[0m — ${m.name}${reasoning}`,
-      );
+      console.log(`  \x1b[36m${m.id}\x1b[0m — ${m.name}${reasoning}`);
       console.log(
         `    ${m.description} | ${formatContext(m.contextWindow)} context | $${m.inputPrice}/$${m.outputPrice} per 1M tokens`,
       );

@@ -1,7 +1,7 @@
 import * as fs from "fs";
-import * as path from "path";
 import * as os from "os";
-import { DEFAULT_MODEL, getModelIds } from "../grok/models.js";
+import * as path from "path";
+import { DEFAULT_MODEL, getModelIds } from "../grok/models";
 
 export interface UserSettings {
   apiKey?: string;

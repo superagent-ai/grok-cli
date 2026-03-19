@@ -1,4 +1,4 @@
-import type { ModelInfo } from "../types/index.js";
+import type { ModelInfo } from "../types/index";
 
 export const MODELS: ModelInfo[] = [
   {
@@ -63,21 +63,6 @@ export const MODELS: ModelInfo[] = [
     outputPrice: 0.5,
     reasoning: false,
     description: "Budget-friendly compact model",
-  },
-];
-
-export const MODEL_GROUPS: { category: string; models: string[] }[] = [
-  {
-    category: "Grok 4",
-    models: ["grok-4-0709", "grok-4.20-beta-0309", "grok-4-fast", "grok-4-1-fast"],
-  },
-  {
-    category: "Grok Code",
-    models: ["grok-code-fast-1"],
-  },
-  {
-    category: "Grok 3",
-    models: ["grok-3", "grok-3-mini"],
   },
 ];
 
