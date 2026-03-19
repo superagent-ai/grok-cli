@@ -1,5 +1,5 @@
 {
-  "name": "@vibe-kit/grok-cli",
+  "name": "grok-dev",
   "version": "1.0.0",
   "description": "An open-source AI coding agent powered by Grok, built with Bun and OpenTUI.",
   "type": "module",

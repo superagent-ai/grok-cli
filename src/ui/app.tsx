@@ -16,7 +16,7 @@ import type {
   ToolCall,
 } from "../types/index";
 import { MODES } from "../types/index";
-import { saveProjectSettings } from "../utils/settings";
+import { saveProjectSettings, saveUserSettings } from "../utils/settings";
 import { Markdown } from "./markdown";
 import {
   formatPlanAnswers,
@@ -226,6 +226,8 @@ interface AppProps {
 
 export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
+  const initialHasApiKey = agent.hasApiKey();
+  const [hasApiKey, setHasApiKey] = useState(initialHasApiKey);
   const [messages, setMessages] = useState<ChatEntry[]>(() => agent.getChatEntries());
   const [streamContent, setStreamContent] = useState("");
   const [_streamReasoning, setStreamReasoning] = useState("");
@@ -238,6 +240,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
+  const [showApiKeyModal, setShowApiKeyModal] = useState(() => !initialHasApiKey);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
@@ -249,6 +253,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
   const imageCounterRef = useRef(0);
   const pasteCounterRef = useRef(0);
+  const apiKeyInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width, height } = useTerminalDimensions();
@@ -256,6 +261,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const contentAccRef = useRef("");
   const startTimeRef = useRef(0);
   const isProcessingRef = useRef(false);
+  const hasApiKeyRef = useRef(initialHasApiKey);
+  const showApiKeyModalRef = useRef(!initialHasApiKey);
   const queuedMessagesRef = useRef<string[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
@@ -314,6 +321,47 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       /* */
     }
   }, []);
+
+  const openApiKeyModal = useCallback(() => {
+    showApiKeyModalRef.current = true;
+    setApiKeyError(null);
+    setShowApiKeyModal(true);
+  }, []);
+
+  const closeApiKeyModal = useCallback(() => {
+    showApiKeyModalRef.current = false;
+    setApiKeyError(null);
+    setShowApiKeyModal(false);
+  }, []);
+
+  const submitApiKey = useCallback(() => {
+    const apiKey = (apiKeyInputRef.current?.plainText || "").trim();
+    if (!apiKey) {
+      setApiKeyError("Enter an API key to continue.");
+      return;
+    }
+    if (!apiKey.startsWith("xai-")) {
+      setApiKeyError("API keys should start with xai-.");
+      return;
+    }
+
+    saveUserSettings({ apiKey });
+    agent.setApiKey(apiKey);
+    hasApiKeyRef.current = true;
+    showApiKeyModalRef.current = false;
+    setHasApiKey(true);
+    setApiKeyError(null);
+    setShowApiKeyModal(false);
+    apiKeyInputRef.current?.clear();
+  }, [agent]);
+
+  useEffect(() => {
+    hasApiKeyRef.current = hasApiKey;
+  }, [hasApiKey]);
+
+  useEffect(() => {
+    showApiKeyModalRef.current = showApiKeyModal;
+  }, [showApiKeyModal]);
 
   const invalidateActiveRun = useCallback(() => {
     activeRunIdRef.current += 1;
@@ -473,11 +521,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   );
 
   useEffect(() => {
-    if (initialMessage && !processedInitial.current) {
+    if (initialMessage && hasApiKey && !processedInitial.current) {
       processedInitial.current = true;
       processMessage(initialMessage);
     }
-  }, [initialMessage, processMessage]);
+  }, [hasApiKey, initialMessage, processMessage]);
   useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
   useEffect(() => {
     let active = true;
@@ -636,256 +684,309 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     [pqs, isSinglePlan, submitPlanAnswers],
   );
 
-  useKeyboard((key) => {
-    if (showPlanPanel) {
-      const q = planQuestions[pqs.tab];
+  const handleKey = useCallback(
+    (key: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) => {
+      if (showPlanPanel) {
+        const q = planQuestions[pqs.tab];
 
-      // Escape always dismisses
-      if (key.name === "escape") {
-        dismissPlan();
-        return;
-      }
+        // Escape always dismisses
+        if (key.name === "escape") {
+          dismissPlan();
+          return;
+        }
 
-      // When editing custom text input
-      if (pqs.editing && !isPlanConfirmTab) {
-        if (key.name === "return") {
-          const qId = q?.id;
-          if (qId) {
-            const text = (pqs.customInputs[qId] ?? "").trim();
-            if (text) {
-              if (q.type === "multiselect") {
-                const existing = (pqs.answers[qId] as string[] | undefined) ?? [];
-                const next = existing.includes(text) ? existing : [...existing, text];
-                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: next } }));
-              } else if (q.type === "text") {
-                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                if (isSinglePlan) {
-                  submitPlanAnswers();
-                  return;
+        // When editing custom text input
+        if (pqs.editing && !isPlanConfirmTab) {
+          if (key.name === "return") {
+            const qId = q?.id;
+            if (qId) {
+              const text = (pqs.customInputs[qId] ?? "").trim();
+              if (text) {
+                if (q.type === "multiselect") {
+                  const existing = (pqs.answers[qId] as string[] | undefined) ?? [];
+                  const next = existing.includes(text) ? existing : [...existing, text];
+                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: next } }));
+                } else if (q.type === "text") {
+                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
+                  if (isSinglePlan) {
+                    submitPlanAnswers();
+                    return;
+                  }
+                  setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+                } else {
+                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
+                  if (isSinglePlan) {
+                    submitPlanAnswers();
+                    return;
+                  }
+                  setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
                 }
-                setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
               } else {
-                setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                if (isSinglePlan) {
-                  submitPlanAnswers();
-                  return;
-                }
-                setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+                setPqs((s) => ({ ...s, editing: false }));
               }
-            } else {
-              setPqs((s) => ({ ...s, editing: false }));
             }
+            return;
+          }
+          if (key.name === "backspace") {
+            const qId = q?.id;
+            if (qId)
+              setPqs((s) => ({
+                ...s,
+                customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "").slice(0, -1) },
+              }));
+            return;
+          }
+          if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+            const qId = q?.id;
+            if (qId)
+              setPqs((s) => ({
+                ...s,
+                customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "") + key.sequence },
+              }));
+            return;
           }
           return;
         }
+
+        // Tab / left / right — switch between question tabs
+        if (key.name === "tab") {
+          const dir = key.shift ? -1 : 1;
+          setPqs((s) => ({ ...s, tab: (s.tab + dir + planTabCount) % planTabCount, selected: 0 }));
+          return;
+        }
+        if (key.name === "left" || key.name === "h") {
+          setPqs((s) => ({ ...s, tab: (s.tab - 1 + planTabCount) % planTabCount, selected: 0 }));
+          return;
+        }
+        if (key.name === "right" || key.name === "l") {
+          setPqs((s) => ({ ...s, tab: (s.tab + 1) % planTabCount, selected: 0 }));
+          return;
+        }
+
+        // Confirm tab
+        if (isPlanConfirmTab) {
+          if (key.name === "return") {
+            submitPlanAnswers();
+            return;
+          }
+          return;
+        }
+
+        if (!q) return;
+
+        // Text-only question (no options)
+        if (q.type === "text") {
+          setPqs((s) => ({ ...s, editing: true }));
+          return;
+        }
+
+        // Up/down — navigate options
+        const options = q.options ?? [];
+        const showCustom = true;
+        const totalItems = options.length + 1;
+
+        if (key.name === "up" || key.name === "k") {
+          setPqs((s) => ({ ...s, selected: (s.selected - 1 + totalItems) % totalItems }));
+          return;
+        }
+        if (key.name === "down" || key.name === "j") {
+          setPqs((s) => ({ ...s, selected: (s.selected + 1) % totalItems }));
+          return;
+        }
+
+        // Number keys 1-9 for quick selection
+        const digit = Number(key.name);
+        if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(totalItems, 9)) {
+          const idx = digit - 1;
+          setPqs((s) => ({ ...s, selected: idx }));
+          handlePlanSelect(q, idx, options, showCustom);
+          return;
+        }
+
+        // Enter — select current option
+        if (key.name === "return") {
+          handlePlanSelect(q, pqs.selected, options, showCustom);
+          return;
+        }
+
+        return;
+      }
+      if (showApiKeyModalRef.current) {
+        if (key.name === "escape") {
+          closeApiKeyModal();
+          return;
+        }
+        if (key.name === "return") {
+          submitApiKey();
+        }
+        return;
+      }
+      if (showSlashMenu) {
+        if (key.name === "escape") {
+          setShowSlashMenu(false);
+          setSlashSearchQuery("");
+          inputRef.current?.clear();
+          return;
+        }
+        if (key.name === "up") {
+          setSlashMenuIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setSlashMenuIndex((i) => Math.min(filteredSlashItems.length - 1, i + 1));
+          return;
+        }
+        if (key.name === "return") {
+          const item = filteredSlashItems[slashMenuIndex];
+          if (item) handleSlashMenuSelect(item);
+          setSlashSearchQuery("");
+          return;
+        }
         if (key.name === "backspace") {
-          const qId = q?.id;
-          if (qId)
-            setPqs((s) => ({
-              ...s,
-              customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "").slice(0, -1) },
-            }));
+          setSlashSearchQuery((q) => q.slice(0, -1));
+          setSlashMenuIndex(0);
           return;
         }
         if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-          const qId = q?.id;
-          if (qId)
-            setPqs((s) => ({
-              ...s,
-              customInputs: { ...s.customInputs, [qId]: (s.customInputs[qId] ?? "") + key.sequence },
-            }));
+          setSlashSearchQuery((q) => q + key.sequence);
+          setSlashMenuIndex(0);
           return;
         }
         return;
       }
-
-      // Tab / left / right — switch between question tabs
-      if (key.name === "tab") {
-        const dir = key.shift ? -1 : 1;
-        setPqs((s) => ({ ...s, tab: (s.tab + dir + planTabCount) % planTabCount, selected: 0 }));
-        return;
-      }
-      if (key.name === "left" || key.name === "h") {
-        setPqs((s) => ({ ...s, tab: (s.tab - 1 + planTabCount) % planTabCount, selected: 0 }));
-        return;
-      }
-      if (key.name === "right" || key.name === "l") {
-        setPqs((s) => ({ ...s, tab: (s.tab + 1) % planTabCount, selected: 0 }));
-        return;
-      }
-
-      // Confirm tab
-      if (isPlanConfirmTab) {
+      if (showModelPicker) {
+        if (key.name === "escape") {
+          setShowModelPicker(false);
+          setModelSearchQuery("");
+          return;
+        }
+        if (key.name === "up") {
+          setModelPickerIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1));
+          return;
+        }
         if (key.name === "return") {
-          submitPlanAnswers();
+          const sel = filteredModelIds[modelPickerIndex];
+          if (sel) {
+            agent.setModel(sel);
+            setModel(sel);
+            saveProjectSettings({ model: sel });
+            saveUserSettings({ defaultModel: sel });
+          }
+          setShowModelPicker(false);
+          setModelSearchQuery("");
+          return;
+        }
+        if (key.name === "backspace") {
+          setModelSearchQuery((q) => q.slice(0, -1));
+          setModelPickerIndex(0);
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          setModelSearchQuery((q) => q + key.sequence);
+          setModelPickerIndex(0);
           return;
         }
         return;
       }
-
-      if (!q) return;
-
-      // Text-only question (no options)
-      if (q.type === "text") {
-        setPqs((s) => ({ ...s, editing: true }));
+      if (!hasApiKeyRef.current && shouldOpenApiKeyModalForKey(key)) {
+        openApiKeyModal();
         return;
       }
-
-      // Up/down — navigate options
-      const options = q.options ?? [];
-      const showCustom = true;
-      const totalItems = options.length + 1;
-
-      if (key.name === "up" || key.name === "k") {
-        setPqs((s) => ({ ...s, selected: (s.selected - 1 + totalItems) % totalItems }));
-        return;
-      }
-      if (key.name === "down" || key.name === "j") {
-        setPqs((s) => ({ ...s, selected: (s.selected + 1) % totalItems }));
-        return;
-      }
-
-      // Number keys 1-9 for quick selection
-      const digit = Number(key.name);
-      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(totalItems, 9)) {
-        const idx = digit - 1;
-        setPqs((s) => ({ ...s, selected: idx }));
-        handlePlanSelect(q, idx, options, showCustom);
-        return;
-      }
-
-      // Enter — select current option
-      if (key.name === "return") {
-        handlePlanSelect(q, pqs.selected, options, showCustom);
-        return;
-      }
-
-      return;
-    }
-    if (showSlashMenu) {
-      if (key.name === "escape") {
-        setShowSlashMenu(false);
-        setSlashSearchQuery("");
-        inputRef.current?.clear();
-        return;
-      }
-      if (key.name === "up") {
-        setSlashMenuIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (key.name === "down") {
-        setSlashMenuIndex((i) => Math.min(filteredSlashItems.length - 1, i + 1));
-        return;
-      }
-      if (key.name === "return") {
-        const item = filteredSlashItems[slashMenuIndex];
-        if (item) handleSlashMenuSelect(item);
-        setSlashSearchQuery("");
-        return;
-      }
-      if (key.name === "backspace") {
-        setSlashSearchQuery((q) => q.slice(0, -1));
-        setSlashMenuIndex(0);
-        return;
-      }
-      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-        setSlashSearchQuery((q) => q + key.sequence);
-        setSlashMenuIndex(0);
-        return;
-      }
-      return;
-    }
-    if (showModelPicker) {
-      if (key.name === "escape") {
-        setShowModelPicker(false);
-        setModelSearchQuery("");
-        return;
-      }
-      if (key.name === "up") {
-        setModelPickerIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (key.name === "down") {
-        setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1));
-        return;
-      }
-      if (key.name === "return") {
-        const sel = filteredModelIds[modelPickerIndex];
-        if (sel) {
-          agent.setModel(sel);
-          setModel(sel);
-          saveProjectSettings({ model: sel });
+      if (isProcessing && key.name === "escape") {
+        invalidateActiveRun();
+        if (queuedMessagesRef.current.length > 0) {
+          queuedMessagesRef.current = [];
+          setQueuedMessages([]);
+        } else {
+          agent.abort();
         }
-        setShowModelPicker(false);
-        setModelSearchQuery("");
         return;
       }
-      if (key.name === "backspace") {
-        setModelSearchQuery((q) => q.slice(0, -1));
-        setModelPickerIndex(0);
+      if (key.sequence === "/" && !isProcessing) {
+        const text = inputRef.current?.plainText || "";
+        if (!text.trim()) {
+          setShowSlashMenu(true);
+          setSlashMenuIndex(0);
+          setSlashSearchQuery("");
+          return;
+        }
+      }
+      if (key.name === "c" && key.ctrl) {
+        const text = inputRef.current?.plainText || "";
+        if (text.trim()) {
+          inputRef.current?.clear();
+          setPasteBlocks([]);
+        } else {
+          onExit ? onExit() : process.exit(0);
+        }
         return;
       }
-      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-        setModelSearchQuery((q) => q + key.sequence);
-        setModelPickerIndex(0);
+      if (key.name === "tab" && !isProcessing) {
+        cycleMode();
         return;
       }
-      return;
-    }
-    if (isProcessing && key.name === "escape") {
-      invalidateActiveRun();
-      if (queuedMessagesRef.current.length > 0) {
-        queuedMessagesRef.current = [];
-        setQueuedMessages([]);
-      } else {
-        agent.abort();
-      }
-      return;
-    }
-    if (key.sequence === "/" && !isProcessing) {
-      const text = inputRef.current?.plainText || "";
-      if (!text.trim()) {
-        setShowSlashMenu(true);
-        setSlashMenuIndex(0);
-        setSlashSearchQuery("");
-        return;
-      }
-    }
-    if (key.name === "c" && key.ctrl) {
-      const text = inputRef.current?.plainText || "";
-      if (text.trim()) {
-        inputRef.current?.clear();
-        setPasteBlocks([]);
-      } else {
-        onExit ? onExit() : process.exit(0);
-      }
-      return;
-    }
-    if (key.name === "tab" && !isProcessing) {
-      cycleMode();
-      return;
-    }
-  });
+    },
+    [
+      agent,
+      closeApiKeyModal,
+      cycleMode,
+      dismissPlan,
+      filteredModelIds,
+      filteredSlashItems,
+      handlePlanSelect,
+      handleSlashMenuSelect,
+      invalidateActiveRun,
+      isPlanConfirmTab,
+      isProcessing,
+      isSinglePlan,
+      modelPickerIndex,
+      openApiKeyModal,
+      onExit,
+      planQuestions,
+      planTabCount,
+      pqs,
+      showModelPicker,
+      showPlanPanel,
+      showSlashMenu,
+      slashMenuIndex,
+      submitApiKey,
+      submitPlanAnswers,
+    ],
+  );
+  useKeyboard(handleKey);
 
-  const handlePaste = useCallback((event: PasteEvent) => {
-    const text = decodePasteBytes(event.bytes);
-    const trimmed = text.trim();
-    const imageExts = /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff?)$/i;
-    if (imageExts.test(trimmed) && !trimmed.includes("\n")) {
+  const handlePaste = useCallback(
+    (event: PasteEvent) => {
+      if (!hasApiKeyRef.current) {
+        event.preventDefault();
+        openApiKeyModal();
+        return;
+      }
+
+      const text = decodePasteBytes(event.bytes);
+      const trimmed = text.trim();
+      const imageExts = /\.(png|jpe?g|gif|webp|svg|bmp|ico|tiff?)$/i;
+      if (imageExts.test(trimmed) && !trimmed.includes("\n")) {
+        event.preventDefault();
+        const id = ++pasteCounterRef.current;
+        const imgNum = ++imageCounterRef.current;
+        setPasteBlocks((prev) => [...prev, { id, content: trimmed, lines: 1, isImage: true }]);
+        inputRef.current?.insertText(`[Image ${imgNum}]`);
+        return;
+      }
+      const lineCount = text.split("\n").length;
+      if (lineCount < 2) return;
       event.preventDefault();
       const id = ++pasteCounterRef.current;
-      const imgNum = ++imageCounterRef.current;
-      setPasteBlocks((prev) => [...prev, { id, content: trimmed, lines: 1, isImage: true }]);
-      inputRef.current?.insertText(`[Image ${imgNum}]`);
-      return;
-    }
-    const lineCount = text.split("\n").length;
-    if (lineCount < 2) return;
-    event.preventDefault();
-    const id = ++pasteCounterRef.current;
-    setPasteBlocks((prev) => [...prev, { id, content: text, lines: lineCount }]);
-    inputRef.current?.insertText(`[Pasted ~${lineCount} lines]`);
-  }, []);
+      setPasteBlocks((prev) => [...prev, { id, content: text, lines: lineCount }]);
+      inputRef.current?.insertText(`[Pasted ~${lineCount} lines]`);
+    },
+    [openApiKeyModal],
+  );
 
   const handleSubmit = useCallback(() => {
     const raw = inputRef.current?.plainText || "";
@@ -914,6 +1015,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
     }
     if (!message.trim()) return;
+    if (!hasApiKeyRef.current) {
+      openApiKeyModal();
+      return;
+    }
     if (handleCommand(message)) return;
     if (isProcessingRef.current) {
       queuedMessagesRef.current.push(message.trim());
@@ -922,7 +1027,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       return;
     }
     processMessage(message);
-  }, [agent, handleCommand, processMessage, pasteBlocks, scrollToBottom]);
+  }, [agent, handleCommand, openApiKeyModal, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -980,6 +1085,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               showModelPicker={showModelPicker}
               showSlashMenu={showSlashMenu}
               showPlanQuestions={showPlanPanel}
+              showApiKeyModal={showApiKeyModal}
               onSubmit={handleSubmit}
               onPaste={handlePaste}
               pasteBlocks={pasteBlocks}
@@ -1009,6 +1115,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
                 showModelPicker={showModelPicker}
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
+                showApiKeyModal={showApiKeyModal}
                 onSubmit={handleSubmit}
                 onPaste={handlePaste}
                 pasteBlocks={pasteBlocks}
@@ -1028,6 +1135,16 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             <text fg={t.textDim}>{"v1.0.0"}</text>
           </box>
         </>
+      )}
+      {showApiKeyModal && (
+        <ApiKeyModal
+          t={t}
+          width={width}
+          height={height}
+          inputRef={apiKeyInputRef}
+          error={apiKeyError}
+          onSubmit={submitApiKey}
+        />
       )}
       {showSlashMenu && (
         <SlashMenuModal
@@ -1130,6 +1247,7 @@ function PromptBox({
   showModelPicker,
   showSlashMenu,
   showPlanQuestions,
+  showApiKeyModal,
   onSubmit,
   onPaste,
   pasteBlocks: _pasteBlocks,
@@ -1147,6 +1265,7 @@ function PromptBox({
   showModelPicker: boolean;
   showSlashMenu: boolean;
   showPlanQuestions: boolean;
+  showApiKeyModal: boolean;
   onSubmit: () => void;
   onPaste: (event: PasteEvent) => void;
   pasteBlocks: { id: number; content: string; lines: number }[];
@@ -1209,7 +1328,7 @@ function PromptBox({
           <box flexGrow={1}>
             <textarea
               ref={inputRef}
-              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
+              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions && !showApiKeyModal}
               placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
               textColor={t.text}
               backgroundColor={t.backgroundElement}
@@ -1260,6 +1379,81 @@ function PromptBox({
                 <span style={{ fg: t.textMuted }}>{"modes"}</span>
               </text>
             </>
+          )}
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function ApiKeyModal({
+  t,
+  width,
+  height,
+  inputRef,
+  error,
+  onSubmit,
+}: {
+  t: Theme;
+  width: number;
+  height: number;
+  inputRef: React.RefObject<TextareaRenderable | null>;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  const overlayBg = "#000000cc" as string;
+  const panelWidth = Math.min(68, width - 6);
+  const panelHeight = 11;
+  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box width={panelWidth} height={panelHeight} backgroundColor={t.backgroundPanel} paddingTop={1} paddingBottom={1}>
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Add API key"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.text}>{"Paste your xAI API key to unlock chat. You can hide this prompt with esc."}</text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
+            <textarea
+              ref={inputRef}
+              focused={true}
+              placeholder="xai-..."
+              textColor={t.text}
+              backgroundColor={t.backgroundElement}
+              placeholderColor={t.textMuted}
+              minHeight={1}
+              maxHeight={3}
+              wrapMode="word"
+              keyBindings={TEXTAREA_KEYBINDINGS}
+              onSubmit={onSubmit as unknown as () => void}
+            />
+          </box>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          {error ? (
+            <text fg={t.diffRemovedFg}>{error}</text>
+          ) : (
+            <text>
+              <span style={{ fg: t.primary }}>{"enter "}</span>
+              <span style={{ fg: t.textMuted }}>{"save key  ·  "}</span>
+              <span style={{ fg: t.primary }}>{"esc "}</span>
+              <span style={{ fg: t.textMuted }}>{"hide"}</span>
+            </text>
           )}
         </box>
       </box>
@@ -1969,6 +2163,16 @@ function sanitizeContent(raw: string): string {
   let s = raw.replace(/^[\s\n]*assistant:\s*/gi, "");
   s = s.replace(/\{"success"\s*:\s*(true|false)\s*,\s*"output"\s*:\s*"[\s\S]*$/m, "");
   return s.trim();
+}
+function shouldOpenApiKeyModalForKey(key: {
+  name?: string;
+  sequence?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+}): boolean {
+  if (key.ctrl || key.meta) return false;
+  if (key.name === "return" || key.name === "backspace") return true;
+  return !!(key.sequence && key.sequence.length === 1);
 }
 function compactTaskLabel(label: string): string {
   const words = label.trim().split(/\s+/).filter(Boolean);

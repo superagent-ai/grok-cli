@@ -23,7 +23,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function startInteractive(
-  apiKey: string,
+  apiKey: string | undefined,
   baseURL: string,
   model: string,
   maxToolRounds: number,
@@ -138,6 +138,13 @@ function resolveConfig(options: Record<string, string | undefined>) {
   const model = options.model || getCurrentModel();
   const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
 
+  if (options.apiKey) saveUserSettings({ apiKey: options.apiKey });
+  if (options.model) saveUserSettings({ defaultModel: options.model });
+
+  return { apiKey, baseURL, model, maxToolRounds };
+}
+
+function requireApiKey(apiKey: string | undefined): string {
   if (!apiKey) {
     console.error(
       "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
@@ -145,10 +152,7 @@ function resolveConfig(options: Record<string, string | undefined>) {
     process.exit(1);
   }
 
-  if (options.apiKey) saveUserSettings({ apiKey: options.apiKey });
-  if (options.baseUrl) saveUserSettings({ baseURL: options.baseUrl });
-
-  return { apiKey, baseURL, model, maxToolRounds };
+  return apiKey;
 }
 
 program
@@ -185,7 +189,7 @@ program
     if (options.prompt) {
       await runHeadless(
         options.prompt,
-        config.apiKey,
+        requireApiKey(config.apiKey),
         config.baseURL,
         config.model,
         config.maxToolRounds,
