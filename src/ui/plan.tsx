@@ -27,7 +27,7 @@ export function PlanView({ plan, t }: PlanViewProps) {
         <text fg={t.textMuted}>{plan.summary}</text>
       </box>
       {plan.steps.map((step, i) => (
-        <box key={i} paddingLeft={2} marginBottom={0} flexDirection="column">
+        <box key={`step-${step.title}`} paddingLeft={2} marginBottom={0} flexDirection="column">
           <text>
             <span style={{ fg: t.planStepNum }}>{`${i + 1}. `}</span>
             <span style={{ fg: t.planStepTitle }}>
@@ -41,7 +41,7 @@ export function PlanView({ plan, t }: PlanViewProps) {
             <box paddingLeft={3}>
               <text>
                 {step.filePaths.map((fp, j) => (
-                  <span key={j} style={{ fg: t.planStepFile }}>
+                  <span key={fp} style={{ fg: t.planStepFile }}>
                     {j > 0 ? ", " : ""}
                     {fp}
                   </span>

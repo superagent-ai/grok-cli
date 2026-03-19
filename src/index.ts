@@ -136,7 +136,7 @@ function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
   const model = options.model || getCurrentModel();
-  const maxToolRounds = parseInt(options.maxToolRounds || "400") || 400;
+  const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
 
   if (!apiKey) {
     console.error(
