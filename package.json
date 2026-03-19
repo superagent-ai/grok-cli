@@ -39,17 +39,18 @@
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "ai": "^6.0.116",
-    "commander": "^12.0.0",
+    "commander": "^12.1.0",
     "diff": "^8.0.3",
-    "dotenv": "^16.4.0",
-    "react": "^19.1.0",
+    "dotenv": "^16.6.1",
+    "react": "^19.2.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
     "@types/diff": "^8.0.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.1.0",
-    "typescript": "^5.8.0"
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=18.0.0"
