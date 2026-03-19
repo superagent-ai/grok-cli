@@ -1,18 +1,16 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
-import { DelegationManager } from "./delegations";
+import { type ModelMessage, stepCountIs, streamText } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
 import { createTools } from "../grok/tools";
 import {
-  SessionStore,
   appendMessages,
   appendSystemMessage,
   buildChatEntries,
   getSessionTotalTokens,
   loadTranscript,
   recordUsageEvent,
+  SessionStore,
 } from "../storage/index";
 import { BashTool } from "../tools/bash";
-import { loadCustomInstructions } from "../utils/instructions";
 import type {
   AgentMode,
   ChatEntry,
@@ -27,6 +25,8 @@ import type {
   UsageSource,
   WorkspaceInfo,
 } from "../types/index";
+import { loadCustomInstructions } from "../utils/instructions";
+import { DelegationManager } from "./delegations";
 
 const MAX_TOOL_ROUNDS = 400;
 

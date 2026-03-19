@@ -1,31 +1,31 @@
-import os from "os";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
+import type { KeyBinding, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { decodePasteBytes, type PasteEvent } from "@opentui/core";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import os from "os";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../agent/agent";
+import { getModelInfo, MODELS } from "../grok/models";
 import type {
-  ChatEntry,
-  ToolCall,
   AgentMode,
-  ModelInfo,
+  ChatEntry,
   FileDiff,
+  ModelInfo,
   Plan,
   PlanQuestion,
   SubagentStatus,
+  ToolCall,
 } from "../types/index";
 import { MODES } from "../types/index";
-import { getModelInfo, MODELS } from "../grok/models";
 import { saveProjectSettings, saveUserSettings } from "../utils/settings";
-import { dark, type Theme } from "./theme";
 import { Markdown } from "./markdown";
 import {
-  PlanView,
-  PlanQuestionsPanel,
   formatPlanAnswers,
   initialPlanQuestionsState,
+  PlanQuestionsPanel,
   type PlanQuestionsState,
+  PlanView,
 } from "./plan";
+import { dark, type Theme } from "./theme";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
@@ -939,18 +939,20 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       filteredSlashItems,
       handlePlanSelect,
       handleSlashMenuSelect,
-      hasApiKey,
       invalidateActiveRun,
       isPlanConfirmTab,
       isProcessing,
+      isSinglePlan,
+      modelPickerIndex,
       openApiKeyModal,
+      onExit,
       planQuestions,
       planTabCount,
       pqs,
-      showApiKeyModal,
       showModelPicker,
       showPlanPanel,
       showSlashMenu,
+      slashMenuIndex,
       submitApiKey,
       submitPlanAnswers,
     ],

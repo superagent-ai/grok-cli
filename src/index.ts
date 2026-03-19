@@ -3,8 +3,8 @@ import { program } from "commander";
 import * as dotenv from "dotenv";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
-import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 import { MODELS } from "./grok/models";
+import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
 
@@ -136,7 +136,7 @@ function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
   const model = options.model || getCurrentModel();
-  const maxToolRounds = parseInt(options.maxToolRounds || "400") || 400;
+  const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
 
   if (options.apiKey) saveUserSettings({ apiKey: options.apiKey });
   if (options.model) saveUserSettings({ defaultModel: options.model });
