@@ -48,6 +48,7 @@ export const dark = {
   planInputBg: "#1a1a1a",
   planInputText: "#e0e0e0",
   planHint: "#555555",
+  queueBg: "#222222",
 } as const;
 
 export type Theme = typeof dark;
