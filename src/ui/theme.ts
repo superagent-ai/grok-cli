@@ -9,6 +9,7 @@ export const dark = {
   textDim: "#444444",
   primary: "#ffffff",
   accent: "#5c9cf5",
+  subagentAccent: "#66d9c2",
   selected: "#ffffff",
   selectedBg: "#2a2a2a",
   diffAdded: "#1e3a1e",

@@ -4,7 +4,16 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { ScrollBoxRenderable, TextareaRenderable, KeyBinding } from "@opentui/core";
 import { decodePasteBytes, PasteEvent } from "@opentui/core";
 import type { Agent } from "../agent/agent.js";
-import type { ChatEntry, ToolCall, AgentMode, ModelInfo, FileDiff, Plan, PlanQuestion } from "../types/index.js";
+import type {
+  ChatEntry,
+  ToolCall,
+  AgentMode,
+  ModelInfo,
+  FileDiff,
+  Plan,
+  PlanQuestion,
+  SubagentStatus,
+} from "../types/index.js";
 import { MODES } from "../types/index.js";
 import { getModelInfo, MODELS } from "../grok/models.js";
 import { saveProjectSettings } from "../utils/settings.js";
@@ -13,6 +22,7 @@ import { Markdown } from "./markdown.js";
 import { PlanView, PlanQuestionsPanel, formatPlanAnswers, initialPlanQuestionsState, type PlanAnswers, type PlanQuestionsState } from "./plan.js";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
+const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
 
 type Star = { col: number; ch: string };
 type Row = { stars: Star[]; grok?: number };
@@ -126,6 +136,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
   const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>([]);
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
   const imageCounterRef = useRef(0);
   const pasteCounterRef = useRef(0);
@@ -176,7 +187,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const processMessage = useCallback(async (text: string) => {
     if (!text.trim() || isProcessingRef.current) return;
     isProcessingRef.current = true;
-    setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); contentAccRef.current = "";
+    setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null); contentAccRef.current = "";
     startTimeRef.current = Date.now();
     if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
     setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: modeInfo.color }]);
@@ -229,12 +240,13 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfo.color }]);
     }
     
-    contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]);
+    contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null);
     isProcessingRef.current = false;
     setIsProcessing(false); setTimeout(scrollToBottom, 50);
   }, [agent, scrollToBottom, modeInfo, model]);
 
   useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
+  useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
 
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
@@ -545,8 +557,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             ))}
             {/* Active tool calls — pending inline */}
             {activeToolCalls.map((tc, i) => (
-              <InlineTool key={i} t={t} pending>{toolLabel(tc)}</InlineTool>
+              tc.function.name === "task"
+                ? <SubagentTaskLine key={i} t={t} label={toolArgs(tc) || "Working"} pending />
+                : <InlineTool key={i} t={t} pending>{toolLabel(tc)}</InlineTool>
             ))}
+            {activeSubagent && <SubagentActivity t={t} status={activeSubagent} />}
             {/* Streaming assistant content */}
             {streamContent && (
               <box paddingLeft={3} marginTop={1} flexShrink={0}>
@@ -717,6 +732,10 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
         return <PlanView plan={plan} t={t} />;
       }
 
+      if (name === "task" && entry.toolResult?.task) {
+        return <TaskResultView t={t} entry={entry} />;
+      }
+
       if (name === "write_file" || name === "edit_file") {
         const filePath = diff?.filePath || tryParseArg(entry.toolCall, "path") || args;
         const label = name === "write_file" ? `Write ${filePath}` : `Edit ${filePath}`;
@@ -859,25 +878,13 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
 }
 
 function ShimmerText({ t, text }: { t: Theme; text: string }) {
-  const [pos, setPos] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setPos(p => (p + 1) % (text.length + 4)), 60);
-    return () => clearInterval(id);
-  }, [text]);
-
-  const dim = "#333333";
-  const mid = "#555555";
-  const bright = "#888888";
-
   return (
     <box paddingLeft={3}>
       <text>
-        <span style={{ fg: "#555555" }}>{"◇ "}</span>
-        {text.split("").map((ch, i) => {
-          const dist = Math.abs(i - pos);
-          const fg = dist === 0 ? bright : dist === 1 ? mid : dim;
-          return <span key={i} style={{ fg }}>{ch}</span>;
-        })}
+        <span style={{ fg: t.textMuted }}>
+          <LoadingSpinner />
+        </span>
+        <span style={{ fg: t.textMuted }}>{" "}{text}</span>
       </text>
     </box>
   );
@@ -889,6 +896,65 @@ function InlineTool({ t, pending, children }: { t: Theme; pending: boolean; chil
       <text fg={t.textMuted}>
         {"→ "}{children}
       </text>
+    </box>
+  );
+}
+
+function SubagentTaskLine({ t, label, pending }: { t: Theme; label: string; pending: boolean }) {
+  const displayLabel = compactTaskLabel(label);
+
+  return (
+    <box paddingLeft={3}>
+      <text>
+        {pending ? (
+          <span style={{ fg: t.subagentAccent }}>
+            <LoadingSpinner />
+          </span>
+        ) : null}
+        {pending ? " " : ""}
+        <span style={{ fg: t.subagentAccent }}>
+          <b>{`Sub-agent: ${displayLabel}`}</b>
+        </span>
+      </text>
+    </box>
+  );
+}
+
+function LoadingSpinner() {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setFrame((n) => (n + 1) % LOADING_SPINNER_FRAMES.length), 120);
+    return () => clearInterval(id);
+  }, []);
+
+  return <>{LOADING_SPINNER_FRAMES[frame]}</>;
+}
+
+function SubagentActivity({ t, status }: { t: Theme; status: SubagentStatus }) {
+  return (
+    <box paddingLeft={5}>
+      <text fg={t.textMuted}>
+        {"→ "}{truncateLine(status.detail, 100)}
+      </text>
+    </box>
+  );
+}
+
+function TaskResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
+  const task = entry.toolResult?.task;
+  if (!task) return null;
+
+  return (
+    <box gap={0}>
+      <SubagentTaskLine t={t} label={task.description} pending={false} />
+      <box paddingLeft={5}>
+        <text fg={t.text}>
+          {task.agent}
+          {": "}
+          {truncateLine(task.summary, 90)}
+        </text>
+      </box>
     </box>
   );
 }
@@ -1000,6 +1066,7 @@ function toolArgs(tc?: ToolCall): string {
     const a = JSON.parse(tc.function.arguments);
     if (tc.function.name === "bash") return a.command || "";
     if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file") return a.path || "";
+    if (tc.function.name === "task") return a.description || "";
     return a.query || "";
   } catch { return ""; }
 }
@@ -1015,6 +1082,7 @@ function toolLabel(tc: ToolCall): string {
   if (tc.function.name === "edit_file") return `Edit ${trunc(args, 60)}`;
   if (tc.function.name === "search_web") return `Web Search "${trunc(args, 60)}"`;
   if (tc.function.name === "search_x") return `X Search "${trunc(args, 60)}"`;
+  if (tc.function.name === "task") return `Task ${trunc(args, 60)}`;
   if (tc.function.name === "generate_plan") return "Generating plan...";
   return trunc(`${tc.function.name} ${args}`, 80);
 }
@@ -1023,7 +1091,13 @@ function sanitizeContent(raw: string): string {
   s = s.replace(/\{"success"\s*:\s*(true|false)\s*,\s*"output"\s*:\s*"[\s\S]*$/m, "");
   return s.trim();
 }
+function compactTaskLabel(label: string): string {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 3) return label.trim() || "Working";
+  return `${words.slice(0, 3).join(" ")}...`;
+}
 function trunc(s: string, n: number): string { return s.length <= n ? s : s.slice(0, n) + "…"; }
+function truncateLine(s: string, n: number): string { return trunc(s.replace(/\s+/g, " ").trim(), n); }
 function formatDuration(ms: number): string {
   if (ms < 1000) return "";
   const s = Math.round(ms / 1000);

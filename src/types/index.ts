@@ -27,12 +27,32 @@ export interface Plan {
   questions?: PlanQuestion[];
 }
 
+export interface TaskRequest {
+  agent: "general" | "explore";
+  description: string;
+  prompt: string;
+}
+
+export interface TaskRun {
+  agent: "general" | "explore";
+  description: string;
+  summary: string;
+  activity?: string;
+}
+
+export interface SubagentStatus {
+  agent: "general" | "explore";
+  description: string;
+  detail: string;
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
   diff?: FileDiff;
   plan?: Plan;
+  task?: TaskRun;
 }
 
 export interface ToolCall {
