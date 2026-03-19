@@ -87,6 +87,7 @@ export interface ChatEntry {
   content: string;
   timestamp: Date;
   modeColor?: string;
+  queued?: boolean;
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
