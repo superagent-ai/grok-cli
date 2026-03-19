@@ -1,16 +1,18 @@
-import { type ModelMessage, stepCountIs, streamText } from "ai";
+import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { DelegationManager } from "./delegations";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
 import { createTools } from "../grok/tools";
 import {
+  SessionStore,
   appendMessages,
   appendSystemMessage,
   buildChatEntries,
   getSessionTotalTokens,
   loadTranscript,
   recordUsageEvent,
-  SessionStore,
 } from "../storage/index";
 import { BashTool } from "../tools/bash";
+import { loadCustomInstructions } from "../utils/instructions";
 import type {
   AgentMode,
   ChatEntry,
@@ -25,8 +27,6 @@ import type {
   UsageSource,
   WorkspaceInfo,
 } from "../types/index";
-import { loadCustomInstructions } from "../utils/instructions";
-import { DelegationManager } from "./delegations";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -182,7 +182,9 @@ function buildSubagentPrompt(request: TaskRequest, cwd: string): string {
 }
 
 export class Agent {
-  private provider: XaiProvider;
+  private provider: XaiProvider | null = null;
+  private apiKey: string | null = null;
+  private baseURL: string | null = null;
   private bash: BashTool;
   private delegations: DelegationManager;
   private sessionStore: SessionStore | null = null;
@@ -198,8 +200,17 @@ export class Agent {
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
 
-  constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number, options: AgentOptions = {}) {
-    this.provider = createProvider(apiKey, baseURL);
+  constructor(
+    apiKey: string | undefined,
+    baseURL?: string,
+    model?: string,
+    maxToolRounds?: number,
+    options: AgentOptions = {},
+  ) {
+    this.baseURL = baseURL || null;
+    if (apiKey) {
+      this.setApiKey(apiKey, baseURL);
+    }
     this.bash = new BashTool();
     this.delegations = new DelegationManager(() => this.bash.getCwd());
     this.modelId = model || "grok-4-1-fast";
@@ -248,14 +259,21 @@ export class Agent {
     this.planContext = ctx;
   }
 
+  hasApiKey(): boolean {
+    return !!this.apiKey;
+  }
+
+  setApiKey(apiKey: string, baseURL = this.baseURL ?? undefined): void {
+    this.apiKey = apiKey;
+    this.baseURL = baseURL || null;
+    this.provider = createProvider(apiKey, baseURL);
+  }
+
   getCwd(): string {
     return this.bash.getCwd();
   }
 
-  getContextStats(
-    contextWindow: number,
-    inFlightText = "",
-  ): {
+  getContextStats(contextWindow: number, inFlightText = ""): {
     contextWindow: number;
     usedTokens: number;
     remainingTokens: number;
@@ -277,7 +295,12 @@ export class Agent {
   }
 
   async generateTitle(userMessage: string): Promise<string> {
-    const generated = await genTitle(this.provider, userMessage);
+    const provider = this.provider;
+    if (!provider) {
+      return "New session";
+    }
+
+    const generated = await genTitle(provider, userMessage);
     this.recordUsage(generated.usage, "title", "grok-3-mini-fast");
     if (this.sessionStore && this.session && !this.session.title && generated.title) {
       this.sessionStore.setTitle(this.session.id, generated.title);
@@ -364,7 +387,7 @@ export class Agent {
     model = this.modelId,
   ): void {
     if (!usage) return;
-    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    const total = usage.totalTokens ?? ((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
     if (Number.isFinite(total) && total > 0) {
       this.recordedTokens += total;
     }
@@ -393,10 +416,11 @@ export class Agent {
     onActivity?: (detail: string) => void,
     abortSignal?: AbortSignal,
   ): Promise<ToolResult> {
+    const provider = this.requireProvider();
     const signal = abortSignal;
     const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
-    const childTools = createTools(childBash, this.provider, childMode);
+    const childTools = createTools(childBash, provider, childMode);
     const initialDetail = request.agent === "explore" ? "Scanning the codebase" : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
@@ -405,7 +429,7 @@ export class Agent {
 
     try {
       const result = streamText({
-        model: this.provider(request.agent === "explore" ? "grok-4-1-fast" : this.modelId),
+        model: provider(request.agent === "explore" ? "grok-4-1-fast" : this.modelId),
         system: buildSubagentPrompt(request, childBash.getCwd()),
         messages: [{ role: "user", content: request.prompt }],
         tools: childTools,
@@ -471,18 +495,14 @@ export class Agent {
 
   private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      return await this.runTaskRequest(
-        request,
-        (detail) => {
-          if (abortSignal?.aborted) return;
-          this.emitSubagentStatus({
-            agent: request.agent,
-            description: request.description,
-            detail,
-          });
-        },
-        abortSignal,
-      );
+      return await this.runTaskRequest(request, (detail) => {
+        if (abortSignal?.aborted) return;
+        this.emitSubagentStatus({
+          agent: request.agent,
+          description: request.description,
+          detail,
+        });
+      }, abortSignal);
     } finally {
       this.emitSubagentStatus(null);
     }
@@ -565,7 +585,8 @@ export class Agent {
     let streamOk = false;
 
     try {
-      const tools = createTools(this.bash, this.provider, this.mode, {
+      const provider = this.requireProvider();
+      const tools = createTools(this.bash, provider, this.mode, {
         runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
         runDelegation: (request, abortSignal) => this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
         readDelegation: (id) => this.readDelegation(id),
@@ -575,7 +596,7 @@ export class Agent {
       this.planContext = null;
 
       const result = streamText({
-        model: this.provider(this.modelId),
+        model: provider(this.modelId),
         system,
         messages: this.messages,
         tools,
@@ -693,6 +714,14 @@ export class Agent {
         this.abortController = null;
       }
     }
+  }
+
+  private requireProvider(): XaiProvider {
+    if (!this.provider) {
+      throw new Error("API key required. Add an API key to continue.");
+    }
+
+    return this.provider;
   }
 }
 

@@ -1,13 +1,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { DEFAULT_MODEL, getModelIds } from "../grok/models";
+import { DEFAULT_MODEL } from "../grok/models";
 
 export interface UserSettings {
   apiKey?: string;
-  baseURL?: string;
   defaultModel?: string;
-  models?: string[];
 }
 
 export interface ProjectSettings {
@@ -38,18 +36,19 @@ function writeJson(filePath: string, data: unknown): void {
 }
 
 export function loadUserSettings(): UserSettings {
-  const defaults: UserSettings = {
-    baseURL: "https://api.x.ai/v1",
-    defaultModel: DEFAULT_MODEL,
-    models: getModelIds(),
-  };
-  const saved = readJson<UserSettings>(USER_SETTINGS_PATH);
-  return { ...defaults, ...saved };
+  return readJson<UserSettings>(USER_SETTINGS_PATH) || {};
 }
 
 export function saveUserSettings(partial: Partial<UserSettings>): void {
   const current = loadUserSettings();
-  writeJson(USER_SETTINGS_PATH, { ...current, ...partial });
+  const next: UserSettings = {
+    ...(current.apiKey ? { apiKey: current.apiKey } : {}),
+    ...(current.defaultModel ? { defaultModel: current.defaultModel } : {}),
+    ...(partial.apiKey ? { apiKey: partial.apiKey } : {}),
+    ...(partial.defaultModel ? { defaultModel: partial.defaultModel } : {}),
+  };
+
+  writeJson(USER_SETTINGS_PATH, next);
 }
 
 export function loadProjectSettings(): ProjectSettings {
@@ -68,7 +67,7 @@ export function getApiKey(): string | undefined {
 }
 
 export function getBaseURL(): string {
-  return process.env.GROK_BASE_URL || loadUserSettings().baseURL || "https://api.x.ai/v1";
+  return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
 }
 
 export function getCurrentModel(): string {
