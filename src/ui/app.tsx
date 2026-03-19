@@ -149,6 +149,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const isProcessingRef = useRef(false);
   const queuedMessagesRef = useRef<string[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const modeInfoRef = useRef<typeof MODES[number]>(MODES[0]);
 
   const setMode = useCallback((m: AgentMode) => {
     if (m === "agent" && mode === "plan" && activePlan) {
@@ -166,6 +167,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   }, [mode, setMode]);
 
   const modeInfo = MODES.find((m) => m.id === mode)!;
+  modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
   const flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
@@ -192,7 +194,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     setIsProcessing(true); setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null); contentAccRef.current = "";
     startTimeRef.current = Date.now();
     if (!sessionTitle) agent.generateTitle(text.trim()).then(setSessionTitle).catch(() => {});
-    setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: modeInfo.color }]);
+    const color = modeInfoRef.current.color;
+    setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color }]);
     setTimeout(scrollToBottom, 50);
     try {
       for await (const chunk of agent.processMessage(text.trim())) {
@@ -209,7 +212,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
             if (chunk.toolCalls) {
               const cleaned = sanitizeContent(contentAccRef.current);
               if (cleaned) {
-                setMessages((p) => [...p, { type: "assistant", content: cleaned, timestamp: new Date(), modeColor: modeInfo.color }]);
+                setMessages((p) => [...p, { type: "assistant", content: cleaned, timestamp: new Date(), modeColor: modeInfoRef.current.color }]);
               }
               contentAccRef.current = ""; setStreamContent("");
               setActiveToolCalls(chunk.toolCalls);
@@ -220,7 +223,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               setMessages((p) => [...p, {
                 type: "tool_result",
                 content: chunk.toolResult!.success ? (chunk.toolResult!.output || "Success") : (chunk.toolResult!.error || "Error"),
-                timestamp: new Date(), modeColor: modeInfo.color, toolCall: chunk.toolCall, toolResult: chunk.toolResult,
+                timestamp: new Date(), modeColor: modeInfoRef.current.color, toolCall: chunk.toolCall, toolResult: chunk.toolResult,
               }]);
               if (chunk.toolResult.plan?.questions?.length) {
                 setActivePlan(chunk.toolResult.plan);
@@ -239,7 +242,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     } catch { contentAccRef.current += "\nAn unexpected error occurred."; setStreamContent(contentAccRef.current); }
     const finalContent = sanitizeContent(contentAccRef.current);
     if (finalContent) {
-      setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfo.color }]);
+      setMessages((p) => [...p, { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color }]);
     }
     
     contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null);
@@ -253,7 +256,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       setIsProcessing(false);
     }
     setTimeout(scrollToBottom, 50);
-  }, [agent, scrollToBottom, modeInfo, model]);
+  }, [agent, scrollToBottom, model]);
 
   useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
   useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
