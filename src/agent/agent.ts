@@ -26,6 +26,7 @@ import type {
   WorkspaceInfo,
 } from "../types/index";
 import { loadCustomInstructions } from "../utils/instructions";
+import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import { DelegationManager } from "./delegations";
 
 const MAX_TOOL_ROUNDS = 400;
@@ -138,11 +139,14 @@ function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | 
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
     : "";
 
+  const skillsText = formatSkillsForPrompt(discoverSkills(cwd));
+  const skillsSection = skillsText ? `\n\n${skillsText}\n` : "";
+
   const planSection = planContext
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${customSection}${planSection}
+  return `${MODE_PROMPTS[mode]}${customSection}${skillsSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
