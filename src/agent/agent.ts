@@ -1,4 +1,5 @@
 import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { DelegationManager } from "./delegations.js";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client.js";
 import { createTools } from "../grok/tools.js";
 import { BashTool } from "../tools/bash.js";
@@ -33,8 +34,14 @@ TOOLS:
 - read_file: Read file contents with start_line/end_line for iterative reading. Use for examining code.
 - write_file: Create new files or overwrite existing ones with full content.
 - edit_file: Replace a unique string in a file with new content. The old_string must be unique — include enough context lines.
-- bash: Execute shell commands — searching (grep/rg/find), git, builds, tests, package managers, etc.
-- task: Delegate a focused task to a sub-agent. Use general for multi-step execution and explore for fast read-only research.
+- bash: Execute shell commands. Set background=true for long-running processes (dev servers, watchers, builds). Returns a process ID immediately.
+- process_logs: View recent output from a background process by ID.
+- process_stop: Stop a background process by ID.
+- process_list: List all background processes with status and uptime.
+- task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution and explore for fast read-only research.
+- delegate: Launch a read-only background agent for longer research while you continue working.
+- delegation_read: Retrieve a completed background delegation result by ID.
+- delegation_list: List running and completed background delegations. Do not poll it repeatedly.
 - search_web: Search the web for current information, documentation, APIs, tutorials, etc.
 - search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
 
@@ -42,15 +49,20 @@ WORKFLOW:
 1. Understand the request
 2. Decide whether a sub-agent should handle the first investigation pass
 3. Use read_file and bash to explore the codebase directly when the task is small or tightly scoped
-4. Use edit_file for targeted changes, write_file for new files or full rewrites
-5. Verify changes by reading modified files
-6. Run tests or builds with bash to confirm correctness
-7. Use search_web or search_x when you need up-to-date information
+4. Use bash with background=true for dev servers, watchers, or any long-running process — then continue working
+5. Use delegate for read-only work that can run in parallel, then continue productive work
+6. Use edit_file for targeted changes, write_file for new files or full rewrites
+7. Verify changes by reading modified files
+8. Run tests or builds with bash to confirm correctness
+9. Use search_web or search_x when you need up-to-date information
 
 DEFAULT DELEGATION POLICY:
 - Prefer the task tool by default for code review, code quality analysis, architecture research, root-cause investigation, bug triage, or any request that likely needs reading multiple files before acting.
+- Prefer delegate for longer-running read-only exploration when you can keep making progress without blocking.
 - Use the explore sub-agent for read-only investigation, reviews, research, and "how does this work?" tasks.
 - Use the general sub-agent for delegated work that may need editing files, running commands, or producing a concrete implementation.
+- Never use delegate for tasks that should edit files or make shell changes.
+- When a background delegation is running, do not wait idly and do not spam delegation_list(). Continue useful work.
 - Do not wait for the user to explicitly ask for a sub-agent when delegation would clearly help.
 - Skip delegation only when the task is trivial, single-file, or you already have the exact answer.
 
@@ -153,6 +165,7 @@ function buildSubagentPrompt(request: TaskRequest, cwd: string): string {
 export class Agent {
   private provider: XaiProvider;
   private bash: BashTool;
+  private delegations: DelegationManager;
   private messages: ModelMessage[] = [];
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
@@ -165,6 +178,7 @@ export class Agent {
   constructor(apiKey: string, baseURL?: string, model?: string, maxToolRounds?: number) {
     this.provider = createProvider(apiKey, baseURL);
     this.bash = new BashTool();
+    this.delegations = new DelegationManager(() => this.bash.getCwd());
     this.modelId = model || "grok-4-1-fast";
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
@@ -223,7 +237,22 @@ export class Agent {
     }
   }
 
-  private async runTask(request: TaskRequest): Promise<ToolResult> {
+  async consumeBackgroundNotifications(): Promise<string[]> {
+    try {
+      const notifications = await this.delegations.consumeNotifications();
+      for (const notification of notifications) {
+        this.messages.push({ role: "system", content: notification.message });
+      }
+      return notifications.map((notification) => notification.message);
+    } catch {
+      return [];
+    }
+  }
+
+  async runTaskRequest(
+    request: TaskRequest,
+    onActivity?: (detail: string) => void,
+  ): Promise<ToolResult> {
     const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
     const childTools = createTools(childBash, this.provider, childMode);
@@ -231,11 +260,7 @@ export class Agent {
     let assistantText = "";
     let lastActivity = initialDetail;
 
-    this.emitSubagentStatus({
-      agent: request.agent,
-      description: request.description,
-      detail: initialDetail,
-    });
+    onActivity?.(initialDetail);
 
     try {
       const result = streamText({
@@ -258,11 +283,7 @@ export class Agent {
 
         if (part.type === "tool-call") {
           lastActivity = formatSubagentActivity(part.toolName, part.input);
-          this.emitSubagentStatus({
-            agent: request.agent,
-            description: request.description,
-            detail: lastActivity,
-          });
+          onActivity?.(lastActivity);
         }
       }
 
@@ -292,8 +313,79 @@ export class Agent {
           activity: lastActivity,
         },
       };
+    }
+  }
+
+  private async runTask(request: TaskRequest): Promise<ToolResult> {
+    try {
+      return await this.runTaskRequest(request, (detail) => {
+        this.emitSubagentStatus({
+          agent: request.agent,
+          description: request.description,
+          detail,
+        });
+      });
     } finally {
       this.emitSubagentStatus(null);
+    }
+  }
+
+  private async runDelegation(request: TaskRequest): Promise<ToolResult> {
+    try {
+      return await this.delegations.start(request, {
+        model: this.modelId,
+        maxToolRounds: this.maxToolRounds,
+        maxTokens: this.maxTokens,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        output: `Delegation failed: ${msg}`,
+      };
+    }
+  }
+
+  private async readDelegation(id: string): Promise<ToolResult> {
+    try {
+      return {
+        success: true,
+        output: await this.delegations.read(id),
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        output: `Failed to read delegation: ${msg}`,
+      };
+    }
+  }
+
+  private async listDelegations(): Promise<ToolResult> {
+    try {
+      const delegations = await this.delegations.list();
+      if (delegations.length === 0) {
+        return {
+          success: true,
+          output: "No delegations found for this project.",
+        };
+      }
+
+      const lines = delegations.map((delegation) => {
+        const title = delegation.description || delegation.id;
+        return `- \`${delegation.id}\` [${delegation.status}] ${title}\n  ${delegation.summary}`;
+      });
+
+      return {
+        success: true,
+        output: `## Delegations\n\n${lines.join("\n")}`,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        output: `Failed to list delegations: ${msg}`,
+      };
     }
   }
 
@@ -301,6 +393,7 @@ export class Agent {
     this.abortController = new AbortController();
     this.emitSubagentStatus(null);
 
+    await this.consumeBackgroundNotifications();
     this.messages.push({ role: "user", content: userMessage });
 
     let assistantText = "";
@@ -309,6 +402,9 @@ export class Agent {
     try {
       const tools = createTools(this.bash, this.provider, this.mode, {
         runTask: (request) => this.runTask(request),
+        runDelegation: (request) => this.runDelegation(request),
+        readDelegation: (id) => this.readDelegation(id),
+        listDelegations: () => this.listDelegations(),
       });
       const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
       this.planContext = null;
@@ -413,6 +509,8 @@ function toToolResult(output: unknown): ToolResult {
       diff?: ToolResult["diff"];
       plan?: Plan;
       task?: ToolResult["task"];
+      delegation?: ToolResult["delegation"];
+      backgroundProcess?: ToolResult["backgroundProcess"];
     };
     return {
       success: r.success,
@@ -421,6 +519,8 @@ function toToolResult(output: unknown): ToolResult {
       diff: r.diff,
       plan: r.plan,
       task: r.task,
+      delegation: r.delegation,
+      backgroundProcess: r.backgroundProcess,
     };
   }
   return { success: true, output: String(output) };
