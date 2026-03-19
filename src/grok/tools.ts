@@ -1,9 +1,9 @@
 import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
-import type { BashTool } from "../tools/bash.js";
-import { editFile, readFile, writeFile } from "../tools/file.js";
-import type { AgentMode, TaskRequest, ToolResult } from "../types/index.js";
-import type { XaiProvider } from "./client.js";
+import type { BashTool } from "../tools/bash";
+import { editFile, readFile, writeFile } from "../tools/file";
+import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
+import type { XaiProvider } from "./client";
 
 const SEARCH_MODEL = "grok-3-mini-fast";
 

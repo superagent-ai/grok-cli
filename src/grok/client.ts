@@ -2,6 +2,14 @@ import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
 
 export type XaiProvider = ReturnType<typeof createXai>;
+export interface GeneratedTitle {
+  title: string;
+  usage?: {
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+}
 
 export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
   return createXai({
@@ -10,9 +18,9 @@ export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
   });
 }
 
-export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<string> {
+export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<GeneratedTitle> {
   try {
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: provider("grok-3-mini-fast"),
       temperature: 0.5,
       maxOutputTokens: 60,
@@ -29,8 +37,11 @@ export async function generateTitle(provider: XaiProvider, userMessage: string):
       ].join("\n"),
       prompt: userMessage,
     });
-    return text?.trim().replace(/^["']|["']$/g, "") || "New session";
+    return {
+      title: text?.trim().replace(/^["']|["']$/g, "") || "New session",
+      usage,
+    };
   } catch {
-    return "New session";
+    return { title: "New session" };
   }
 }

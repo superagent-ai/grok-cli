@@ -3,8 +3,8 @@ import { decodePasteBytes, type PasteEvent } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import os from "os";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Agent } from "../agent/agent.js";
-import { getModelInfo, MODELS } from "../grok/models.js";
+import type { Agent } from "../agent/agent";
+import { getModelInfo, MODELS } from "../grok/models";
 import type {
   AgentMode,
   ChatEntry,
@@ -14,18 +14,19 @@ import type {
   PlanQuestion,
   SubagentStatus,
   ToolCall,
-} from "../types/index.js";
-import { MODES } from "../types/index.js";
-import { saveProjectSettings } from "../utils/settings.js";
-import { Markdown } from "./markdown.js";
+} from "../types/index";
+import { MODES } from "../types/index";
+import { saveProjectSettings } from "../utils/settings";
+import { Markdown } from "./markdown";
 import {
   formatPlanAnswers,
   initialPlanQuestionsState,
+  type PlanAnswers,
   PlanQuestionsPanel,
   type PlanQuestionsState,
   PlanView,
-} from "./plan.js";
-import { dark, type Theme } from "./theme.js";
+} from "./plan";
+import { dark, type Theme } from "./theme";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
@@ -173,8 +174,8 @@ const SPLIT = {
   leftT: "",
   rightT: "",
 };
-const _SPLIT_END = { ...SPLIT, bottomLeft: "╹" };
-const _EMPTY = {
+const SPLIT_END = { ...SPLIT, bottomLeft: "╹" };
+const EMPTY = {
   topLeft: "",
   bottomLeft: "",
   vertical: "",
@@ -187,7 +188,7 @@ const _EMPTY = {
   leftT: "",
   rightT: "",
 };
-const _LINE = {
+const LINE = {
   topLeft: "━",
   bottomLeft: "━",
   vertical: "",
@@ -225,9 +226,9 @@ interface AppProps {
 
 export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
-  const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [messages, setMessages] = useState<ChatEntry[]>(() => agent.getChatEntries());
   const [streamContent, setStreamContent] = useState("");
-  const [_streamReasoning, setStreamReasoning] = useState("");
+  const [streamReasoning, setStreamReasoning] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [model, setModel] = useState(agent.getModel());
   const [mode, setModeState] = useState<AgentMode>(agent.getMode());
@@ -235,7 +236,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
+  const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
@@ -258,6 +260,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
+  const interruptedRunIdRef = useRef<number | null>(null);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -287,7 +290,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
   const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
-  const _flatModels = MODELS.map((m) => m.id);
+  const flatModels = MODELS.map((m) => m.id);
   const filteredModels = modelSearchQuery
     ? MODELS.filter(
         (m) =>
@@ -319,6 +322,23 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     setStreamContent("");
     setStreamReasoning("");
   }, []);
+
+  const resetToNewSession = useCallback(() => {
+    const snapshot = agent.startNewSession();
+    setMessages(snapshot?.entries ?? []);
+    setStreamContent("");
+    setStreamReasoning("");
+    setSessionTitle(snapshot?.session.title ?? null);
+    setSessionId(snapshot?.session.id ?? agent.getSessionId());
+    setActiveToolCalls([]);
+    setActiveSubagent(null);
+    setActivePlan(null);
+    setPqs(initialPlanQuestionsState());
+    setPasteBlocks([]);
+    queuedMessagesRef.current = [];
+    setQueuedMessages([]);
+    imageCounterRef.current = 0;
+  }, [agent]);
 
   const processMessage = useCallback(
     async (text: string) => {
@@ -412,8 +432,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           setStreamContent(contentAccRef.current);
         }
       }
+      const wasInterrupted = interruptedRunIdRef.current === runId;
       const finalContent = sanitizeContent(contentAccRef.current);
-      if (!isStale() && finalContent) {
+      if (isStale()) {
+        contentAccRef.current = "";
+        return;
+      }
+
+      if (!wasInterrupted && finalContent) {
         setMessages((p) => [
           ...p,
           { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
@@ -426,6 +452,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         setStreamReasoning("");
         setActiveToolCalls([]);
         setActiveSubagent(null);
+      }
+      if (wasInterrupted) {
+        interruptedRunIdRef.current = null;
       }
       const nextQueued = queuedMessagesRef.current.shift();
       if (nextQueued) {
@@ -440,7 +469,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       setTimeout(scrollToBottom, 50);
     },
-    [agent, scrollToBottom, sessionTitle],
+    [agent, invalidateActiveRun, scrollToBottom, model],
   );
 
   useEffect(() => {
@@ -480,16 +509,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     (cmd: string): boolean => {
       const c = cmd.trim().toLowerCase();
       if (c === "/clear") {
-        agent.clearHistory();
-        setMessages([]);
-        setStreamContent("");
-        setSessionTitle(null);
-        setPasteBlocks([]);
-        setActivePlan(null);
-        setPqs(initialPlanQuestionsState());
-        queuedMessagesRef.current = [];
-        setQueuedMessages([]);
-        imageCounterRef.current = 0;
+        resetToNewSession();
         return true;
       }
       if (c === "/model" || c === "/models") {
@@ -503,7 +523,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       return false;
     },
-    [agent, onExit],
+    [flatModels, model, onExit, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -512,15 +532,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       inputRef.current?.clear();
       switch (item.id) {
         case "new":
-          agent.clearHistory();
-          setMessages([]);
-          setStreamContent("");
-          setSessionTitle(null);
-          setPasteBlocks([]);
-          setActivePlan(null);
-          setPqs(initialPlanQuestionsState());
-          queuedMessagesRef.current = [];
-          setQueuedMessages([]);
+          resetToNewSession();
           break;
         case "models":
           setShowModelPicker(true);
@@ -560,7 +572,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           break;
       }
     },
-    [agent, onExit],
+    [flatModels, model, onExit, resetToNewSession],
   );
 
   const showPlanPanel = !!activePlan?.questions?.length;
@@ -879,7 +891,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     const raw = inputRef.current?.plainText || "";
     if (!raw.trim() && pasteBlocks.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
-        invalidateActiveRun();
+        interruptedRunIdRef.current = activeRunIdRef.current;
+        setStreamContent("");
+        setStreamReasoning("");
+        setActiveToolCalls([]);
+        setActiveSubagent(null);
         agent.abort();
       }
       return;
@@ -915,9 +931,9 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       {hasMessages ? (
         <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
           {/* Session header — ┃ left-border panel like OpenCode's Header */}
-          <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} />
+          <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} sessionId={sessionId} />
           {/* Scrollable messages */}
-          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as unknown as undefined}>
+          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
             {messages.map((msg, i) => (
               <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
             ))}
@@ -1042,10 +1058,12 @@ function SessionHeader({
   t,
   modeInfo,
   sessionTitle,
+  sessionId,
 }: {
   t: Theme;
   modeInfo: (typeof MODES)[number];
   sessionTitle: string | null;
+  sessionId: string | null;
 }) {
   return (
     <box flexShrink={0}>
@@ -1059,19 +1077,23 @@ function SessionHeader({
         borderColor={t.border}
         backgroundColor={t.backgroundPanel}
       >
-        <text>
-          <span style={{ fg: modeInfo.color }}>
-            <b>{modeInfo.label}</b>
-          </span>
-          {sessionTitle ? (
-            <span style={{ fg: t.text }}>
-              <b>
-                {": "}
-                {sessionTitle}
-              </b>
+        <box flexDirection="row" width="100%">
+          <text>
+            <span style={{ fg: modeInfo.color }}>
+              <b>{modeInfo.label}</b>
             </span>
-          ) : null}
-        </text>
+            {sessionTitle ? (
+              <span style={{ fg: t.text }}>
+                <b>
+                  {": "}
+                  {sessionTitle}
+                </b>
+              </span>
+            ) : null}
+          </text>
+          <box flexGrow={1} />
+          {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
+        </box>
       </box>
     </box>
   );
@@ -1454,7 +1476,7 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
             return (
               <box key={i} backgroundColor={t.diffRemoved} flexDirection="row">
                 <text fg={t.diffRemovedLineNum}>{pad(row.oldNum)}</text>
-                <text fg={t.diffRemovedFg}>{` ${row.text}`}</text>
+                <text fg={t.diffRemovedFg}>{" " + row.text}</text>
               </box>
             );
           }
@@ -1462,14 +1484,14 @@ function DiffView({ t, diff }: { t: Theme; diff: FileDiff }) {
             return (
               <box key={i} backgroundColor={t.diffAdded} flexDirection="row">
                 <text fg={t.diffAddedLineNum}>{pad(row.newNum)}</text>
-                <text fg={t.diffAddedFg}>{` ${row.text}`}</text>
+                <text fg={t.diffAddedFg}>{" " + row.text}</text>
               </box>
             );
           }
           return (
             <box key={i} backgroundColor={t.diffContext} flexDirection="row">
               <text fg={t.diffLineNumber}>{pad(row.oldNum)}</text>
-              <text fg={t.diffContextFg}>{` ${row.text}`}</text>
+              <text fg={t.diffContextFg}>{" " + row.text}</text>
             </box>
           );
         })}
@@ -1753,7 +1775,7 @@ function SlashMenuModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as unknown as string}
+      backgroundColor={"#000000cc" as any}
     >
       <box
         width={Math.min(50, width - 6)}
@@ -1839,7 +1861,7 @@ function ModelPickerModal({
       height={height}
       alignItems="center"
       paddingTop={top}
-      backgroundColor={"#000000cc" as unknown as string}
+      backgroundColor={"#000000cc" as any}
     >
       <box
         width={Math.min(60, width - 6)}
@@ -1948,7 +1970,7 @@ function compactTaskLabel(label: string): string {
   return `${words.slice(0, 3).join(" ")}...`;
 }
 function trunc(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n)}…`;
+  return s.length <= n ? s : s.slice(0, n) + "…";
 }
 function truncateLine(s: string, n: number): string {
   return trunc(s.replace(/\s+/g, " ").trim(), n);
