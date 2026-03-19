@@ -36,6 +36,14 @@ export function Markdown({ content, t }: { content: string; t: Theme }) {
   const syntaxStyle = useMemo(() => buildSyntaxStyle(t), [t]);
 
   return (
-    <markdown content={content} syntaxStyle={syntaxStyle} conceal={true} tableOptions={TABLE_OPTIONS} flexShrink={0} />
+    <markdown
+      content={content}
+      syntaxStyle={syntaxStyle}
+      conceal={true}
+      // @ts-expect-error MarkdownProps omits inherited Renderable.selectable; needed for TUI text selection
+      selectable={true}
+      tableOptions={TABLE_OPTIONS}
+      flexShrink={0}
+    />
   );
 }

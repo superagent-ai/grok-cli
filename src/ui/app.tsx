@@ -1,6 +1,6 @@
-import type { KeyBinding, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
+import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { decodePasteBytes, type PasteEvent } from "@opentui/core";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import os from "os";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../agent/agent";
@@ -16,6 +16,7 @@ import type {
   ToolCall,
 } from "../types/index";
 import { MODES } from "../types/index";
+import { copyTextToHostClipboard } from "../utils/host-clipboard";
 import { saveProjectSettings, saveUserSettings } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { Markdown } from "./markdown";
@@ -26,6 +27,7 @@ import {
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import { getCompactTuiSelectionText } from "./terminal-selection-text";
 import { dark, type Theme } from "./theme";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
@@ -227,6 +229,7 @@ interface AppProps {
 
 export function App({ agent, initialMessage, onExit }: AppProps) {
   const t = dark;
+  const renderer = useRenderer();
   const initialHasApiKey = agent.hasApiKey();
   const [hasApiKey, setHasApiKey] = useState(initialHasApiKey);
   const [messages, setMessages] = useState<ChatEntry[]>(() => agent.getChatEntries());
@@ -250,6 +253,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     [],
   );
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
+  const [copyFlashId, setCopyFlashId] = useState(0);
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
   const imageCounterRef = useRef(0);
@@ -322,6 +327,33 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       /* */
     }
   }, []);
+
+  const showCopyBanner = useCallback(() => {
+    setCopyFlashId((n) => n + 1);
+  }, []);
+
+  /** Match OpenCode: OSC 52 + real OS clipboard; used from keyboard and root onMouseUp. */
+  const copyTuiSelectionToHost = useCallback((): boolean => {
+    if (!renderer.hasSelection) return false;
+    const sel = renderer.getSelection();
+    const text = sel ? getCompactTuiSelectionText(sel) : "";
+    if (!text) return false;
+    renderer.copyToClipboardOSC52(text);
+    copyTextToHostClipboard(text);
+    renderer.clearSelection();
+    showCopyBanner();
+    return true;
+  }, [renderer, showCopyBanner]);
+
+  const handleRootMouseUp = useCallback(() => {
+    copyTuiSelectionToHost();
+  }, [copyTuiSelectionToHost]);
+
+  useEffect(() => {
+    if (copyFlashId === 0) return;
+    const id = setTimeout(() => setCopyFlashId(0), 2000);
+    return () => clearTimeout(id);
+  }, [copyFlashId]);
 
   const openApiKeyModal = useCallback(() => {
     showApiKeyModalRef.current = true;
@@ -690,7 +722,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   );
 
   const handleKey = useCallback(
-    (key: { name?: string; sequence?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) => {
+    (key: KeyEvent) => {
       if (showPlanPanel) {
         const q = planQuestions[pqs.tab];
 
@@ -920,7 +952,33 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           return;
         }
       }
+
+      if (key.name === "c" && key.ctrl && key.shift) {
+        if (copyTuiSelectionToHost()) {
+          key.preventDefault();
+          key.stopPropagation();
+        }
+        return;
+      }
+      if (key.name === "y" && key.ctrl && copyTuiSelectionToHost()) {
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+      // ⌘C: Kitty / iTerm report Command as `super`; some setups use `meta` instead.
+      if (key.name === "c" && !key.ctrl && (key.meta || key.super)) {
+        if (copyTuiSelectionToHost()) {
+          key.preventDefault();
+          key.stopPropagation();
+          return;
+        }
+      }
       if (key.name === "c" && key.ctrl) {
+        if (copyTuiSelectionToHost()) {
+          key.preventDefault();
+          key.stopPropagation();
+          return;
+        }
         const text = inputRef.current?.plainText || "";
         if (text.trim()) {
           inputRef.current?.clear();
@@ -960,6 +1018,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       slashMenuIndex,
       submitApiKey,
       submitPlanAnswers,
+      copyTuiSelectionToHost,
     ],
   );
   useKeyboard(handleKey);
@@ -1037,7 +1096,15 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
   return (
-    <box width={width} height={height} backgroundColor={t.background} flexDirection="column">
+    // biome-ignore lint/a11y/noStaticElementInteractions: OpenCode-style copy-on-mouse-up on root surface
+    <box
+      width={width}
+      height={height}
+      backgroundColor={t.background}
+      flexDirection="column"
+      onMouseUp={handleRootMouseUp}
+    >
+      {copyFlashId > 0 ? <CopyFlashBanner t={t} width={width} /> : null}
       {hasMessages ? (
         <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
           {/* Session header — ┃ left-border panel like OpenCode's Header */}
@@ -1386,6 +1453,36 @@ function PromptBox({
             </>
           )}
         </box>
+      </box>
+    </box>
+  );
+}
+
+function CopyFlashBanner({ t, width }: { t: Theme; width: number }) {
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={1}
+      width={width}
+      zIndex={500}
+      alignItems="center"
+      flexShrink={0}
+      backgroundColor={t.background}
+      shouldFill={false}
+    >
+      <box
+        height={3}
+        paddingLeft={2}
+        paddingRight={2}
+        backgroundColor={t.queueBg}
+        justifyContent="center"
+        alignItems="center"
+      >
+        <text>
+          <span style={{ fg: t.accent }}>{"✓ "}</span>
+          <span style={{ fg: t.text }}>{"Copied to clipboard"}</span>
+        </text>
       </box>
     </box>
   );
