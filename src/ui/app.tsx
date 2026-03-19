@@ -147,6 +147,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const contentAccRef = useRef("");
   const startTimeRef = useRef(0);
   const isProcessingRef = useRef(false);
+  const queuedMessagesRef = useRef<string[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const setMode = useCallback((m: AgentMode) => {
     if (m === "agent" && mode === "plan" && activePlan) {
@@ -241,8 +243,16 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
     
     contentAccRef.current = ""; setStreamContent(""); setStreamReasoning(""); setActiveToolCalls([]); setActiveSubagent(null);
-    isProcessingRef.current = false;
-    setIsProcessing(false); setTimeout(scrollToBottom, 50);
+    const nextQueued = queuedMessagesRef.current.shift();
+    if (nextQueued) {
+      setQueuedMessages([...queuedMessagesRef.current]);
+      isProcessingRef.current = false;
+      processMessage(nextQueued);
+    } else {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+    }
+    setTimeout(scrollToBottom, 50);
   }, [agent, scrollToBottom, modeInfo, model]);
 
   useEffect(() => { if (initialMessage && !processedInitial.current) { processedInitial.current = true; processMessage(initialMessage); } }, [initialMessage, processMessage]);
@@ -275,7 +285,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
 
   const handleCommand = useCallback((cmd: string): boolean => {
     const c = cmd.trim().toLowerCase();
-    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState()); imageCounterRef.current = 0; return true; }
+    if (c === "/clear") { agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState()); queuedMessagesRef.current = []; setQueuedMessages([]); imageCounterRef.current = 0; return true; }
     if (c === "/model" || c === "/models") { setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery(""); return true; }
     if (c === "/quit" || c === "/exit" || c === "/q") { onExit ? onExit() : process.exit(0); }
     return false;
@@ -287,6 +297,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     switch (item.id) {
       case "new":
         agent.clearHistory(); setMessages([]); setStreamContent(""); setSessionTitle(null); setPasteBlocks([]); setActivePlan(null); setPqs(initialPlanQuestionsState());
+        queuedMessagesRef.current = []; setQueuedMessages([]);
         break;
       case "models":
         setShowModelPicker(true); setModelPickerIndex(0); setModelSearchQuery("");
@@ -513,7 +524,15 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       }
       return;
     }
-    if (isProcessing && key.name === "escape") { agent.abort(); return; }
+    if (isProcessing && key.name === "escape") {
+      if (queuedMessagesRef.current.length > 0) {
+        queuedMessagesRef.current = [];
+        setQueuedMessages([]);
+      } else {
+        agent.abort();
+      }
+      return;
+    }
     if (key.sequence === "/" && !isProcessing) {
       const text = inputRef.current?.plainText || "";
       if (!text.trim()) { setShowSlashMenu(true); setSlashMenuIndex(0); setSlashSearchQuery(""); return; }
@@ -564,8 +583,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     }
     if (!message.trim()) return;
     if (handleCommand(message)) return;
+    if (isProcessingRef.current) {
+      queuedMessagesRef.current.push(message.trim());
+      setQueuedMessages([...queuedMessagesRef.current]);
+      setTimeout(scrollToBottom, 10);
+      return;
+    }
     processMessage(message);
-  }, [handleCommand, processMessage, pasteBlocks]);
+  }, [handleCommand, processMessage, pasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -612,7 +637,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           <box flexShrink={0}>
             <PromptBox t={t} inputRef={inputRef} isProcessing={isProcessing} showModelPicker={showModelPicker} showSlashMenu={showSlashMenu} showPlanQuestions={showPlanPanel}
               onSubmit={handleSubmit} onPaste={handlePaste} pasteBlocks={pasteBlocks}
-              modeInfo={modeInfo} model={model} modelInfo={modelInfo} />
+              modeInfo={modeInfo} model={model} modelInfo={modelInfo} queuedCount={queuedMessages.length} queuedMessages={queuedMessages} />
           </box>
         </box>
       ) : (
@@ -674,20 +699,40 @@ const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", shift: true, action: "newline" },
 ];
 
-function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder }: {
+function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, showPlanQuestions, onSubmit, onPaste, pasteBlocks, modeInfo, model, modelInfo, placeholder, queuedCount, queuedMessages }: {
   t: Theme; inputRef: React.RefObject<TextareaRenderable | null>;
   isProcessing: boolean; showModelPicker: boolean; showSlashMenu: boolean; showPlanQuestions: boolean; onSubmit: () => void;
   onPaste: (event: PasteEvent) => void; pasteBlocks: { id: number; content: string; lines: number }[];
   modeInfo: typeof MODES[number]; model: string;
-  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string;
+  modelInfo: ReturnType<typeof getModelInfo>; placeholder?: string; queuedCount?: number; queuedMessages?: string[];
 }) {
+  const hasQueue = (queuedMessages?.length ?? 0) > 0;
+
   return (
     <box backgroundColor={t.backgroundPanel}>
       <box>
+        {hasQueue && (
+          <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.queueBg} flexShrink={0}>
+            {queuedMessages!.map((msg, i) => (
+              <text key={i} fg={t.text}>{"→ "}{msg}</text>
+            ))}
+            <box height={1} />
+            <text>
+              <span style={{ fg: t.primary }}>{"enter "}</span>
+              <span style={{ fg: t.textMuted }}>{"send now"}</span>
+              <span style={{ fg: t.textDim }}>{" · "}</span>
+              <span style={{ fg: t.primary }}>{"↑ "}</span>
+              <span style={{ fg: t.textMuted }}>{"edit"}</span>
+              <span style={{ fg: t.textDim }}>{" · "}</span>
+              <span style={{ fg: t.primary }}>{"esc "}</span>
+              <span style={{ fg: t.textMuted }}>{"cancel"}</span>
+            </text>
+          </box>
+        )}
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={t.backgroundElement} flexShrink={0}>
           <textarea
-            ref={inputRef} focused={!isProcessing && !showModelPicker && !showSlashMenu && !showPlanQuestions}
-            placeholder={isProcessing ? "Working... (esc to stop)" : (placeholder || "Message Grok...")}
+            ref={inputRef} focused={!showModelPicker && !showSlashMenu && !showPlanQuestions}
+            placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : (placeholder || "Message Grok...")}
             textColor={t.text} backgroundColor={t.backgroundElement} placeholderColor={t.textMuted}
             minHeight={1} maxHeight={10} wrapMode="word"
             keyBindings={TEXTAREA_KEYBINDINGS}
@@ -703,7 +748,10 @@ function PromptBox({ t, inputRef, isProcessing, showModelPicker, showSlashMenu, 
         </box>
         <box flexDirection="row" gap={3} alignItems="center">
           {isProcessing ? (
-            <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{"interrupt"}</span></text>
+            <box flexDirection="row" gap={3}>
+              <text fg={t.text}>{"enter "}<span style={{ fg: t.textMuted }}>{"queue"}</span></text>
+              <text fg={t.text}>{"esc "}<span style={{ fg: t.textMuted }}>{(queuedCount ?? 0) > 0 ? "clear queue" : "interrupt"}</span></text>
+            </box>
           ) : (
             <>
               <text fg={t.text}>{"shift+enter "}<span style={{ fg: t.textMuted }}>{"new line"}</span></text>
