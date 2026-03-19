@@ -17,6 +17,7 @@ import type {
 } from "../types/index";
 import { MODES } from "../types/index";
 import { saveProjectSettings, saveUserSettings } from "../utils/settings";
+import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { Markdown } from "./markdown";
 import {
   formatPlanAnswers,
@@ -603,7 +604,11 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         case "skills":
           setMessages((p) => [
             ...p,
-            { type: "assistant", content: "Skills management coming soon.", timestamp: new Date() },
+            {
+              type: "assistant",
+              content: formatSkillsForChat(discoverSkills(agent.getCwd()), agent.getCwd()),
+              timestamp: new Date(),
+            },
           ]);
           break;
         case "mcps":
@@ -620,7 +625,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           break;
       }
     },
-    [onExit, resetToNewSession],
+    [agent, onExit, resetToNewSession],
   );
 
   const showPlanPanel = !!activePlan?.questions?.length;

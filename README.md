@@ -345,6 +345,25 @@ If both files exist, project instructions will be used. If neither exists, Grok 
 
 The custom instructions are added to Grok's system prompt and influence its responses across all interactions in the respective context.
 
+### Agent Skills
+
+[Agent Skills](https://agentskills.io) are folders of instructions (and optional scripts and assets) that Grok can load when they match the task. Grok discovers skills on disk and includes a compact catalog in the system prompt; the model should `read_file` the listed `SKILL.md` when a skill might help.
+
+#### Layout
+
+Each skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name` and `description` required), per the [specification](https://agentskills.io/specification).
+
+- **Project skills:** `.agents/skills/<skill-name>/SKILL.md` (under your project directory)
+- **User skills:** `~/.agents/skills/<skill-name>/SKILL.md`
+
+If the same `name` appears in both places, the **project** skill wins.
+
+Install skills by copying or cloning them into those paths, or use tooling such as `skills.sh` — Grok CLI does not download skills for you.
+
+#### Listing skills in the TUI
+
+Open the slash command palette and choose **skills**, or type **`/skills`**, to print installed skills (name, scope, description, and path).
+
 ## Morph Fast Apply (Optional)
 
 Grok CLI supports Morph's Fast Apply model for high-speed code editing at **4,500+ tokens/sec with 98% accuracy**. This is an optional feature that provides lightning-fast file editing capabilities.
