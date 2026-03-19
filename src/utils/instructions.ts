@@ -1,17 +1,73 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { findGitRoot } from "./git-root";
 
-export function loadCustomInstructions(): string | null {
-  const candidates = [path.join(process.cwd(), ".grok", "GROK.md"), path.join(os.homedir(), ".grok", "GROK.md")];
+function readNonEmptyFile(filePath: string): string | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const text = fs.readFileSync(filePath, "utf-8").trim();
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  }
+}
 
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) {
-        return fs.readFileSync(p, "utf-8").trim();
-      }
-    } catch {}
+function directoryChain(fromRoot: string, toCwd: string): string[] {
+  const rel = path.relative(fromRoot, toCwd);
+  if (rel === "") return [fromRoot];
+  if (rel.startsWith("..")) return [toCwd];
+
+  const segments = rel.split(path.sep).filter(Boolean);
+  const chain: string[] = [];
+  let acc = fromRoot;
+  chain.push(acc);
+  for (const segment of segments) {
+    acc = path.join(acc, segment);
+    chain.push(acc);
+  }
+  return chain;
+}
+
+function loadGrokMd(cwd: string): string | null {
+  const projectPath = path.join(cwd, ".grok", "GROK.md");
+  const globalPath = path.join(os.homedir(), ".grok", "GROK.md");
+  return readNonEmptyFile(projectPath) ?? readNonEmptyFile(globalPath);
+}
+
+function loadAgentsSegments(canonicalCwd: string): string[] {
+  const segments: string[] = [];
+
+  const globalAgents = readNonEmptyFile(path.join(os.homedir(), ".grok", "AGENTS.md"));
+  if (globalAgents) segments.push(globalAgents);
+
+  const root = findGitRoot(canonicalCwd) ?? canonicalCwd;
+  for (const dir of directoryChain(root, canonicalCwd)) {
+    const overridePath = path.join(dir, "AGENTS.override.md");
+    if (fs.existsSync(overridePath)) {
+      const text = readNonEmptyFile(overridePath);
+      if (text) segments.push(text);
+      continue;
+    }
+    const text = readNonEmptyFile(path.join(dir, "AGENTS.md"));
+    if (text) segments.push(text);
   }
 
-  return null;
+  return segments;
+}
+
+export function loadCustomInstructions(cwd: string): string | null {
+  let canonical: string;
+  try {
+    canonical = fs.realpathSync.native(cwd);
+  } catch {
+    canonical = path.resolve(cwd);
+  }
+
+  const parts: string[] = [...loadAgentsSegments(canonical)];
+  const grok = loadGrokMd(canonical);
+  if (grok) parts.push(grok);
+
+  if (parts.length === 0) return null;
+  return parts.join("\n\n");
 }

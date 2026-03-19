@@ -296,17 +296,33 @@ Options:
 
 ### Custom Instructions
 
-You can provide custom instructions to tailor Grok's behavior to your project or globally. Grok CLI supports both project-level and global custom instructions.
+Grok CLI loads markdown instructions from two ecosystems and merges them into the system prompt:
 
-#### Project-Level Instructions
+1. **[AGENTS.md](https://agents.md/)** — Shared convention used by many coding agents (build commands, tests, repo norms). Grok discovers these files the same way [OpenAI Codex](https://developers.openai.com/codex/guides/agents-md/) does: concatenate segments with blank lines, **broader scope first**, so later segments can refine or override earlier guidance in the combined text.
+2. **Grok-specific** — `.grok/GROK.md` (project) or `~/.grok/GROK.md` (fallback), appended **last** so Grok-only rules win when something conflicts.
 
-Create a `.grok/GROK.md` file in your project directory to provide instructions specific to that project:
+Instructions are resolved from the CLI **working directory** (canonical path), not only `process.cwd()` of a parent process.
+
+#### AGENTS.md (project and global)
+
+- **Global:** `~/.grok/AGENTS.md` (if present and non-empty)
+- **Repository:** Starting at the **git repository root** (or only the current directory if you are not inside a repo), Grok walks **down** to your current directory. In each directory it loads **at most one** file:
+  - If `AGENTS.override.md` exists in that directory, it is used (and `AGENTS.md` in the same directory is **not** read).
+  - Otherwise, if `AGENTS.md` exists, it is used.
+- Empty files are skipped. Nested directories let monorepos ship package-level guidance (e.g. root `AGENTS.md` plus `services/api/AGENTS.md`).
+
+Put repository expectations, test commands, and PR conventions in `AGENTS.md` so the same file helps Grok and other tools.
+
+#### Grok-specific: `.grok/GROK.md`
+
+Create a `.grok/GROK.md` file in your project directory for instructions that apply only to Grok CLI:
 
 ```bash
 mkdir .grok
 ```
 
-Create `.grok/GROK.md` with your project-specific instructions:
+Example `.grok/GROK.md`:
+
 ```markdown
 # Custom Instructions for This Project
 
@@ -317,15 +333,14 @@ Always add JSDoc comments for public functions and interfaces.
 Follow the existing code style and patterns in this project.
 ```
 
-#### Global Instructions
-
-For instructions that apply across all projects, create `~/.grok/GROK.md` in your home directory:
+For defaults across all projects, use `~/.grok/GROK.md`:
 
 ```bash
 mkdir -p ~/.grok
 ```
 
-Create `~/.grok/GROK.md` with your global instructions:
+Example global `GROK.md`:
+
 ```markdown
 # Global Custom Instructions for Grok CLI
 
@@ -335,15 +350,13 @@ Follow best practices for the programming language being used.
 When suggesting code changes, consider performance implications.
 ```
 
-#### Priority Order
+#### GROK.md vs project `AGENTS.md`
 
-Grok will load custom instructions in the following priority order:
-1. **Project-level** (`.grok/GROK.md` in current directory) - takes highest priority
-2. **Global** (`~/.grok/GROK.md` in home directory) - fallback if no project instructions exist
+If both exist, **both** are included: all `AGENTS.md` segments first (global `~/.grok/AGENTS.md`, then root-to-cwd walk), then **one** GROK file — **project** `.grok/GROK.md` if it exists, otherwise `~/.grok/GROK.md`. Project GROK is not merged with global GROK; the project file replaces the global file for GROK-only content.
 
-If both files exist, project instructions will be used. If neither exists, Grok operates with its default behavior.
+If no instruction files are present, Grok uses its built-in behavior only.
 
-The custom instructions are added to Grok's system prompt and influence its responses across all interactions in the respective context.
+The merged body is added to the system prompt under **CUSTOM INSTRUCTIONS** and applies to that session’s workspace directory.
 
 ### Agent Skills
 

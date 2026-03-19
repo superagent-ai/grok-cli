@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import type { WorkspaceInfo } from "../types/index";
+import { findGitRoot } from "../utils/git-root";
 import { getDatabase } from "./db";
 
 interface WorkspaceRow {
@@ -69,21 +70,6 @@ export function resolveWorkspace(cwd: string): ResolvedWorkspace {
     gitRoot,
     displayName: path.basename(scopePath) || "workspace",
   };
-}
-
-function findGitRoot(start: string): string | null {
-  let current = start;
-
-  while (true) {
-    const gitPath = path.join(current, ".git");
-    if (fs.existsSync(gitPath)) {
-      return current;
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
-  }
 }
 
 function toWorkspaceInfo(row: WorkspaceRow): WorkspaceInfo {

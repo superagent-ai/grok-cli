@@ -134,7 +134,7 @@ BEHAVIOR:
 };
 
 function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | null): string {
-  const custom = loadCustomInstructions();
+  const custom = loadCustomInstructions(cwd);
   const customSection = custom
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
     : "";
