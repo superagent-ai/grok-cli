@@ -5,7 +5,7 @@ import { editFile, readFile, writeFile } from "../tools/file";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import type { XaiProvider } from "./client";
 
-const SEARCH_MODEL = "grok-3-mini-fast";
+const RESPONSES_SEARCH_MODEL = "grok-4-fast-non-reasoning";
 
 interface CreateToolsOptions {
   runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
@@ -21,6 +21,32 @@ export function createTools(
   options: CreateToolsOptions = {},
 ) {
   const cwd = () => bash.getCwd();
+
+  const runResponsesSearch = async (
+    query: string,
+    toolName: "web_search" | "x_search",
+  ): Promise<{ success: boolean; output: string }> => {
+    try {
+      const { text } = await generateText({
+        model: provider.responses(RESPONSES_SEARCH_MODEL),
+        maxOutputTokens: 4096,
+        prompt: query,
+        tools: {
+          ...(toolName === "web_search" ? { web_search: provider.tools.webSearch() } : {}),
+          ...(toolName === "x_search" ? { x_search: provider.tools.xSearch() } : {}),
+        },
+      });
+
+      return {
+        success: true,
+        output: text || "No search results found.",
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const label = toolName === "web_search" ? "Web search" : "X search";
+      return { success: false, output: `${label} failed: ${msg}` };
+    }
+  };
 
   const base = {
     bash: tool({
@@ -106,26 +132,7 @@ export function createTools(
         query: z.string().describe("The search query"),
       }),
       execute: async ({ query }) => {
-        try {
-          const { text } = await generateText({
-            model: provider(SEARCH_MODEL),
-            maxOutputTokens: 4096,
-            providerOptions: {
-              xai: {
-                searchParameters: {
-                  mode: "on",
-                  returnCitations: true,
-                  sources: [{ type: "web" }],
-                },
-              },
-            },
-            prompt: query,
-          });
-          return { success: true, output: text };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { success: false, output: `Web search failed: ${msg}` };
-        }
+        return runResponsesSearch(query, "web_search");
       },
     }),
 
@@ -136,26 +143,7 @@ export function createTools(
         query: z.string().describe("The search query"),
       }),
       execute: async ({ query }) => {
-        try {
-          const { text } = await generateText({
-            model: provider(SEARCH_MODEL),
-            maxOutputTokens: 4096,
-            providerOptions: {
-              xai: {
-                searchParameters: {
-                  mode: "on",
-                  returnCitations: true,
-                  sources: [{ type: "x" }],
-                },
-              },
-            },
-            prompt: query,
-          });
-          return { success: true, output: text };
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return { success: false, output: `X search failed: ${msg}` };
-        }
+        return runResponsesSearch(query, "x_search");
       },
     }),
   };
