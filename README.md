@@ -164,6 +164,16 @@ bun run typecheck
 bun run lint
 ```
 
+## Testing
+
+Run the unit test suite with:
+
+```bash
+bun run test
+bun run test:watch
+bun run test:coverage
+```
+
 ---
 
 ## License

@@ -4,8 +4,13 @@ import { buildEffectiveTranscript, type PersistedCompaction } from "../storage/t
 import {
   COMPACTION_SUMMARY_HEADER,
   createCompactionSummaryMessage,
+  estimateConversationTokens,
+  estimateMessageTokens,
   findCutPoint,
+  getCompactionSummaryText,
+  isCompactionSummaryMessage,
   prepareCompaction,
+  relaxCompactionSettings,
   serializeConversation,
   shouldCompactContext,
 } from "./compaction";
@@ -36,6 +41,53 @@ function toolResult(toolCallId: string, toolName: string, output: unknown): Mode
 }
 
 describe("compaction helpers", () => {
+  it("recognizes summary checkpoint messages and extracts trimmed summary text", () => {
+    const summaryMessage = createCompactionSummaryMessage("  Keep this context  ");
+
+    expect(isCompactionSummaryMessage(summaryMessage)).toBe(true);
+    expect(getCompactionSummaryText(summaryMessage)).toBe("Keep this context");
+    expect(isCompactionSummaryMessage(user("not a summary"))).toBe(false);
+    expect(getCompactionSummaryText(user("not a summary"))).toBeNull();
+  });
+
+  it("estimates tokens for user messages with text, images, and files", () => {
+    const message = {
+      role: "user",
+      content: [{ type: "text", text: "hello" }, { type: "image" }, { type: "file", filename: "notes.txt" }],
+    } as ModelMessage;
+
+    expect(estimateMessageTokens(message)).toBe(Math.ceil("hello\n[Image]\n[File: notes.txt]".length / 4));
+  });
+
+  it("estimates tokens for assistant messages using text and tool calls", () => {
+    const message = {
+      role: "assistant",
+      content: [
+        { type: "text", text: "abcd" },
+        { type: "tool-call", toolCallId: "call-1", toolName: "read_file", input: { path: "src/index.ts" } },
+      ],
+    } as ModelMessage;
+    const expectedChars = "abcd".length + 'read_file(path="src/index.ts")'.length;
+
+    expect(estimateMessageTokens(message)).toBe(Math.ceil(expectedChars / 4));
+  });
+
+  it("estimates tokens for tool and system messages", () => {
+    const toolMessage = toolResult("call-1", "bash", { ok: true });
+    const systemMessage = { role: "system", content: "system note" } as ModelMessage;
+
+    expect(estimateMessageTokens(toolMessage)).toBe(Math.ceil('{\n  "ok": true\n}'.length / 4));
+    expect(estimateMessageTokens(systemMessage)).toBe(Math.ceil("system note".length / 4));
+  });
+
+  it("includes system prompt and in-flight text in conversation token estimates", () => {
+    const messages = [user("abcdefgh"), assistantText("ijkl")];
+
+    expect(estimateConversationTokens("system", messages, "draft")).toBe(
+      Math.ceil("systemdraft".length / 4) + Math.ceil("abcdefgh".length / 4) + Math.ceil("ijkl".length / 4),
+    );
+  });
+
   it("triggers when context exceeds reserved headroom", () => {
     const settings = { reserveTokens: 100, keepRecentTokens: 40 };
 
@@ -101,6 +153,17 @@ describe("compaction helpers", () => {
 
     expect(transcript).toContain("[Tool result]:");
     expect(transcript).toContain("more characters truncated");
+  });
+
+  it("relaxes compaction settings by halving kept tokens with a minimum floor", () => {
+    expect(relaxCompactionSettings({ reserveTokens: 100, keepRecentTokens: 12_000 })).toEqual({
+      reserveTokens: 100,
+      keepRecentTokens: 6_000,
+    });
+    expect(relaxCompactionSettings({ reserveTokens: 100, keepRecentTokens: 3_000 })).toEqual({
+      reserveTokens: 100,
+      keepRecentTokens: 4_000,
+    });
   });
 
   it("builds the effective transcript from the latest persisted checkpoint", () => {
