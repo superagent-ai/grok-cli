@@ -3,9 +3,24 @@ import * as os from "os";
 import * as path from "path";
 import { DEFAULT_MODEL } from "../grok/models";
 
+export type TelegramStreamingMode = "off" | "partial";
+
+export interface TelegramSettings {
+  botToken?: string;
+  approvedUserIds?: number[];
+  sessionsByUserId?: Record<string, string>;
+  /** Live preview while generating. Default: partial (send + edit). Use `off` for buffer-then-send only. */
+  streaming?: TelegramStreamingMode;
+  /** Send `typing` chat action on an interval while the agent runs. Default: true. */
+  typingIndicator?: boolean;
+  /** Reserved: Bot API `sendMessageDraft` for private DMs (not implemented yet). */
+  nativeDrafts?: boolean;
+}
+
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
+  telegram?: TelegramSettings;
 }
 
 export interface ProjectSettings {
@@ -42,10 +57,22 @@ export function loadUserSettings(): UserSettings {
 export function saveUserSettings(partial: Partial<UserSettings>): void {
   const current = loadUserSettings();
   const next: UserSettings = {
-    ...(current.apiKey ? { apiKey: current.apiKey } : {}),
-    ...(current.defaultModel ? { defaultModel: current.defaultModel } : {}),
-    ...(partial.apiKey ? { apiKey: partial.apiKey } : {}),
-    ...(partial.defaultModel ? { defaultModel: partial.defaultModel } : {}),
+    ...current,
+    ...partial,
+    ...(partial.apiKey !== undefined ? { apiKey: partial.apiKey } : {}),
+    ...(partial.defaultModel !== undefined ? { defaultModel: partial.defaultModel } : {}),
+    ...(partial.telegram !== undefined
+      ? {
+          telegram: {
+            ...current.telegram,
+            ...partial.telegram,
+            sessionsByUserId: {
+              ...current.telegram?.sessionsByUserId,
+              ...partial.telegram?.sessionsByUserId,
+            },
+          },
+        }
+      : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -76,4 +103,22 @@ export function getCurrentModel(): string {
   if (project.model) return project.model;
   const user = loadUserSettings();
   return user.defaultModel || DEFAULT_MODEL;
+}
+
+export function getTelegramBotToken(): string | undefined {
+  const env = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (env) return env;
+  return loadUserSettings().telegram?.botToken?.trim();
+}
+
+export function resolveTelegramStreamSettings(t: TelegramSettings | undefined): {
+  streaming: TelegramStreamingMode;
+  typingIndicator: boolean;
+  nativeDrafts: boolean;
+} {
+  return {
+    streaming: t?.streaming === "off" ? "off" : "partial",
+    typingIndicator: t?.typingIndicator !== false,
+    nativeDrafts: t?.nativeDrafts === true,
+  };
 }

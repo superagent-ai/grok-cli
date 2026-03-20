@@ -50,7 +50,19 @@ async function startInteractive(
     process.exit(0);
   };
 
-  createRoot(renderer).render(createElement(App, { agent, initialMessage, onExit }));
+  createRoot(renderer).render(
+    createElement(App, {
+      agent,
+      startupConfig: {
+        apiKey,
+        baseURL,
+        model,
+        maxToolRounds,
+      },
+      initialMessage,
+      onExit,
+    }),
+  );
 }
 
 async function runHeadless(
