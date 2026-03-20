@@ -1,525 +1,171 @@
-# Grok CLI
+# There are many coding agents. **This is Grok’s.**
 
-A conversational AI CLI tool powered by Grok with intelligent text editor capabilities and tool usage.
+[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
+[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
 
-<img width="980" height="435" alt="Screenshot 2025-07-21 at 13 35 41" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
+The rest borrowed from each other. We borrowed from *all of them*, then wired it to **Grok**—real-time **X search**, **web search**, **`grok-code-fast-1`** and the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI that doesn’t feel like it was assembled in a hurry.
 
-## Features
+Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
 
-- **🤖 Conversational AI**: Natural language interface powered by Grok-3
-- **📝 Smart File Operations**: AI automatically uses tools to view, create, and edit files
-- **⚡ Bash Integration**: Execute shell commands through natural conversation
-- **🔧 Automatic Tool Selection**: AI intelligently chooses the right tools for your requests
-- **🚀 Morph Fast Apply**: Optional high-speed code editing at 4,500+ tokens/sec with 98% accuracy
-- **🔌 MCP Tools**: Extend capabilities with Model Context Protocol servers (Linear, GitHub, etc.)
-- **💬 Interactive UI**: Beautiful terminal interface built with Ink
-- **🌍 Global Installation**: Install and use anywhere with `bun add -g @vibe-kit/grok-cli`
+<img width="980" height="435" alt="Grok CLI in the terminal" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
 
-## Installation
+---
 
-### Prerequisites
-- Bun 1.0+ (or Node.js 18+ as fallback)
-- Grok API key from X.AI
-- (Optional, Recommended) Morph API key for Fast Apply editing
+## Install
 
-### Global Installation (Recommended)
 ```bash
-bun add -g @vibe-kit/grok-cli
+npm i -g grok-dev
 ```
 
-Or with npm (fallback):
-```bash
-npm install -g @vibe-kit/grok-cli
-```
+The CLI binary is **`grok`** (yes, the package name and the command differ—deal with it).
 
-### Local Development
-```bash
-git clone <repository>
-cd grok-cli
-bun install
-bun run build
-bun link
-```
+**Prerequisites:** Node 18+ (for the global install), and a **Grok API key** from [x.ai](https://x.ai).
 
-## Setup
+---
 
-1. Get your Grok API key from [X.AI](https://x.ai)
+## Run it
 
-2. Set up your API key (choose one method):
+**Interactive (default)** — launches the OpenTUI coding agent:
 
-**Method 1: Environment Variable**
-```bash
-export GROK_API_KEY=your_api_key_here
-```
-
-**Method 2: .env File**
-```bash
-cp .env.example .env
-# Edit .env and add your API key
-```
-
-**Method 3: Command Line Flag**
-```bash
-grok --api-key your_api_key_here
-```
-
-**Method 4: User Settings File**
-Create `~/.grok/user-settings.json`:
-```json
-{
-  "apiKey": "your_api_key_here"
-}
-```
-
-3. (Optional, Recommended) Get your Morph API key from [Morph Dashboard](https://morphllm.com/dashboard/api-keys)
-
-4. Set up your Morph API key for Fast Apply editing (choose one method):
-
-**Method 1: Environment Variable**
-```bash
-export MORPH_API_KEY=your_morph_api_key_here
-```
-
-**Method 2: .env File**
-```bash
-# Add to your .env file
-MORPH_API_KEY=your_morph_api_key_here
-```
-
-### Custom Base URL (Optional)
-
-By default, the CLI uses `https://api.x.ai/v1` as the Grok API endpoint. You can configure a custom endpoint if needed (choose one method):
-
-**Method 1: Environment Variable**
-```bash
-export GROK_BASE_URL=https://your-custom-endpoint.com/v1
-```
-
-**Method 2: Command Line Flag**
-```bash
-grok --api-key your_api_key_here --base-url https://your-custom-endpoint.com/v1
-```
-
-**Method 3: User Settings File**
-Add to `~/.grok/user-settings.json`:
-```json
-{
-  "apiKey": "your_api_key_here",
-  "baseURL": "https://your-custom-endpoint.com/v1"
-}
-```
-
-## Configuration Files
-
-Grok CLI uses two types of configuration files to manage settings:
-
-### User-Level Settings (`~/.grok/user-settings.json`)
-
-This file stores **global settings** that apply across all projects. These settings rarely change and include:
-
-- **API Key**: Your Grok API key
-- **Base URL**: Custom API endpoint (if needed)
-- **Default Model**: Your preferred model (e.g., `grok-code-fast-1`)
-- **Available Models**: List of models you can use
-
-**Example:**
-```json
-{
-  "apiKey": "your_api_key_here",
-  "baseURL": "https://api.x.ai/v1",
-  "defaultModel": "grok-code-fast-1",
-  "models": [
-    "grok-code-fast-1",
-    "grok-4-latest",
-    "grok-3-latest",
-    "grok-3-fast",
-    "grok-3-mini-fast"
-  ]
-}
-```
-
-### Telegram (optional)
-
-You can pair the CLI with a Telegram bot and send prompts from Telegram while the interactive session is running (similar in spirit to [OpenClaw-style channel pairing](https://docs.openclaw.ai/channels/telegram)).
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the bot token.
-2. Set **`TELEGRAM_BOT_TOKEN`** in the environment, or add **`telegram.botToken`** to `~/.grok/user-settings.json` (the `/remote-control` flow can save it for you).
-3. Start `grok`. If the bot token is already in settings or env, **long polling starts automatically** (no need to open **`/remote-control`** every time). Otherwise run **`/remote-control`** → **Telegram** and paste the token.
-4. In Telegram, open a DM with your bot and send **`/pair`** (only needed once per user until you remove them from `approvedUserIds`).
-5. The first time you pair a Telegram user, enter the **6-character code** in the terminal when prompted. After that, approval is remembered in `user-settings.json`.
-6. **Keep the CLI open** while you use the bot — polling runs in that process.
-
-Optional env override: `TELEGRAM_BOT_TOKEN`. Approved Telegram user IDs and per-user session mappings are stored under the **`telegram`** object in `user-settings.json`. Treat the bot token like a password.
-
-**Optional Telegram UX** (in `~/.grok/user-settings.json` under `telegram`):
-
-| Key | Values | Default | Description |
-|-----|--------|---------|-------------|
-| `streaming` | `"partial"` \| `"off"` | `"partial"` | **`partial`**: live preview while the model replies (`sendMessage` + throttled `editMessageText`). **`off`**: buffer the full reply, then send (no preview updates). |
-| `typingIndicator` | boolean | `true` | Send `typing` chat actions on an interval while the agent runs. Set `false` to disable. |
-| `nativeDrafts` | boolean | `false` | Reserved for future Bot API `sendMessageDraft` support (private chats); not used yet. |
-
-**Example:**
-
-```json
-{
-  "telegram": {
-    "streaming": "partial",
-    "typingIndicator": true
-  }
-}
-```
-
-### Project-Level Settings (`.grok/settings.json`)
-
-This file stores **project-specific settings** in your current working directory. It includes:
-
-- **Current Model**: The model currently in use for this project
-- **MCP Servers**: Model Context Protocol server configurations
-
-**Example:**
-```json
-{
-  "model": "grok-3-fast",
-  "mcpServers": {
-    "linear": {
-      "name": "linear",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["@linear/mcp-server"]
-    }
-  }
-}
-```
-
-### How It Works
-
-1. **Global Defaults**: User-level settings provide your default preferences
-2. **Project Override**: Project-level settings override defaults for specific projects
-3. **Directory-Specific**: When you change directories, project settings are loaded automatically
-4. **Fallback Logic**: Project model → User default model → System default (`grok-code-fast-1`)
-
-This means you can have different models for different projects while maintaining consistent global settings like your API key.
-
-### Using Other API Providers
-
-**Important**: Grok CLI uses **OpenAI-compatible APIs**. You can use any provider that implements the OpenAI chat completions standard.
-
-**Popular Providers**:
-- **X.AI (Grok)**: `https://api.x.ai/v1` (default)
-- **OpenAI**: `https://api.openai.com/v1`
-- **OpenRouter**: `https://openrouter.ai/api/v1`
-- **Groq**: `https://api.groq.com/openai/v1`
-
-**Example with OpenRouter**:
-```json
-{
-  "apiKey": "your_openrouter_key",
-  "baseURL": "https://openrouter.ai/api/v1",
-  "defaultModel": "anthropic/claude-3.5-sonnet",
-  "models": [
-    "anthropic/claude-3.5-sonnet",
-    "openai/gpt-4o",
-    "meta-llama/llama-3.1-70b-instruct"
-  ]
-}
-```
-
-## Usage
-
-### Interactive Mode
-
-Start the conversational AI assistant:
 ```bash
 grok
 ```
 
-Or specify a working directory:
-```bash
-grok -d /path/to/project
-```
-
-### Headless Mode
-
-Process a single prompt and exit (useful for scripting and automation):
-```bash
-grok --prompt "show me the package.json file"
-grok -p "create a new file called example.js with a hello world function"
-grok --prompt "run bun test and show me the results" --directory /path/to/project
-grok --prompt "complex task" --max-tool-rounds 50  # Limit tool usage for faster execution
-```
-
-This mode is particularly useful for:
-- **CI/CD pipelines**: Automate code analysis and file operations
-- **Scripting**: Integrate AI assistance into shell scripts
-- **Terminal benchmarks**: Perfect for tools like Terminal Bench that need non-interactive execution
-- **Batch processing**: Process multiple prompts programmatically
-
-### Tool Execution Control
-
-By default, Grok CLI allows up to 400 tool execution rounds to handle complex multi-step tasks. You can control this behavior:
+**Pick a project directory:**
 
 ```bash
-# Limit tool rounds for faster execution on simple tasks
-grok --max-tool-rounds 10 --prompt "show me the current directory"
-
-# Increase limit for very complex tasks (use with caution)
-grok --max-tool-rounds 1000 --prompt "comprehensive code refactoring"
-
-# Works with all modes
-grok --max-tool-rounds 20  # Interactive mode
-grok git commit-and-push --max-tool-rounds 30  # Git commands
+grok -d /path/to/your/repo
 ```
 
-**Use Cases**:
-- **Fast responses**: Lower limits (10-50) for simple queries
-- **Complex automation**: Higher limits (500+) for comprehensive tasks
-- **Resource control**: Prevent runaway executions in automated environments
+**Headless** — one prompt, then exit (scripts, CI, automation):
 
-### Model Selection
-
-You can specify which AI model to use with the `--model` parameter or `GROK_MODEL` environment variable:
-
-**Method 1: Command Line Flag**
 ```bash
-# Use Grok models
-grok --model grok-code-fast-1
-grok --model grok-4-latest
-grok --model grok-3-latest
-grok --model grok-3-fast
-
-# Use other models (with appropriate API endpoint)
-grok --model gemini-2.5-pro --base-url https://api-endpoint.com/v1
-grok --model claude-sonnet-4-20250514 --base-url https://api-endpoint.com/v1
+grok --prompt "run the test suite and summarize failures"
+grok -p "show me package.json" --directory /path/to/project
+grok --prompt "refactor X" --max-tool-rounds 30
 ```
 
-**Method 2: Environment Variable**
+**Continue a saved session:**
+
 ```bash
-export GROK_MODEL=grok-code-fast-1
-grok
+grok --session latest
+grok -s <session-id>
 ```
 
-**Method 3: User Settings File**
-Add to `~/.grok/user-settings.json`:
+Works in interactive mode too—same flag.
+
+**List Grok models and pricing hints:**
+
+```bash
+grok models
+```
+
+**Pass an opening message without another prompt:**
+
+```bash
+grok fix the flaky test in src/foo.test.ts
+```
+
+---
+
+## What you actually get
+
+| Thing | What it means |
+|--------|----------------|
+| **Grok-native** | Defaults tuned for Grok; models like **`grok-code-fast-1`**, **`grok-4-1-fast`**, flagship and fast variants—run `grok models` for the full menu. |
+| **X + web search** | **`search_x`** and **`search_web`** tools—live posts and docs without pretending the internet stopped in 2023. |
+| **Sub-agents (default behavior)** | Foreground **`task`** delegation (e.g. explore vs general) plus background **`delegate`** for read-only deep dives—parallelize like you mean it. |
+| **Remote control** | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, **`/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone. |
+| **No “mystery meat” UI** | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of. |
+| **Skills** | Agent Skills under **`.agents/skills/<name>/SKILL.md`** (project) or **`~/.agents/skills/`** (user). Use **`/skills`** in the TUI to list what’s installed. |
+| **MCPs** | Extend with Model Context Protocol servers—configure via **`/mcps`** in the TUI or **`.grok/settings.json`** (`mcpServers`). |
+| **Sessions** | Conversations persist; **`--session latest`** picks up where you left off. |
+| **Headless** | **`--prompt`** / **`-p`** for non-interactive runs—pipe it, script it, bench it. |
+| **Hackable** | TypeScript, clear agent loop, bash-first tools—fork it, shamelessly. |
+
+### Coming soon
+
+**Autonomous agent testing** (think: sandboxed machine, recorded runs, Replit-style “prove it works”—the kind of thing that makes flaky human QA nervous). Not shipped yet; when it lands, we’ll be insufferable about it.
+
+---
+
+## API key (pick one)
+
+**Environment (good for CI):**
+
+```bash
+export GROK_API_KEY=your_key_here
+```
+
+**`.env`** in the project (see `.env.example` if present):
+
+```bash
+GROK_API_KEY=your_key_here
+```
+
+**CLI once:**
+
+```bash
+grok -k your_key_here
+```
+
+**Saved in user settings** — `~/.grok/user-settings.json`:
+
 ```json
-{
-  "apiKey": "your_api_key_here",
-  "defaultModel": "grok-code-fast-1"
-}
+{ "apiKey": "your_key_here" }
 ```
 
-**Model Priority**: `--model` flag > `GROK_MODEL` environment variable > user default model > system default (grok-code-fast-1)
+Optional: **`GROK_BASE_URL`** (default `https://api.x.ai/v1`), **`GROK_MODEL`**, **`GROK_MAX_TOKENS`**.
 
-### Command Line Options
+---
 
-```bash
-grok [options]
+## Telegram (remote control) — short version
 
-Options:
-  -V, --version          output the version number
-  -d, --directory <dir>  set working directory
-  -k, --api-key <key>    Grok API key (or set GROK_API_KEY env var)
-  -u, --base-url <url>   Grok API base URL (or set GROK_BASE_URL env var)
-  -m, --model <model>    AI model to use (e.g., grok-code-fast-1, grok-4-latest) (or set GROK_MODEL env var)
-  -p, --prompt <prompt>  process a single prompt and exit (headless mode)
-  --max-tool-rounds <rounds>  maximum number of tool execution rounds (default: 400)
-  -h, --help             display help for command
-```
+1. Create a bot with [@BotFather](https://t.me/BotFather), copy the token.
+2. Set **`TELEGRAM_BOT_TOKEN`** or add **`telegram.botToken`** in `~/.grok/user-settings.json` (the TUI **`/remote-control`** flow can save it).
+3. Start **`grok`**, open **`/remote-control`** → **Telegram** if needed, then in Telegram DM your bot: **`/pair`**, enter the **6-character code** in the terminal when asked.
+4. First user must be approved once; after that, it’s remembered. **Keep the CLI process running** while you use the bot (long polling lives in that process).
 
-### Custom Instructions
+Treat the bot token like a password.
 
-Grok CLI loads markdown instructions from two ecosystems and merges them into the system prompt:
+---
 
-1. **[AGENTS.md](https://agents.md/)** — Shared convention used by many coding agents (build commands, tests, repo norms). Grok discovers these files the same way [OpenAI Codex](https://developers.openai.com/codex/guides/agents-md/) does: concatenate segments with blank lines, **broader scope first**, so later segments can refine or override earlier guidance in the combined text.
-2. **Grok-specific** — `.grok/GROK.md` (project) or `~/.grok/GROK.md` (fallback), appended **last** so Grok-only rules win when something conflicts.
+## Instructions & project brain
 
-Instructions are resolved from the CLI **working directory** (canonical path), not only `process.cwd()` of a parent process.
+- **`AGENTS.md`** — merged from git root down to your cwd (Codex-style; see repo docs). **`AGENTS.override.md`** wins per directory when present.
+- **`.grok/GROK.md`** or **`~/.grok/GROK.md`** — Grok-only rules, applied last.
 
-#### AGENTS.md (project and global)
+---
 
-- **Global:** `~/.grok/AGENTS.md` (if present and non-empty)
-- **Repository:** Starting at the **git repository root** (or only the current directory if you are not inside a repo), Grok walks **down** to your current directory. In each directory it loads **at most one** file:
-  - If `AGENTS.override.md` exists in that directory, it is used (and `AGENTS.md` in the same directory is **not** read).
-  - Otherwise, if `AGENTS.md` exists, it is used.
-- Empty files are skipped. Nested directories let monorepos ship package-level guidance (e.g. root `AGENTS.md` plus `services/api/AGENTS.md`).
+## MCP & project settings
 
-Put repository expectations, test commands, and PR conventions in `AGENTS.md` so the same file helps Grok and other tools.
+Project file: **`.grok/settings.json`** — e.g. current model, **`mcpServers`** for stdio/http/sse MCP servers. Manage interactively with **`/mcps`** in the TUI.
 
-#### Grok-specific: `.grok/GROK.md`
-
-Create a `.grok/GROK.md` file in your project directory for instructions that apply only to Grok CLI:
-
-```bash
-mkdir .grok
-```
-
-Example `.grok/GROK.md`:
-
-```markdown
-# Custom Instructions for This Project
-
-Always use TypeScript for any new code files.
-When creating React components, use functional components with hooks.
-Prefer const assertions and explicit typing over inference where it improves clarity.
-Always add JSDoc comments for public functions and interfaces.
-Follow the existing code style and patterns in this project.
-```
-
-For defaults across all projects, use `~/.grok/GROK.md`:
-
-```bash
-mkdir -p ~/.grok
-```
-
-Example global `GROK.md`:
-
-```markdown
-# Global Custom Instructions for Grok CLI
-
-Always prioritize code readability and maintainability.
-Use descriptive variable names and add comments for complex logic.
-Follow best practices for the programming language being used.
-When suggesting code changes, consider performance implications.
-```
-
-#### GROK.md vs project `AGENTS.md`
-
-If both exist, **both** are included: all `AGENTS.md` segments first (global `~/.grok/AGENTS.md`, then root-to-cwd walk), then **one** GROK file — **project** `.grok/GROK.md` if it exists, otherwise `~/.grok/GROK.md`. Project GROK is not merged with global GROK; the project file replaces the global file for GROK-only content.
-
-If no instruction files are present, Grok uses its built-in behavior only.
-
-The merged body is added to the system prompt under **CUSTOM INSTRUCTIONS** and applies to that session’s workspace directory.
-
-### Agent Skills
-
-[Agent Skills](https://agentskills.io) are folders of instructions (and optional scripts and assets) that Grok can load when they match the task. Grok discovers skills on disk and includes a compact catalog in the system prompt; the model should `read_file` the listed `SKILL.md` when a skill might help.
-
-#### Layout
-
-Each skill is a directory containing a `SKILL.md` file with YAML frontmatter (`name` and `description` required), per the [specification](https://agentskills.io/specification).
-
-- **Project skills:** `.agents/skills/<skill-name>/SKILL.md` (under your project directory)
-- **User skills:** `~/.agents/skills/<skill-name>/SKILL.md`
-
-If the same `name` appears in both places, the **project** skill wins.
-
-Install skills by copying or cloning them into those paths, or use tooling such as `skills.sh` — Grok CLI does not download skills for you.
-
-#### Listing skills in the TUI
-
-Open the slash command palette and choose **skills**, or type **`/skills`**, to print installed skills (name, scope, description, and path).
-
-## Morph Fast Apply (Optional)
-
-Grok CLI supports Morph's Fast Apply model for high-speed code editing at **4,500+ tokens/sec with 98% accuracy**. This is an optional feature that provides lightning-fast file editing capabilities.
-
-**Setup**: Configure your Morph API key following the [setup instructions](#setup) above.
-
-### How It Works
-
-When `MORPH_API_KEY` is configured:
-- **`edit_file` tool becomes available** alongside the standard `str_replace_editor`
-- **Optimized for complex edits**: Use for multi-line changes, refactoring, and large modifications
-- **Intelligent editing**: Uses abbreviated edit format with `// ... existing code ...` comments
-- **Fallback support**: Standard tools remain available if Morph is unavailable
-
-**When to use each tool:**
-- **`edit_file`** (Morph): Complex edits, refactoring, multi-line changes
-- **`str_replace_editor`**: Simple text replacements, single-line edits
-
-### Example Usage
-
-With Morph Fast Apply configured, you can request complex code changes:
-
-```bash
-grok --prompt "refactor this function to use async/await and add error handling"
-grok -p "convert this class to TypeScript and add proper type annotations"
-```
-
-The AI will automatically choose between `edit_file` (Morph) for complex changes or `str_replace_editor` for simple replacements.
-
-## MCP Tools
-
-Grok CLI supports MCP (Model Context Protocol) servers, allowing you to extend the AI assistant with additional tools and capabilities.
-
-### Adding MCP Tools
-
-#### Add a custom MCP server:
-```bash
-# Add an stdio-based MCP server
-grok mcp add my-server --transport stdio --command "bun" --args server.js
-
-# Add an HTTP-based MCP server
-grok mcp add my-server --transport http --url "http://localhost:3000"
-
-# Add with environment variables
-grok mcp add my-server --transport stdio --command "python" --args "-m" "my_mcp_server" --env "API_KEY=your_key"
-```
-
-#### Add from JSON configuration:
-```bash
-grok mcp add-json my-server '{"command": "bun", "args": ["server.js"], "env": {"API_KEY": "your_key"}}'
-```
-
-### Linear Integration Example
-
-To add Linear MCP tools for project management:
-
-```bash
-# Add Linear MCP server
-grok mcp add linear --transport sse --url "https://mcp.linear.app/sse"
-```
-
-This enables Linear tools like:
-- Create and manage Linear issues
-- Search and filter issues
-- Update issue status and assignees
-- Access team and project information
-
-### Managing MCP Servers
-
-```bash
-# List all configured servers
-grok mcp list
-
-# Test server connection
-grok mcp test server-name
-
-# Remove a server
-grok mcp remove server-name
-```
-
-### Available Transport Types
-
-- **stdio**: Run MCP server as a subprocess (most common)
-- **http**: Connect to HTTP-based MCP server
-- **sse**: Connect via Server-Sent Events
+---
 
 ## Development
 
+From a clone:
+
 ```bash
-# Install dependencies
 bun install
-
-# Development mode
-bun run dev
-
-# Build project
 bun run build
-
-# Run linter
-bun run lint
-
-# Type check
-bun run typecheck
+bun run start
+# or: node dist/index.js
 ```
 
-## Architecture
+Other useful commands:
 
-- **Agent**: Core command processing and execution logic
-- **Tools**: Text editor and bash tool implementations
-- **UI**: Ink-based terminal interface components
-- **Types**: TypeScript definitions for the entire system
+```bash
+bun run dev      # run from source (Bun)
+bun run typecheck
+bun run lint
+```
+
+---
 
 ## License
 
