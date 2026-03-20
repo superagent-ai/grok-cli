@@ -10,7 +10,7 @@ The rest borrowed from each other. We borrowed from *all of them*, then wired it
 
 Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
 
-https://github.com/user-attachments/assets/aa59f049-84ec-4b31-8318-338ee40983a4
+https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb
 
 ---
 
