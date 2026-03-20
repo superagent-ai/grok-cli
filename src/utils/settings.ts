@@ -17,10 +17,30 @@ export interface TelegramSettings {
   nativeDrafts?: boolean;
 }
 
+export type McpRemoteTransport = "http" | "sse";
+
+export interface McpServerConfig {
+  id: string;
+  label: string;
+  enabled: boolean;
+  transport: McpRemoteTransport | "stdio";
+  url?: string;
+  headers?: Record<string, string>;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+}
+
+export interface McpSettings {
+  servers?: McpServerConfig[];
+}
+
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
   telegram?: TelegramSettings;
+  mcp?: McpSettings;
 }
 
 export interface ProjectSettings {
@@ -73,6 +93,15 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
+    ...(partial.mcp !== undefined
+      ? {
+          mcp: {
+            ...current.mcp,
+            ...partial.mcp,
+            servers: partial.mcp.servers ?? current.mcp?.servers ?? [],
+          },
+        }
+      : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -121,4 +150,12 @@ export function resolveTelegramStreamSettings(t: TelegramSettings | undefined): 
     typingIndicator: t?.typingIndicator !== false,
     nativeDrafts: t?.nativeDrafts === true,
   };
+}
+
+export function loadMcpServers(): McpServerConfig[] {
+  return loadUserSettings().mcp?.servers ?? [];
+}
+
+export function saveMcpServers(servers: McpServerConfig[]): void {
+  saveUserSettings({ mcp: { servers } });
 }

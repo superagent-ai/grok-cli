@@ -1,6 +1,7 @@
-import { type ModelMessage, stepCountIs, streamText } from "ai";
+import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
 import { createTools } from "../grok/tools";
+import { buildMcpToolSet } from "../mcp/runtime";
 import {
   appendMessages,
   appendSystemMessage,
@@ -26,6 +27,7 @@ import type {
   WorkspaceInfo,
 } from "../types/index";
 import { loadCustomInstructions } from "../utils/instructions";
+import { loadMcpServers } from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import { DelegationManager } from "./delegations";
 
@@ -64,6 +66,7 @@ TOOLS:
 - delegation_list: List running and completed background delegations. Do not poll it repeatedly.
 - search_web: Search the web for current information, documentation, APIs, tutorials, etc.
 - search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
+- MCP tools: Enabled servers appear as tools named like mcp_<server>__<tool>.
 
 WORKFLOW:
 1. Understand the request
@@ -427,14 +430,26 @@ export class Agent {
     const signal = abortSignal;
     const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
-    const childTools = createTools(childBash, provider, childMode);
+    const childBaseTools = createTools(childBash, provider, childMode);
     const initialDetail = request.agent === "explore" ? "Scanning the codebase" : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
+    let childTools: ToolSet = childBaseTools;
+    let closeMcp: (() => Promise<void>) | undefined;
 
     onActivity?.(initialDetail);
 
     try {
+      if (childMode === "agent") {
+        const mcpBundle = await buildMcpToolSet(loadMcpServers());
+        closeMcp = mcpBundle.close;
+        childTools = { ...childBaseTools, ...mcpBundle.tools };
+        if (mcpBundle.errors.length > 0) {
+          lastActivity = `MCP unavailable: ${mcpBundle.errors.join(" | ")}`;
+          onActivity?.(lastActivity);
+        }
+      }
+
       const result = streamText({
         model: provider(request.agent === "explore" ? "grok-4-1-fast" : this.modelId),
         system: buildSubagentPrompt(request, childBash.getCwd()),
@@ -497,6 +512,8 @@ export class Agent {
           activity: lastActivity,
         },
       };
+    } finally {
+      await closeMcp?.().catch(() => {});
     }
   }
 
@@ -594,15 +611,25 @@ export class Agent {
 
     let assistantText = "";
     let streamOk = false;
+    let closeMcp: (() => Promise<void>) | undefined;
 
     try {
       const provider = this.requireProvider();
-      const tools = createTools(this.bash, provider, this.mode, {
+      const baseTools = createTools(this.bash, provider, this.mode, {
         runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
         runDelegation: (request, abortSignal) => this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
         readDelegation: (id) => this.readDelegation(id),
         listDelegations: () => this.listDelegations(),
       });
+      let tools: ToolSet = baseTools;
+      if (this.mode === "agent") {
+        const mcpBundle = await buildMcpToolSet(loadMcpServers());
+        closeMcp = mcpBundle.close;
+        tools = { ...baseTools, ...mcpBundle.tools };
+        if (mcpBundle.errors.length > 0) {
+          yield { type: "content", content: `MCP unavailable: ${mcpBundle.errors.join(" | ")}\n\n` };
+        }
+      }
       const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
       this.planContext = null;
 
@@ -721,6 +748,7 @@ export class Agent {
       }
       yield { type: "done" };
     } finally {
+      await closeMcp?.().catch(() => {});
       if (this.abortController?.signal === signal) {
         this.abortController = null;
       }

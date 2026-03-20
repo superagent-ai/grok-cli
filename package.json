@@ -1,6 +1,6 @@
 {
   "name": "grok-dev",
-  "version": "1.0.0-rc1",
+  "version": "1.0.0-rc2",
   "description": "An open-source AI coding agent powered by Grok, built with Bun and OpenTUI.",
   "type": "module",
   "main": "dist/index.js",
@@ -40,7 +40,9 @@
   "author": "Vibe Kit",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.25",
     "@ai-sdk/xai": "^3.0.67",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "ai": "^6.0.116",
