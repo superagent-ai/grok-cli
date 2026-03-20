@@ -139,9 +139,9 @@ Treat the bot token like a password.
 
 ---
 
-## MCP & project settings
+## Project settings
 
-Project file: **`.grok/settings.json`** — e.g. current model, **`mcpServers`** for stdio/http/sse MCP servers. Manage interactively with **`/mcps`** in the TUI.
+Project file: **`.grok/settings.json`** — e.g. the current model for this project.
 
 ---
 
