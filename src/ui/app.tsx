@@ -5,6 +5,9 @@ import os from "os";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
 import { getModelInfo, MODELS } from "../grok/models";
+import { POPULAR_MCP_CATALOG } from "../mcp/catalog";
+import { parseEnvLines, parseHeaderLines } from "../mcp/parse-headers";
+import { toMcpServerId, validateMcpServerConfig } from "../mcp/validate";
 import { createTelegramBridge, type TelegramBridgeHandle } from "../telegram/bridge";
 import { approvePairingCode } from "../telegram/pairing";
 import { createTurnCoordinator } from "../telegram/turn-coordinator";
@@ -24,12 +27,18 @@ import { copyTextToHostClipboard } from "../utils/host-clipboard";
 import {
   getApiKey,
   getTelegramBotToken,
+  loadMcpServers,
   loadUserSettings,
+  type McpRemoteTransport,
+  type McpServerConfig,
+  saveMcpServers,
   saveProjectSettings,
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { Markdown } from "./markdown";
+import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
+import { createEmptyMcpEditorDraft, type McpEditorDraft, type McpEditorField } from "./mcp-modal-types";
 import {
   formatPlanAnswers,
   initialPlanQuestionsState,
@@ -225,7 +234,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "exit", label: "exit", description: "Quit the CLI" },
   { id: "help", label: "help", description: "Show available commands" },
   { id: "remote-control", label: "remote-control", description: "Remote control" },
-  { id: "mcps", label: "mcps", description: "Manage MCP servers" },
+  { id: "mcp", label: "mcp", description: "Manage MCP servers" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
   { id: "review", label: "review", description: "Review recent changes" },
@@ -235,6 +244,9 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
 const CONNECT_CHANNELS: { id: string; label: string; description: string }[] = [
   { id: "telegram", label: "Telegram", description: "Chat with Grok from Telegram" },
 ];
+
+const MCP_REMOTE_FIELDS: McpEditorField[] = ["transport", "label", "url", "headers", "env"];
+const MCP_STDIO_FIELDS: McpEditorField[] = ["transport", "label", "command", "args", "cwd", "env"];
 
 export interface AppStartupConfig {
   apiKey: string | undefined;
@@ -311,6 +323,25 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const showConnectModalRef = useRef(false);
   const showTelegramTokenModalRef = useRef(false);
   const showTelegramPairModalRef = useRef(false);
+  const [showMcpModal, setShowMcpModal] = useState(false);
+  const [showMcpEditor, setShowMcpEditor] = useState(false);
+  const [mcpSearchQuery, setMcpSearchQuery] = useState("");
+  const [mcpModalIndex, setMcpModalIndex] = useState(0);
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>(() => loadMcpServers());
+  const [mcpEditorDraft, setMcpEditorDraft] = useState<McpEditorDraft>(createEmptyMcpEditorDraft());
+  const [mcpEditorField, setMcpEditorField] = useState<McpEditorField>("transport");
+  const [mcpEditorSyncKey, setMcpEditorSyncKey] = useState(0);
+  const [mcpEditorError, setMcpEditorError] = useState<string | null>(null);
+  const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
+  const showMcpModalRef = useRef(false);
+  const showMcpEditorRef = useRef(false);
+  const mcpLabelRef = useRef<TextareaRenderable>(null);
+  const mcpUrlRef = useRef<TextareaRenderable>(null);
+  const mcpHeadersRef = useRef<TextareaRenderable>(null);
+  const mcpCommandRef = useRef<TextareaRenderable>(null);
+  const mcpArgsRef = useRef<TextareaRenderable>(null);
+  const mcpCwdRef = useRef<TextareaRenderable>(null);
+  const mcpEnvRef = useRef<TextareaRenderable>(null);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -356,6 +387,278 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           item.description.toLowerCase().includes(slashSearchQuery.toLowerCase()),
       )
     : SLASH_MENU_ITEMS;
+  const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
+  const mcpEditorFields = mcpEditorDraft.transport === "stdio" ? MCP_STDIO_FIELDS : MCP_REMOTE_FIELDS;
+
+  const syncStoredMcpServers = useCallback((servers: McpServerConfig[]) => {
+    setMcpServers(servers);
+    saveMcpServers(servers);
+  }, []);
+
+  const snapshotMcpEditorDraft = useCallback((): McpEditorDraft => {
+    return {
+      ...mcpEditorDraft,
+      label: mcpLabelRef.current?.plainText ?? mcpEditorDraft.label,
+      url: mcpUrlRef.current?.plainText ?? mcpEditorDraft.url,
+      headersText: mcpHeadersRef.current?.plainText ?? mcpEditorDraft.headersText,
+      command: mcpCommandRef.current?.plainText ?? mcpEditorDraft.command,
+      argsText: mcpArgsRef.current?.plainText ?? mcpEditorDraft.argsText,
+      cwd: mcpCwdRef.current?.plainText ?? mcpEditorDraft.cwd,
+      envText: mcpEnvRef.current?.plainText ?? mcpEditorDraft.envText,
+    };
+  }, [mcpEditorDraft]);
+
+  const openMcpModal = useCallback(() => {
+    const latest = loadMcpServers();
+    setMcpServers(latest);
+    setMcpSearchQuery("");
+    setMcpModalIndex(0);
+    setShowMcpModal(true);
+    setShowMcpEditor(false);
+    setEditingMcpId(null);
+    setMcpEditorError(null);
+  }, []);
+
+  const openMcpEditor = useCallback((draft: McpEditorDraft, editingId: string | null = null) => {
+    setMcpEditorDraft(draft);
+    setEditingMcpId(editingId);
+    setMcpEditorField("transport");
+    setMcpEditorError(null);
+    setMcpEditorSyncKey((n) => n + 1);
+    setShowMcpEditor(true);
+    setShowMcpModal(true);
+  }, []);
+
+  const openCatalogMcp = useCallback(
+    (entry: (typeof POPULAR_MCP_CATALOG)[number]) => {
+      const existing = mcpServers.find((server) => toMcpServerId(server.id) === toMcpServerId(entry.id));
+      if (existing) {
+        openMcpEditor(
+          {
+            label: existing.label,
+            transport: existing.transport,
+            url: existing.url ?? "",
+            headersText: Object.entries(existing.headers ?? {})
+              .map(([key, value]) => `${key}: ${value}`)
+              .join("\n"),
+            command: existing.command ?? "",
+            argsText: (existing.args ?? []).join("\n"),
+            cwd: existing.cwd ?? "",
+            envText: Object.entries(existing.env ?? {})
+              .map(([key, value]) => `${key}=${value}`)
+              .join("\n"),
+          },
+          existing.id,
+        );
+        return;
+      }
+      openMcpEditor({
+        ...createEmptyMcpEditorDraft(),
+        label: entry.name,
+        transport: entry.starterTransport ?? "stdio",
+      });
+    },
+    [mcpServers, openMcpEditor],
+  );
+
+  const editSavedMcp = useCallback(
+    (server: McpServerConfig) => {
+      openMcpEditor(
+        {
+          label: server.label,
+          transport: server.transport,
+          url: server.url ?? "",
+          headersText: Object.entries(server.headers ?? {})
+            .map(([key, value]) => `${key}: ${value}`)
+            .join("\n"),
+          command: server.command ?? "",
+          argsText: (server.args ?? []).join("\n"),
+          cwd: server.cwd ?? "",
+          envText: Object.entries(server.env ?? {})
+            .map(([key, value]) => `${key}=${value}`)
+            .join("\n"),
+        },
+        server.id,
+      );
+    },
+    [openMcpEditor],
+  );
+
+  const toggleSavedMcp = useCallback(
+    (server: McpServerConfig) => {
+      syncStoredMcpServers(
+        mcpServers.map((item) => (item.id === server.id ? { ...item, enabled: !item.enabled } : item)),
+      );
+    },
+    [mcpServers, syncStoredMcpServers],
+  );
+
+  const deleteSavedMcp = useCallback(
+    (server: McpServerConfig) => {
+      syncStoredMcpServers(mcpServers.filter((item) => item.id !== server.id));
+      setMcpModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, mcpRows.length - 2))));
+    },
+    [mcpRows.length, mcpServers, syncStoredMcpServers],
+  );
+
+  const submitMcpEditor = useCallback(() => {
+    const draft: McpEditorDraft = {
+      label: mcpLabelRef.current?.plainText || "",
+      transport: mcpEditorDraft.transport,
+      url: mcpUrlRef.current?.plainText || "",
+      headersText: mcpHeadersRef.current?.plainText || "",
+      command: mcpCommandRef.current?.plainText || "",
+      argsText: mcpArgsRef.current?.plainText || "",
+      cwd: mcpCwdRef.current?.plainText || "",
+      envText: mcpEnvRef.current?.plainText || "",
+    };
+
+    const baseId = toMcpServerId(draft.label);
+    const currentServers = loadMcpServers();
+
+    const conflictingServer = currentServers.find((s) => s.id === baseId && s.id !== editingMcpId);
+    if (conflictingServer) {
+      setMcpEditorError(`Only one protocol is supported per MCP. Edit "${conflictingServer.label}" instead.`);
+      return;
+    }
+
+    const id = editingMcpId ?? baseId;
+
+    const server: McpServerConfig = {
+      id,
+      label: draft.label.trim(),
+      enabled: true,
+      transport: draft.transport,
+      ...(draft.transport === "stdio"
+        ? {
+            command: draft.command.trim(),
+            args: draft.argsText
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+            cwd: draft.cwd.trim() || undefined,
+            env: Object.keys(parseEnvLines(draft.envText)).length ? parseEnvLines(draft.envText) : undefined,
+          }
+        : {
+            url: draft.url.trim(),
+            headers: Object.keys(parseHeaderLines(draft.headersText)).length
+              ? parseHeaderLines(draft.headersText)
+              : undefined,
+            env: Object.keys(parseEnvLines(draft.envText)).length ? parseEnvLines(draft.envText) : undefined,
+          }),
+    };
+
+    const validation = validateMcpServerConfig(server);
+    if (!validation.ok) {
+      setMcpEditorError(validation.error);
+      return;
+    }
+
+    const nextServers = editingMcpId
+      ? currentServers.map((item) =>
+          item.id === editingMcpId ? { ...server, id: editingMcpId, enabled: item.enabled } : item,
+        )
+      : [...currentServers, server];
+    saveMcpServers(nextServers);
+    setMcpServers(nextServers);
+    setShowMcpEditor(false);
+    setEditingMcpId(null);
+    setMcpEditorError(null);
+    setMcpSearchQuery("");
+    setMcpModalIndex(
+      Math.max(
+        0,
+        nextServers.findIndex((item) => item.id === (editingMcpId ?? server.id)),
+      ),
+    );
+  }, [editingMcpId, mcpEditorDraft.transport]);
+
+  const cycleMcpEditorTransport = useCallback(
+    (direction: 1 | -1 = 1) => {
+      const draft = snapshotMcpEditorDraft();
+      const order: Array<McpRemoteTransport | "stdio"> = ["stdio", "http", "sse"];
+      const currentIndex = order.indexOf(draft.transport);
+      const nextTransport = order[(currentIndex + direction + order.length) % order.length];
+      const nextDraft = { ...draft, transport: nextTransport };
+      setMcpEditorDraft(nextDraft);
+      setMcpEditorField("transport");
+      setMcpEditorSyncKey((n) => n + 1);
+
+      if (!editingMcpId) return;
+
+      const existing = mcpServers.find((server) => server.id === editingMcpId);
+      if (!existing) return;
+
+      const optimisticServer: McpServerConfig = {
+        id: existing.id,
+        label: nextDraft.label.trim() || existing.label,
+        enabled: existing.enabled,
+        transport: nextTransport,
+        ...(nextTransport === "stdio"
+          ? {
+              command: nextDraft.command.trim() || existing.command,
+              args: nextDraft.argsText
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean),
+              cwd: nextDraft.cwd.trim() || undefined,
+              env: Object.keys(parseEnvLines(nextDraft.envText)).length ? parseEnvLines(nextDraft.envText) : undefined,
+            }
+          : {
+              url: nextDraft.url.trim() || existing.url,
+              headers: Object.keys(parseHeaderLines(nextDraft.headersText)).length
+                ? parseHeaderLines(nextDraft.headersText)
+                : undefined,
+              env: Object.keys(parseEnvLines(nextDraft.envText)).length ? parseEnvLines(nextDraft.envText) : undefined,
+            }),
+      };
+
+      syncStoredMcpServers(mcpServers.map((server) => (server.id === editingMcpId ? optimisticServer : server)));
+    },
+    [editingMcpId, mcpServers, snapshotMcpEditorDraft, syncStoredMcpServers],
+  );
+
+  useEffect(() => {
+    if (!showMcpEditor || !editingMcpId) return;
+
+    const existing = mcpServers.find((server) => server.id === editingMcpId);
+    if (!existing) return;
+    if (existing.transport === mcpEditorDraft.transport) return;
+
+    const syncedServer: McpServerConfig = {
+      id: existing.id,
+      label: mcpEditorDraft.label.trim() || existing.label,
+      enabled: existing.enabled,
+      transport: mcpEditorDraft.transport,
+      ...(mcpEditorDraft.transport === "stdio"
+        ? {
+            command: mcpEditorDraft.command.trim() || undefined,
+            args: mcpEditorDraft.argsText
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+            cwd: mcpEditorDraft.cwd.trim() || undefined,
+            env: Object.keys(parseEnvLines(mcpEditorDraft.envText)).length
+              ? parseEnvLines(mcpEditorDraft.envText)
+              : undefined,
+          }
+        : {
+            url: mcpEditorDraft.url.trim() || undefined,
+            headers: Object.keys(parseHeaderLines(mcpEditorDraft.headersText)).length
+              ? parseHeaderLines(mcpEditorDraft.headersText)
+              : undefined,
+            env: Object.keys(parseEnvLines(mcpEditorDraft.envText)).length
+              ? parseEnvLines(mcpEditorDraft.envText)
+              : undefined,
+          }),
+    };
+
+    syncStoredMcpServers(mcpServers.map((server) => (server.id === editingMcpId ? syncedServer : server)));
+  }, [editingMcpId, mcpEditorDraft, mcpServers, showMcpEditor, syncStoredMcpServers]);
+
+  useEffect(() => {
+    setMcpModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, mcpRows.length - 1))));
+  }, [mcpRows.length]);
 
   const scrollToBottom = useCallback(() => {
     try {
@@ -601,6 +904,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     showTelegramPairModalRef.current = showTelegramPairModal;
   }, [showTelegramPairModal]);
+  useEffect(() => {
+    showMcpModalRef.current = showMcpModal;
+  }, [showMcpModal]);
+  useEffect(() => {
+    showMcpEditorRef.current = showMcpEditor;
+  }, [showMcpEditor]);
 
   useEffect(() => {
     return () => {
@@ -922,13 +1231,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         setShowConnectModal(true);
         return true;
       }
+      if (c === "/mcp" || c === "/mcps") {
+        openMcpModal();
+        return true;
+      }
       if (c === "/quit" || c === "/exit" || c === "/q") {
         handleExit();
         return true;
       }
       return false;
     },
-    [handleExit, resetToNewSession],
+    [handleExit, openMcpModal, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -971,11 +1284,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             },
           ]);
           break;
-        case "mcps":
-          setMessages((p) => [
-            ...p,
-            { type: "assistant", content: "MCP server management coming soon.", timestamp: new Date() },
-          ]);
+        case "mcp":
+          openMcpModal();
           break;
         case "review":
           setMessages((p) => [
@@ -985,10 +1295,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
       }
     },
-    [agent, handleExit, resetToNewSession],
+    [agent, handleExit, openMcpModal, resetToNewSession],
   );
 
-  const blockPrompt = showConnectModal || showTelegramTokenModal || showTelegramPairModal;
+  const blockPrompt = showConnectModal || showTelegramTokenModal || showTelegramPairModal || showMcpModal;
 
   const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
@@ -1176,6 +1486,83 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
 
+        return;
+      }
+      if (showMcpEditorRef.current) {
+        if (key.name === "escape") {
+          setShowMcpEditor(false);
+          setMcpEditorError(null);
+          setMcpSearchQuery("");
+          return;
+        }
+        if (key.name === "return") {
+          submitMcpEditor();
+          return;
+        }
+        if (mcpEditorField === "transport" && (key.name === "left" || key.name === "right")) {
+          cycleMcpEditorTransport(key.name === "left" ? -1 : 1);
+          return;
+        }
+        if (key.name === "tab") {
+          const idx = mcpEditorFields.indexOf(mcpEditorField);
+          const nextIdx = (idx + (key.shift ? -1 : 1) + mcpEditorFields.length) % mcpEditorFields.length;
+          setMcpEditorField(mcpEditorFields[nextIdx]);
+          return;
+        }
+        if (mcpEditorField === "transport") {
+          return;
+        }
+      }
+      if (showMcpModalRef.current) {
+        const row = mcpRows[mcpModalIndex];
+        if (key.name === "escape") {
+          setShowMcpEditor(false);
+          setShowMcpModal(false);
+          setMcpSearchQuery("");
+          setEditingMcpId(null);
+          setMcpEditorError(null);
+          return;
+        }
+        if (key.name === "up") {
+          setMcpModalIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setMcpModalIndex((i) => Math.min(mcpRows.length - 1, i + 1));
+          return;
+        }
+        if (key.name === "return") {
+          if (row?.kind === "server") {
+            toggleSavedMcp(row.server);
+          } else if (row?.kind === "catalog") {
+            openCatalogMcp(row.entry);
+          } else {
+            openMcpEditor(createEmptyMcpEditorDraft());
+          }
+          return;
+        }
+        if (key.name === "a" && key.ctrl) {
+          openMcpEditor(createEmptyMcpEditorDraft());
+          return;
+        }
+        if (key.name === "e" && key.ctrl && row?.kind === "server") {
+          editSavedMcp(row.server);
+          return;
+        }
+        if (key.name === "x" && key.ctrl && row?.kind === "server") {
+          deleteSavedMcp(row.server);
+          return;
+        }
+        if (key.name === "backspace") {
+          setMcpSearchQuery((q) => q.slice(0, -1));
+          setMcpModalIndex(0);
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          setMcpSearchQuery((q) => q + key.sequence);
+          setMcpModalIndex(0);
+          return;
+        }
         return;
       }
       if (showTelegramTokenModalRef.current) {
@@ -1371,7 +1758,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       closeApiKeyModal,
       connectModalIndex,
       cycleMode,
+      cycleMcpEditorTransport,
+      deleteSavedMcp,
       dismissPlan,
+      editSavedMcp,
       filteredModelIds,
       filteredSlashItems,
       handleExit,
@@ -1381,10 +1771,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       isPlanConfirmTab,
       isProcessing,
       isSinglePlan,
+      mcpEditorField,
+      mcpEditorFields,
+      mcpModalIndex,
+      mcpRows,
       modelPickerIndex,
       openApiKeyModal,
+      openCatalogMcp,
+      openMcpEditor,
       submitTelegramPair,
       submitTelegramToken,
+      submitMcpEditor,
       planQuestions,
       planTabCount,
       pqs,
@@ -1395,6 +1792,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       submitApiKey,
       submitPlanAnswers,
       copyTuiSelectionToHost,
+      toggleSavedMcp,
     ],
   );
   useKeyboard(handleKey);
@@ -1604,6 +2002,36 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           height={height}
           searchQuery={slashSearchQuery}
           filteredItems={filteredSlashItems}
+        />
+      )}
+      {showMcpModal && !showMcpEditor && (
+        <McpBrowserModal
+          t={t}
+          width={width}
+          height={height}
+          selectedIndex={mcpModalIndex}
+          searchQuery={mcpSearchQuery}
+          rows={mcpRows}
+        />
+      )}
+      {showMcpEditor && (
+        <McpEditorModal
+          t={t}
+          width={width}
+          height={height}
+          draft={mcpEditorDraft}
+          focusedField={mcpEditorField}
+          syncKey={mcpEditorSyncKey}
+          error={mcpEditorError}
+          title={editingMcpId ? "Edit MCP Server" : "Add MCP Server"}
+          labelRef={mcpLabelRef}
+          urlRef={mcpUrlRef}
+          headersRef={mcpHeadersRef}
+          commandRef={mcpCommandRef}
+          argsRef={mcpArgsRef}
+          cwdRef={mcpCwdRef}
+          envRef={mcpEnvRef}
+          onSubmit={submitMcpEditor}
         />
       )}
       {showModelPicker && (
