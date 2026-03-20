@@ -29,12 +29,6 @@ function directoryChain(fromRoot: string, toCwd: string): string[] {
   return chain;
 }
 
-function loadGrokMd(cwd: string): string | null {
-  const projectPath = path.join(cwd, ".grok", "GROK.md");
-  const globalPath = path.join(os.homedir(), ".grok", "GROK.md");
-  return readNonEmptyFile(projectPath) ?? readNonEmptyFile(globalPath);
-}
-
 function loadAgentsSegments(canonicalCwd: string): string[] {
   const segments: string[] = [];
 
@@ -65,8 +59,6 @@ export function loadCustomInstructions(cwd: string): string | null {
   }
 
   const parts: string[] = [...loadAgentsSegments(canonical)];
-  const grok = loadGrokMd(canonical);
-  if (grok) parts.push(grok);
 
   if (parts.length === 0) return null;
   return parts.join("\n\n");

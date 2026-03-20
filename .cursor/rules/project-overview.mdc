@@ -37,7 +37,7 @@ src/
 ├── utils/
 │   ├── settings.ts   # User and project settings
 │   ├── git-root.ts   # Resolve git repository root for AGENTS.md discovery
-│   └── instructions.ts # AGENTS.md (ecosystem) + .grok/GROK.md
+│   └── instructions.ts # AGENTS.md (ecosystem) custom instructions
 └── types/
     └── index.ts      # Shared TypeScript types
 ```
@@ -48,7 +48,7 @@ src/
 - **Bash-only tools**: The agent uses bash for everything (file editing, searching, git, builds, etc.).
 - **X Search & Web Search**: Integrated via the xAI Responses API for real-time information.
 - **Settings hierarchy**: Environment variables → User-level (`~/.grok/user-settings.json`) → Project-level (`.grok/settings.json`).
-- **Custom instructions**: `~/.grok/AGENTS.md`, then `AGENTS.override.md` / `AGENTS.md` per directory from git root through the workspace cwd (Codex-style merge), then `.grok/GROK.md` or `~/.grok/GROK.md` last.
+- **Custom instructions**: `~/.grok/AGENTS.md`, then `AGENTS.override.md` / `AGENTS.md` per directory from git root through the workspace cwd (Codex-style merge).
 - **ESM only**: The project uses `"type": "module"` — all imports use `.js` extensions for compiled output.
 
 ## Latest Grok Models
