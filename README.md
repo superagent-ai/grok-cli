@@ -138,6 +138,38 @@ This file stores **global settings** that apply across all projects. These setti
 }
 ```
 
+### Telegram (optional)
+
+You can pair the CLI with a Telegram bot and send prompts from Telegram while the interactive session is running (similar in spirit to [OpenClaw-style channel pairing](https://docs.openclaw.ai/channels/telegram)).
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the bot token.
+2. Set **`TELEGRAM_BOT_TOKEN`** in the environment, or add **`telegram.botToken`** to `~/.grok/user-settings.json` (the `/remote-control` flow can save it for you).
+3. Start `grok`. If the bot token is already in settings or env, **long polling starts automatically** (no need to open **`/remote-control`** every time). Otherwise run **`/remote-control`** → **Telegram** and paste the token.
+4. In Telegram, open a DM with your bot and send **`/pair`** (only needed once per user until you remove them from `approvedUserIds`).
+5. The first time you pair a Telegram user, enter the **6-character code** in the terminal when prompted. After that, approval is remembered in `user-settings.json`.
+6. **Keep the CLI open** while you use the bot — polling runs in that process.
+
+Optional env override: `TELEGRAM_BOT_TOKEN`. Approved Telegram user IDs and per-user session mappings are stored under the **`telegram`** object in `user-settings.json`. Treat the bot token like a password.
+
+**Optional Telegram UX** (in `~/.grok/user-settings.json` under `telegram`):
+
+| Key | Values | Default | Description |
+|-----|--------|---------|-------------|
+| `streaming` | `"partial"` \| `"off"` | `"partial"` | **`partial`**: live preview while the model replies (`sendMessage` + throttled `editMessageText`). **`off`**: buffer the full reply, then send (no preview updates). |
+| `typingIndicator` | boolean | `true` | Send `typing` chat actions on an interval while the agent runs. Set `false` to disable. |
+| `nativeDrafts` | boolean | `false` | Reserved for future Bot API `sendMessageDraft` support (private chats); not used yet. |
+
+**Example:**
+
+```json
+{
+  "telegram": {
+    "streaming": "partial",
+    "typingIndicator": true
+  }
+}
+```
+
 ### Project-Level Settings (`.grok/settings.json`)
 
 This file stores **project-specific settings** in your current working directory. It includes:

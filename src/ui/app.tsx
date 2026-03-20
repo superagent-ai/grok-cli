@@ -3,8 +3,11 @@ import { decodePasteBytes, type PasteEvent } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import os from "os";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Agent } from "../agent/agent";
+import { Agent } from "../agent/agent";
 import { getModelInfo, MODELS } from "../grok/models";
+import { createTelegramBridge, type TelegramBridgeHandle } from "../telegram/bridge";
+import { approvePairingCode } from "../telegram/pairing";
+import { createTurnCoordinator } from "../telegram/turn-coordinator";
 import type {
   AgentMode,
   ChatEntry,
@@ -14,10 +17,17 @@ import type {
   PlanQuestion,
   SubagentStatus,
   ToolCall,
+  ToolResult,
 } from "../types/index";
 import { MODES } from "../types/index";
 import { copyTextToHostClipboard } from "../utils/host-clipboard";
-import { saveProjectSettings, saveUserSettings } from "../utils/settings";
+import {
+  getApiKey,
+  getTelegramBotToken,
+  loadUserSettings,
+  saveProjectSettings,
+  saveUserSettings,
+} from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { Markdown } from "./markdown";
 import {
@@ -214,6 +224,7 @@ interface SlashMenuItem {
 const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "exit", label: "exit", description: "Quit the CLI" },
   { id: "help", label: "help", description: "Show available commands" },
+  { id: "remote-control", label: "remote-control", description: "Remote control" },
   { id: "mcps", label: "mcps", description: "Manage MCP servers" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
@@ -221,13 +232,25 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "skills", label: "skills", description: "Manage skills" },
 ];
 
+const CONNECT_CHANNELS: { id: string; label: string; description: string }[] = [
+  { id: "telegram", label: "Telegram", description: "Chat with Grok from Telegram" },
+];
+
+export interface AppStartupConfig {
+  apiKey: string | undefined;
+  baseURL: string;
+  model: string;
+  maxToolRounds: number;
+}
+
 interface AppProps {
   agent: Agent;
+  startupConfig: AppStartupConfig;
   initialMessage?: string;
   onExit?: () => void;
 }
 
-export function App({ agent, initialMessage, onExit }: AppProps) {
+export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) {
   const t = dark;
   const renderer = useRenderer();
   const initialHasApiKey = agent.hasApiKey();
@@ -274,6 +297,20 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
   const interruptedRunIdRef = useRef<number | null>(null);
+  const coordinatorRef = useRef(createTurnCoordinator());
+  const bridgeRef = useRef<TelegramBridgeHandle | null>(null);
+  const telegramAgentsRef = useRef<Map<number, Agent>>(new Map());
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showTelegramTokenModal, setShowTelegramTokenModal] = useState(false);
+  const [showTelegramPairModal, setShowTelegramPairModal] = useState(false);
+  const [telegramTokenError, setTelegramTokenError] = useState<string | null>(null);
+  const [telegramPairError, setTelegramPairError] = useState<string | null>(null);
+  const [connectModalIndex, setConnectModalIndex] = useState(0);
+  const telegramTokenInputRef = useRef<TextareaRenderable>(null);
+  const telegramPairInputRef = useRef<TextareaRenderable>(null);
+  const showConnectModalRef = useRef(false);
+  const showTelegramTokenModalRef = useRef(false);
+  const showTelegramPairModalRef = useRef(false);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -327,6 +364,162 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       /* */
     }
   }, []);
+
+  const getTelegramAgent = useCallback(
+    (userId: number) => {
+      const map = telegramAgentsRef.current;
+      const existing = map.get(userId);
+      if (existing) return existing;
+
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        throw new Error("Grok API key required. Add it in the CLI or set GROK_API_KEY.");
+      }
+
+      const u = loadUserSettings();
+      const sid = u.telegram?.sessionsByUserId?.[String(userId)];
+      const a = new Agent(apiKey, startupConfig.baseURL, startupConfig.model, startupConfig.maxToolRounds, {
+        session: sid,
+      });
+      if (!sid && a.getSessionId()) {
+        saveUserSettings({
+          telegram: {
+            ...u.telegram,
+            sessionsByUserId: {
+              ...u.telegram?.sessionsByUserId,
+              [String(userId)]: a.getSessionId()!,
+            },
+          },
+        });
+      }
+      map.set(userId, a);
+      return a;
+    },
+    [startupConfig],
+  );
+
+  const appendTelegramUserMessage = useCallback(
+    (event: { userId: number; content: string }) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "user",
+          content: event.content,
+          timestamp: new Date(),
+          sourceLabel: `Telegram user ${event.userId}`,
+        },
+      ]);
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const upsertTelegramAssistantMessage = useCallback(
+    (event: { turnKey: string; userId: number; content: string; done: boolean }) => {
+      const content = sanitizeContent(event.content);
+      if (!content && !event.done) return;
+
+      setMessages((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex((entry) => entry.type === "assistant" && entry.remoteKey === event.turnKey);
+        const entry: ChatEntry = {
+          type: "assistant",
+          content: content || "(no text output)",
+          timestamp: new Date(),
+          remoteKey: event.turnKey,
+          sourceLabel: `Telegram Grok • user ${event.userId}`,
+        };
+
+        if (idx === -1) {
+          next.push(entry);
+        } else {
+          next[idx] = {
+            ...next[idx],
+            content: entry.content,
+            timestamp: entry.timestamp,
+            sourceLabel: entry.sourceLabel,
+          };
+        }
+        return next;
+      });
+      if (event.done) {
+        setActiveToolCalls([]);
+      }
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const showTelegramToolCalls = useCallback(
+    (event: { toolCalls: ToolCall[] }) => {
+      setActiveToolCalls(event.toolCalls);
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const appendTelegramToolResult = useCallback(
+    (event: { toolCall: ToolCall; toolResult: ToolResult }) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "tool_result",
+          content: event.toolResult.success ? event.toolResult.output || "Success" : event.toolResult.error || "Error",
+          timestamp: new Date(),
+          toolCall: event.toolCall,
+          toolResult: event.toolResult,
+        },
+      ]);
+      if (event.toolResult.plan?.questions?.length) {
+        setActivePlan(event.toolResult.plan);
+        setPqs(initialPlanQuestionsState());
+      }
+      setActiveToolCalls([]);
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const startTelegramBridge = useCallback(() => {
+    const token = getTelegramBotToken();
+    if (!token || !getApiKey()) return;
+    if (bridgeRef.current) return;
+
+    const bridge = createTelegramBridge({
+      token,
+      getApprovedUserIds: () => loadUserSettings().telegram?.approvedUserIds ?? [],
+      coordinator: coordinatorRef.current,
+      getTelegramAgent,
+      onUserMessage: appendTelegramUserMessage,
+      onAssistantMessage: upsertTelegramAssistantMessage,
+      onToolCalls: showTelegramToolCalls,
+      onToolResult: appendTelegramToolResult,
+      onError: (msg) => {
+        setMessages((p) => [...p, { type: "assistant", content: `Telegram: ${msg}`, timestamp: new Date() }]);
+      },
+    });
+    bridgeRef.current = bridge;
+    bridge.start();
+  }, [
+    appendTelegramToolResult,
+    appendTelegramUserMessage,
+    getTelegramAgent,
+    showTelegramToolCalls,
+    upsertTelegramAssistantMessage,
+  ]);
+
+  /** Start long polling when a bot token is already saved (pairing UI is optional if already approved). */
+  useEffect(() => {
+    if (!hasApiKey) return;
+    if (!getTelegramBotToken()) return;
+    startTelegramBridge();
+  }, [hasApiKey, startTelegramBridge]);
+
+  const handleExit = useCallback(() => {
+    void bridgeRef.current?.stop();
+    bridgeRef.current = null;
+    onExit?.();
+  }, [onExit]);
 
   const showCopyBanner = useCallback(() => {
     setCopyFlashId((n) => n + 1);
@@ -386,7 +579,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     setApiKeyError(null);
     setShowApiKeyModal(false);
     apiKeyInputRef.current?.clear();
-  }, [agent]);
+    if (getTelegramBotToken()) {
+      startTelegramBridge();
+    }
+  }, [agent, startTelegramBridge]);
 
   useEffect(() => {
     hasApiKeyRef.current = hasApiKey;
@@ -395,6 +591,123 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
   useEffect(() => {
     showApiKeyModalRef.current = showApiKeyModal;
   }, [showApiKeyModal]);
+
+  useEffect(() => {
+    showConnectModalRef.current = showConnectModal;
+  }, [showConnectModal]);
+  useEffect(() => {
+    showTelegramTokenModalRef.current = showTelegramTokenModal;
+  }, [showTelegramTokenModal]);
+  useEffect(() => {
+    showTelegramPairModalRef.current = showTelegramPairModal;
+  }, [showTelegramPairModal]);
+
+  useEffect(() => {
+    return () => {
+      void bridgeRef.current?.stop();
+      bridgeRef.current = null;
+    };
+  }, []);
+
+  const submitTelegramToken = useCallback(() => {
+    const token = (telegramTokenInputRef.current?.plainText || "").trim();
+    if (!token) {
+      setTelegramTokenError("Paste your bot token from @BotFather.");
+      return;
+    }
+    if (!getApiKey()) {
+      setTelegramTokenError("Add a Grok API key first.");
+      return;
+    }
+    const u = loadUserSettings();
+    saveUserSettings({ telegram: { ...u.telegram, botToken: token } });
+    telegramTokenInputRef.current?.clear();
+    setShowTelegramTokenModal(false);
+    setTelegramTokenError(null);
+    startTelegramBridge();
+    setShowTelegramPairModal(true);
+    setTelegramPairError(null);
+    setMessages((p) => [
+      ...p,
+      {
+        type: "assistant",
+        content:
+          "Telegram polling started. In Telegram, DM your bot and send /pair. Copy the code, then enter it below.",
+        timestamp: new Date(),
+      },
+    ]);
+  }, [startTelegramBridge]);
+
+  const submitTelegramPair = useCallback(async () => {
+    const code = (telegramPairInputRef.current?.plainText || "").trim();
+    if (!code) {
+      setTelegramPairError("Enter the pairing code.");
+      return;
+    }
+    const result = approvePairingCode(code);
+    if (!result.ok) {
+      setTelegramPairError(result.error);
+      return;
+    }
+    const u = loadUserSettings();
+    const ids = new Set(u.telegram?.approvedUserIds ?? []);
+    ids.add(result.userId);
+    saveUserSettings({ telegram: { ...u.telegram, approvedUserIds: [...ids] } });
+    telegramPairInputRef.current?.clear();
+    setShowTelegramPairModal(false);
+    setTelegramPairError(null);
+    setMessages((p) => [
+      ...p,
+      {
+        type: "assistant",
+        content: `Telegram user ${result.userId} paired. Keep this CLI open while you use the bot.`,
+        timestamp: new Date(),
+      },
+    ]);
+    try {
+      await bridgeRef.current?.sendDm(result.userId, "Pairing approved. You can message Grok here.");
+    } catch {
+      /* optional DM */
+    }
+  }, []);
+
+  const beginTelegramFromConnect = useCallback(() => {
+    setShowConnectModal(false);
+    if (!getApiKey()) {
+      setMessages((p) => [...p, { type: "assistant", content: "Add a Grok API key first.", timestamp: new Date() }]);
+      openApiKeyModal();
+      return;
+    }
+    if (!getTelegramBotToken()) {
+      setShowTelegramTokenModal(true);
+      setTelegramTokenError(null);
+      return;
+    }
+    startTelegramBridge();
+    const alreadyPaired = (loadUserSettings().telegram?.approvedUserIds?.length ?? 0) > 0;
+    if (!alreadyPaired) {
+      setShowTelegramPairModal(true);
+      setTelegramPairError(null);
+      setMessages((p) => [
+        ...p,
+        {
+          type: "assistant",
+          content:
+            "Telegram polling started. In Telegram, DM your bot and send /pair. Copy the code, then enter it below.",
+          timestamp: new Date(),
+        },
+      ]);
+    } else {
+      setMessages((p) => [
+        ...p,
+        {
+          type: "assistant",
+          content: "Telegram polling is running. Your chat is already paired.",
+          timestamp: new Date(),
+        },
+      ]);
+    }
+  }, [openApiKeyModal, startTelegramBridge]);
 
   const invalidateActiveRun = useCallback(() => {
     activeRunIdRef.current += 1;
@@ -428,127 +741,132 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       const isStale = () => activeRunIdRef.current !== runId;
       isProcessingRef.current = true;
       setIsProcessing(true);
-      setStreamContent("");
-      setStreamReasoning("");
-      setActiveToolCalls([]);
-      setActiveSubagent(null);
-      contentAccRef.current = "";
-      startTimeRef.current = Date.now();
       if (!sessionTitle)
         agent
           .generateTitle(text.trim())
           .then(setSessionTitle)
           .catch(() => {});
-      const color = modeInfoRef.current.color;
-      setMessages((prev) => [...prev, { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color }]);
-      setTimeout(scrollToBottom, 50);
-      try {
-        for await (const chunk of agent.processMessage(text.trim())) {
-          if (isStale()) {
-            break;
-          }
-
-          switch (chunk.type) {
-            case "content":
-              contentAccRef.current += chunk.content || "";
-              setStreamContent(sanitizeContent(contentAccRef.current));
-              setTimeout(scrollToBottom, 10);
-              break;
-            case "reasoning":
-              setStreamReasoning((p) => p + (chunk.content || ""));
-              break;
-            case "tool_calls":
-              if (chunk.toolCalls) {
-                const cleaned = sanitizeContent(contentAccRef.current);
-                if (cleaned) {
-                  setMessages((p) => [
-                    ...p,
-                    {
-                      type: "assistant",
-                      content: cleaned,
-                      timestamp: new Date(),
-                      modeColor: modeInfoRef.current.color,
-                    },
-                  ]);
-                }
-                contentAccRef.current = "";
-                setStreamContent("");
-                setActiveToolCalls(chunk.toolCalls);
-              }
-              break;
-            case "tool_result":
-              if (chunk.toolCall && chunk.toolResult) {
-                setMessages((p) => [
-                  ...p,
-                  {
-                    type: "tool_result",
-                    content: chunk.toolResult!.success
-                      ? chunk.toolResult!.output || "Success"
-                      : chunk.toolResult!.error || "Error",
-                    timestamp: new Date(),
-                    modeColor: modeInfoRef.current.color,
-                    toolCall: chunk.toolCall,
-                    toolResult: chunk.toolResult,
-                  },
-                ]);
-                if (chunk.toolResult.plan?.questions?.length) {
-                  setActivePlan(chunk.toolResult.plan);
-                  setPqs(initialPlanQuestionsState());
-                }
-                setActiveToolCalls([]);
-                setTimeout(scrollToBottom, 10);
-              }
-              break;
-            case "error":
-              contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
-              setStreamContent(contentAccRef.current);
-              break;
-            case "done":
-              break;
-          }
-        }
-      } catch {
-        if (!isStale()) {
-          contentAccRef.current += "\nAn unexpected error occurred.";
-          setStreamContent(contentAccRef.current);
-        }
-      }
-      const wasInterrupted = interruptedRunIdRef.current === runId;
-      const finalContent = sanitizeContent(contentAccRef.current);
-      if (isStale()) {
-        contentAccRef.current = "";
-        return;
-      }
-
-      if (!wasInterrupted && finalContent) {
-        setMessages((p) => [
-          ...p,
-          { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
-        ]);
-      }
-
-      contentAccRef.current = "";
-      if (!isStale()) {
+      await coordinatorRef.current.run(async () => {
         setStreamContent("");
         setStreamReasoning("");
         setActiveToolCalls([]);
         setActiveSubagent(null);
-      }
-      if (wasInterrupted) {
-        interruptedRunIdRef.current = null;
-      }
-      const nextQueued = queuedMessagesRef.current.shift();
-      if (nextQueued) {
-        setQueuedMessages([...queuedMessagesRef.current]);
-        isProcessingRef.current = false;
-        processMessage(nextQueued);
-      } else {
-        isProcessingRef.current = false;
-        if (!isStale()) {
-          setIsProcessing(false);
+        contentAccRef.current = "";
+        startTimeRef.current = Date.now();
+        const color = modeInfoRef.current.color;
+        setMessages((prev) => [
+          ...prev,
+          { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color },
+        ]);
+        setTimeout(scrollToBottom, 50);
+        try {
+          for await (const chunk of agent.processMessage(text.trim())) {
+            if (isStale()) {
+              break;
+            }
+
+            switch (chunk.type) {
+              case "content":
+                contentAccRef.current += chunk.content || "";
+                setStreamContent(sanitizeContent(contentAccRef.current));
+                setTimeout(scrollToBottom, 10);
+                break;
+              case "reasoning":
+                setStreamReasoning((p) => p + (chunk.content || ""));
+                break;
+              case "tool_calls":
+                if (chunk.toolCalls) {
+                  const cleaned = sanitizeContent(contentAccRef.current);
+                  if (cleaned) {
+                    setMessages((p) => [
+                      ...p,
+                      {
+                        type: "assistant",
+                        content: cleaned,
+                        timestamp: new Date(),
+                        modeColor: modeInfoRef.current.color,
+                      },
+                    ]);
+                  }
+                  contentAccRef.current = "";
+                  setStreamContent("");
+                  setActiveToolCalls(chunk.toolCalls);
+                }
+                break;
+              case "tool_result":
+                if (chunk.toolCall && chunk.toolResult) {
+                  setMessages((p) => [
+                    ...p,
+                    {
+                      type: "tool_result",
+                      content: chunk.toolResult!.success
+                        ? chunk.toolResult!.output || "Success"
+                        : chunk.toolResult!.error || "Error",
+                      timestamp: new Date(),
+                      modeColor: modeInfoRef.current.color,
+                      toolCall: chunk.toolCall,
+                      toolResult: chunk.toolResult,
+                    },
+                  ]);
+                  if (chunk.toolResult.plan?.questions?.length) {
+                    setActivePlan(chunk.toolResult.plan);
+                    setPqs(initialPlanQuestionsState());
+                  }
+                  setActiveToolCalls([]);
+                  setTimeout(scrollToBottom, 10);
+                }
+                break;
+              case "error":
+                contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
+                setStreamContent(contentAccRef.current);
+                break;
+              case "done":
+                break;
+            }
+          }
+        } catch {
+          if (!isStale()) {
+            contentAccRef.current += "\nAn unexpected error occurred.";
+            setStreamContent(contentAccRef.current);
+          }
         }
-      }
-      setTimeout(scrollToBottom, 50);
+        const wasInterrupted = interruptedRunIdRef.current === runId;
+        const finalContent = sanitizeContent(contentAccRef.current);
+        if (isStale()) {
+          contentAccRef.current = "";
+          return;
+        }
+
+        if (!wasInterrupted && finalContent) {
+          setMessages((p) => [
+            ...p,
+            { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
+          ]);
+        }
+
+        contentAccRef.current = "";
+        if (!isStale()) {
+          setStreamContent("");
+          setStreamReasoning("");
+          setActiveToolCalls([]);
+          setActiveSubagent(null);
+        }
+        if (wasInterrupted) {
+          interruptedRunIdRef.current = null;
+        }
+        const nextQueued = queuedMessagesRef.current.shift();
+        if (nextQueued) {
+          setQueuedMessages([...queuedMessagesRef.current]);
+          isProcessingRef.current = false;
+          processMessage(nextQueued);
+        } else {
+          isProcessingRef.current = false;
+          if (!isStale()) {
+            setIsProcessing(false);
+          }
+        }
+        setTimeout(scrollToBottom, 50);
+      });
     },
     [agent, scrollToBottom, sessionTitle],
   );
@@ -599,12 +917,18 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
         setModelSearchQuery("");
         return true;
       }
+      if (c === "/remote-control") {
+        setConnectModalIndex(0);
+        setShowConnectModal(true);
+        return true;
+      }
       if (c === "/quit" || c === "/exit" || c === "/q") {
-        onExit ? onExit() : process.exit(0);
+        handleExit();
+        return true;
       }
       return false;
     },
-    [onExit, resetToNewSession],
+    [handleExit, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -620,8 +944,12 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           setModelPickerIndex(0);
           setModelSearchQuery("");
           break;
+        case "remote-control":
+          setConnectModalIndex(0);
+          setShowConnectModal(true);
+          break;
         case "exit":
-          onExit ? onExit() : process.exit(0);
+          handleExit();
           break;
         case "help":
           setMessages((p) => [
@@ -657,8 +985,10 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           break;
       }
     },
-    [agent, onExit, resetToNewSession],
+    [agent, handleExit, resetToNewSession],
   );
+
+  const blockPrompt = showConnectModal || showTelegramTokenModal || showTelegramPairModal;
 
   const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
@@ -848,6 +1178,48 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
 
         return;
       }
+      if (showTelegramTokenModalRef.current) {
+        if (key.name === "escape") {
+          setShowTelegramTokenModal(false);
+          setTelegramTokenError(null);
+          return;
+        }
+        if (key.name === "return") {
+          submitTelegramToken();
+        }
+        return;
+      }
+      if (showTelegramPairModalRef.current) {
+        if (key.name === "escape") {
+          setShowTelegramPairModal(false);
+          setTelegramPairError(null);
+          return;
+        }
+        if (key.name === "return") {
+          void submitTelegramPair();
+        }
+        return;
+      }
+      if (showConnectModalRef.current) {
+        if (key.name === "escape") {
+          setShowConnectModal(false);
+          return;
+        }
+        if (key.name === "up") {
+          setConnectModalIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setConnectModalIndex((i) => Math.min(CONNECT_CHANNELS.length - 1, i + 1));
+          return;
+        }
+        if (key.name === "return") {
+          const ch = CONNECT_CHANNELS[connectModalIndex];
+          if (ch?.id === "telegram") beginTelegramFromConnect();
+          return;
+        }
+        return;
+      }
       if (showApiKeyModalRef.current) {
         if (key.name === "escape") {
           closeApiKeyModal();
@@ -984,7 +1356,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           inputRef.current?.clear();
           setPasteBlocks([]);
         } else {
-          onExit ? onExit() : process.exit(0);
+          handleExit();
         }
         return;
       }
@@ -995,11 +1367,14 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
     },
     [
       agent,
+      beginTelegramFromConnect,
       closeApiKeyModal,
+      connectModalIndex,
       cycleMode,
       dismissPlan,
       filteredModelIds,
       filteredSlashItems,
+      handleExit,
       handlePlanSelect,
       handleSlashMenuSelect,
       invalidateActiveRun,
@@ -1008,7 +1383,8 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
       isSinglePlan,
       modelPickerIndex,
       openApiKeyModal,
-      onExit,
+      submitTelegramPair,
+      submitTelegramToken,
       planQuestions,
       planTabCount,
       pqs,
@@ -1158,6 +1534,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
               showSlashMenu={showSlashMenu}
               showPlanQuestions={showPlanPanel}
               showApiKeyModal={showApiKeyModal}
+              blockPrompt={blockPrompt}
               onSubmit={handleSubmit}
               onPaste={handlePaste}
               pasteBlocks={pasteBlocks}
@@ -1188,6 +1565,7 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
                 showApiKeyModal={showApiKeyModal}
+                blockPrompt={blockPrompt}
                 onSubmit={handleSubmit}
                 onPaste={handlePaste}
                 pasteBlocks={pasteBlocks}
@@ -1237,6 +1615,35 @@ export function App({ agent, initialMessage, onExit }: AppProps) {
           height={height}
           searchQuery={modelSearchQuery}
           filteredModels={filteredModels}
+        />
+      )}
+      {showConnectModal && (
+        <ConnectModal
+          t={t}
+          width={width}
+          height={height}
+          selectedIndex={connectModalIndex}
+          channels={CONNECT_CHANNELS}
+        />
+      )}
+      {showTelegramTokenModal && (
+        <TelegramTokenModal
+          t={t}
+          width={width}
+          height={height}
+          inputRef={telegramTokenInputRef}
+          error={telegramTokenError}
+          onSubmit={submitTelegramToken}
+        />
+      )}
+      {showTelegramPairModal && (
+        <TelegramPairModal
+          t={t}
+          width={width}
+          height={height}
+          inputRef={telegramPairInputRef}
+          error={telegramPairError}
+          onSubmit={() => void submitTelegramPair()}
         />
       )}
     </box>
@@ -1320,6 +1727,7 @@ function PromptBox({
   showSlashMenu,
   showPlanQuestions,
   showApiKeyModal,
+  blockPrompt,
   onSubmit,
   onPaste,
   pasteBlocks: _pasteBlocks,
@@ -1338,6 +1746,7 @@ function PromptBox({
   showSlashMenu: boolean;
   showPlanQuestions: boolean;
   showApiKeyModal: boolean;
+  blockPrompt?: boolean;
   onSubmit: () => void;
   onPaste: (event: PasteEvent) => void;
   pasteBlocks: { id: number; content: string; lines: number }[];
@@ -1400,7 +1809,7 @@ function PromptBox({
           <box flexGrow={1}>
             <textarea
               ref={inputRef}
-              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions && !showApiKeyModal}
+              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions && !showApiKeyModal && !blockPrompt}
               placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
               textColor={t.text}
               backgroundColor={t.backgroundElement}
@@ -1505,8 +1914,8 @@ function ApiKeyModal({
 }) {
   const overlayBg = "#000000cc" as string;
   const panelWidth = Math.min(68, width - 6);
-  const panelHeight = 11;
-  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  const panelHeight = 13;
+  const top = bottomAlignedModalTop(height, panelHeight);
 
   return (
     <box
@@ -1519,7 +1928,14 @@ function ApiKeyModal({
       paddingTop={top}
       backgroundColor={overlayBg}
     >
-      <box width={panelWidth} height={panelHeight} backgroundColor={t.backgroundPanel} paddingTop={1} paddingBottom={1}>
+      <box
+        width={panelWidth}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}>
             <b>{"Add API key"}</b>
@@ -1546,7 +1962,8 @@ function ApiKeyModal({
             />
           </box>
         </box>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+        <box flexGrow={1} minHeight={0} />
+        <box paddingLeft={2} paddingRight={2} paddingTop={2} paddingBottom={1}>
           {error ? (
             <text fg={t.diffRemovedFg}>{error}</text>
           ) : (
@@ -1576,7 +1993,15 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
           marginTop={index === 0 ? 0 : 1}
           marginBottom={1}
         >
-          <box paddingTop={1} paddingBottom={1} paddingLeft={2} backgroundColor={t.backgroundPanel} flexShrink={0}>
+          <box
+            paddingTop={1}
+            paddingBottom={1}
+            paddingLeft={2}
+            backgroundColor={t.backgroundPanel}
+            flexShrink={0}
+            flexDirection="column"
+          >
+            {entry.sourceLabel ? <text fg={t.textMuted}>{entry.sourceLabel}</text> : null}
             <text fg={t.text}>{entry.content}</text>
           </box>
         </box>
@@ -1584,7 +2009,8 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
 
     case "assistant":
       return (
-        <box paddingLeft={3} marginTop={1} flexShrink={0}>
+        <box paddingLeft={3} marginTop={1} flexShrink={0} flexDirection="column">
+          {entry.sourceLabel ? <text fg={t.textMuted}>{entry.sourceLabel}</text> : null}
           <Markdown content={entry.content} t={t} />
         </box>
       );
@@ -2040,6 +2466,10 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
 
 /* ── Slash Menu ──────────────────────────────────────────────── */
 
+function bottomAlignedModalTop(height: number, panelHeight: number): number {
+  return Math.max(2, Math.floor((height - panelHeight) / 2));
+}
+
 function SlashMenuModal({
   t,
   selectedIndex,
@@ -2065,7 +2495,7 @@ function SlashMenuModal({
   const contentHeight = itemCount + 5;
   const maxH = Math.floor(height * 0.6);
   const panelHeight = Math.min(contentHeight, maxH);
-  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  const top = bottomAlignedModalTop(height, panelHeight);
   const overlayBg = "#000000cc" as string;
   return (
     <box
@@ -2084,6 +2514,7 @@ function SlashMenuModal({
         backgroundColor={t.backgroundPanel}
         paddingTop={1}
         paddingBottom={1}
+        flexDirection="column"
       >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}>
@@ -2094,7 +2525,7 @@ function SlashMenuModal({
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
           <text fg={t.text}>{searchQuery || <span style={{ fg: t.textMuted }}>{"Search..."}</span>}</text>
         </box>
-        <scrollbox ref={listRef} flexGrow={1}>
+        <scrollbox ref={listRef} flexGrow={1} minHeight={0}>
           {filteredItems.map((item, idx) => (
             <box
               key={item.id}
@@ -2118,6 +2549,255 @@ function SlashMenuModal({
             </box>
           )}
         </scrollbox>
+      </box>
+    </box>
+  );
+}
+
+function ConnectModal({
+  t,
+  width,
+  height,
+  selectedIndex,
+  channels,
+}: {
+  t: Theme;
+  width: number;
+  height: number;
+  selectedIndex: number;
+  channels: { id: string; label: string; description: string }[];
+}) {
+  const listRef = useRef<ScrollBoxRenderable>(null);
+  useEffect(() => {
+    const ch = channels[selectedIndex];
+    if (ch) listRef.current?.scrollChildIntoView(`connect-${ch.id}`);
+  }, [selectedIndex, channels]);
+
+  const panelHeight = Math.min(channels.length + 9, Math.floor(height * 0.5));
+  const top = bottomAlignedModalTop(height, panelHeight);
+  const overlayBg = "#000000cc" as string;
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={Math.min(56, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Connect"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+          <text fg={t.textMuted}>{"Choose a channel"}</text>
+        </box>
+        <scrollbox ref={listRef} flexGrow={1} minHeight={0}>
+          {channels.map((ch, idx) => (
+            <box
+              key={ch.id}
+              id={`connect-${ch.id}`}
+              backgroundColor={idx === selectedIndex ? t.selectedBg : undefined}
+              paddingLeft={2}
+              paddingRight={2}
+            >
+              <box flexDirection="row" justifyContent="space-between">
+                <text fg={idx === selectedIndex ? t.selected : t.text}>{ch.label}</text>
+                <text fg={t.textMuted}>{ch.description}</text>
+              </box>
+            </box>
+          ))}
+        </scrollbox>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={2} paddingBottom={1}>
+          <text>
+            <span style={{ fg: t.primary }}>{"enter "}</span>
+            <span style={{ fg: t.textMuted }}>{"select  ·  "}</span>
+            <span style={{ fg: t.primary }}>{"↑↓ "}</span>
+            <span style={{ fg: t.textMuted }}>{"navigate  ·  "}</span>
+            <span style={{ fg: t.primary }}>{"esc "}</span>
+            <span style={{ fg: t.textMuted }}>{"close"}</span>
+          </text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function TelegramTokenModal({
+  t,
+  width,
+  height,
+  inputRef,
+  error,
+  onSubmit,
+}: {
+  t: Theme;
+  width: number;
+  height: number;
+  inputRef: React.RefObject<TextareaRenderable | null>;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  const overlayBg = "#000000cc" as string;
+  const panelWidth = Math.min(68, width - 6);
+  const panelHeight = 14;
+  const top = bottomAlignedModalTop(height, panelHeight);
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={panelWidth}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Telegram bot token"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.text}>
+            {"From @BotFather: /newbot, then paste the token here. Stored in ~/.grok/user-settings.json."}
+          </text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
+            <textarea
+              ref={inputRef}
+              focused={true}
+              placeholder="123456:ABC..."
+              textColor={t.text}
+              backgroundColor={t.backgroundElement}
+              placeholderColor={t.textMuted}
+              minHeight={1}
+              maxHeight={3}
+              wrapMode="word"
+              keyBindings={TEXTAREA_KEYBINDINGS}
+              onSubmit={onSubmit as unknown as () => void}
+            />
+          </box>
+        </box>
+        <box flexGrow={1} minHeight={0} />
+        <box paddingLeft={2} paddingRight={2} paddingTop={2} paddingBottom={1}>
+          {error ? (
+            <text fg={t.diffRemovedFg}>{error}</text>
+          ) : (
+            <text>
+              <span style={{ fg: t.primary }}>{"enter "}</span>
+              <span style={{ fg: t.textMuted }}>{"save token  ·  "}</span>
+              <span style={{ fg: t.primary }}>{"esc "}</span>
+              <span style={{ fg: t.textMuted }}>{"close"}</span>
+            </text>
+          )}
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function TelegramPairModal({
+  t,
+  width,
+  height,
+  inputRef,
+  error,
+  onSubmit,
+}: {
+  t: Theme;
+  width: number;
+  height: number;
+  inputRef: React.RefObject<TextareaRenderable | null>;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  const overlayBg = "#000000cc" as string;
+  const panelWidth = Math.min(68, width - 6);
+  const panelHeight = 13;
+  const top = bottomAlignedModalTop(height, panelHeight);
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={panelWidth}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Pairing code"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.text}>{"DM your bot with /pair, then paste the 6-character code."}</text>
+        </box>
+        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
+            <textarea
+              ref={inputRef}
+              focused={true}
+              placeholder="ABC123"
+              textColor={t.text}
+              backgroundColor={t.backgroundElement}
+              placeholderColor={t.textMuted}
+              minHeight={1}
+              maxHeight={2}
+              wrapMode="word"
+              keyBindings={TEXTAREA_KEYBINDINGS}
+              onSubmit={onSubmit as unknown as () => void}
+            />
+          </box>
+        </box>
+        <box flexGrow={1} minHeight={0} />
+        <box paddingLeft={2} paddingRight={2} paddingTop={2} paddingBottom={1}>
+          {error ? (
+            <text fg={t.diffRemovedFg}>{error}</text>
+          ) : (
+            <text>
+              <span style={{ fg: t.primary }}>{"enter "}</span>
+              <span style={{ fg: t.textMuted }}>{"approve pairing  ·  "}</span>
+              <span style={{ fg: t.primary }}>{"esc "}</span>
+              <span style={{ fg: t.textMuted }}>{"close"}</span>
+            </text>
+          )}
+        </box>
       </box>
     </box>
   );
@@ -2152,7 +2832,7 @@ function ModelPickerModal({
   const contentHeight = itemCount + 5;
   const maxH = Math.floor(height * 0.6);
   const panelHeight = Math.min(contentHeight, maxH);
-  const top = Math.max(2, Math.floor((height - panelHeight) / 2));
+  const top = bottomAlignedModalTop(height, panelHeight);
   const overlayBg = "#000000cc" as string;
   return (
     <box
@@ -2171,6 +2851,7 @@ function ModelPickerModal({
         backgroundColor={t.backgroundPanel}
         paddingTop={1}
         paddingBottom={1}
+        flexDirection="column"
       >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}>
@@ -2181,7 +2862,7 @@ function ModelPickerModal({
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
           <text fg={t.text}>{searchQuery || <span style={{ fg: t.textMuted }}>{"Search..."}</span>}</text>
         </box>
-        <scrollbox ref={listRef} flexGrow={1}>
+        <scrollbox ref={listRef} flexGrow={1} minHeight={0}>
           {filteredModels.map((m, idx) => {
             const selected = idx === selectedIndex;
             const current = m.id === currentModel;
