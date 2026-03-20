@@ -136,7 +136,6 @@ Treat the bot token like a password.
 ## Instructions & project brain
 
 - **`AGENTS.md`** — merged from git root down to your cwd (Codex-style; see repo docs). **`AGENTS.override.md`** wins per directory when present.
-- **`.grok/GROK.md`** or **`~/.grok/GROK.md`** — Grok-only rules, applied last.
 
 ---
 
