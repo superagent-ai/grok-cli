@@ -241,6 +241,30 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "skills", label: "skills", description: "Manage skills" },
 ];
 
+const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
+
+1. Run \`git status\` to see which files have been modified, staged, or are untracked.
+2. Run \`git diff\` to see unstaged changes and \`git diff --cached\` to see staged changes.
+3. If there are no changes at all, say so and stop.
+4. Read any changed files in full if needed for context.
+
+Then produce a **Review Report** in this exact structure:
+
+## Summary
+One paragraph overview of what changed and why (inferred from the diff).
+
+## Files Changed
+For each changed file, list the filename and a brief description of the change.
+
+## Issues Found
+List any bugs, logic errors, security concerns, missing error handling, or correctness problems. If none, say "No issues found."
+
+## Suggestions
+Code quality, naming, performance, and best-practice improvements. If none, say "No suggestions."
+
+## Risk Assessment
+Rate the overall risk of these changes as **Low**, **Medium**, or **High** with a short justification.`;
+
 const CONNECT_CHANNELS: { id: string; label: string; description: string }[] = [
   { id: "telegram", label: "Telegram", description: "Chat with Grok from Telegram" },
 ];
@@ -1239,9 +1263,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         handleExit();
         return true;
       }
+      if (c === "/review") {
+        processMessage(REVIEW_PROMPT);
+        return true;
+      }
       return false;
     },
-    [handleExit, openMcpModal, resetToNewSession],
+    [handleExit, openMcpModal, processMessage, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -1288,14 +1316,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           openMcpModal();
           break;
         case "review":
-          setMessages((p) => [
-            ...p,
-            { type: "assistant", content: "Review feature coming soon.", timestamp: new Date() },
-          ]);
+          processMessage(REVIEW_PROMPT);
           break;
       }
     },
-    [agent, handleExit, openMcpModal, resetToNewSession],
+    [agent, handleExit, openMcpModal, processMessage, resetToNewSession],
   );
 
   const blockPrompt = showConnectModal || showTelegramTokenModal || showTelegramPairModal || showMcpModal;
