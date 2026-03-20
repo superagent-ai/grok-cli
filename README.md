@@ -10,7 +10,7 @@ The rest borrowed from each other. We borrowed from *all of them*, then wired it
 
 Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
 
-<img width="980" height="435" alt="Grok CLI in the terminal" src="https://github.com/user-attachments/assets/192402e3-30a8-47df-9fc8-a084c5696e78" />
+https://github.com/user-attachments/assets/aa59f049-84ec-4b31-8318-338ee40983a4
 
 ---
 
