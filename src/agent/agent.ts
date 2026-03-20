@@ -1,13 +1,17 @@
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
 import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
+import { getModelInfo } from "../grok/models";
 import { createTools } from "../grok/tools";
 import { buildMcpToolSet } from "../mcp/runtime";
 import {
+  appendCompaction,
   appendMessages,
   appendSystemMessage,
   buildChatEntries,
+  getNextMessageSequence,
   getSessionTotalTokens,
   loadTranscript,
+  loadTranscriptState,
   recordUsageEvent,
   SessionStore,
 } from "../storage/index";
@@ -29,6 +33,17 @@ import type {
 import { loadCustomInstructions } from "../utils/instructions";
 import { loadMcpServers } from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
+import {
+  type CompactionSettings,
+  createCompactionSummaryMessage,
+  DEFAULT_KEEP_RECENT_TOKENS,
+  DEFAULT_RESERVE_TOKENS,
+  estimateConversationTokens,
+  generateCompactionSummary,
+  prepareCompaction,
+  relaxCompactionSettings,
+  shouldCompactContext,
+} from "./compaction";
 import { DelegationManager } from "./delegations";
 
 const MAX_TOOL_ROUNDS = 400;
@@ -198,7 +213,7 @@ export class Agent {
   private workspace: WorkspaceInfo | null = null;
   private session: SessionInfo | null = null;
   private messages: ModelMessage[] = [];
-  private recordedTokens = 0;
+  private messageSeqs: Array<number | null> = [];
   private abortController: AbortController | null = null;
   private maxToolRounds: number;
   private mode: AgentMode = "agent";
@@ -230,8 +245,9 @@ export class Agent {
       this.workspace = this.sessionStore.getWorkspace();
       this.session = this.sessionStore.openSession(options.session, this.modelId, this.mode, this.bash.getCwd());
       this.mode = this.session.mode;
-      this.messages = loadTranscript(this.session.id);
-      this.recordedTokens = getSessionTotalTokens(this.session.id);
+      const transcript = loadTranscriptState(this.session.id);
+      this.messages = transcript.messages;
+      this.messageSeqs = transcript.seqs;
       this.sessionStore.setModel(this.session.id, this.modelId);
     }
   }
@@ -291,8 +307,7 @@ export class Agent {
     ratioRemaining: number;
   } {
     const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
-    const estimatedTokens = estimateTokens(`${system}\n${JSON.stringify(this.messages)}\n${inFlightText}`);
-    const usedTokens = Math.min(contextWindow, Math.max(estimatedTokens, this.recordedTokens));
+    const usedTokens = Math.min(contextWindow, estimateConversationTokens(system, this.messages, inFlightText));
     const remainingTokens = Math.max(0, contextWindow - usedTokens);
 
     return {
@@ -331,7 +346,7 @@ export class Agent {
   startNewSession(): SessionSnapshot | null {
     if (!this.sessionStore) {
       this.messages = [];
-      this.recordedTokens = 0;
+      this.messageSeqs = [];
       return null;
     }
 
@@ -339,7 +354,7 @@ export class Agent {
     this.workspace = this.sessionStore.getWorkspace();
     this.session = this.sessionStore.createSession(this.modelId, this.mode, this.bash.getCwd());
     this.messages = [];
-    this.recordedTokens = 0;
+    this.messageSeqs = [];
     return this.getSessionSnapshot();
   }
 
@@ -388,6 +403,7 @@ export class Agent {
     const idx = this.messages.lastIndexOf(userMessage);
     if (idx >= 0) {
       this.messages.splice(idx, 1);
+      this.messageSeqs.splice(idx, 1);
     }
   }
 
@@ -397,10 +413,6 @@ export class Agent {
     model = this.modelId,
   ): void {
     if (!usage) return;
-    const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-    if (Number.isFinite(total) && total > 0) {
-      this.recordedTokens += total;
-    }
     if (this.session) {
       recordUsageEvent(this.session.id, source, model, usage);
     }
@@ -411,9 +423,11 @@ export class Agent {
       const notifications = await this.delegations.consumeNotifications();
       for (const notification of notifications) {
         this.messages.push({ role: "system", content: notification.message });
+        let seq: number | null = null;
         if (this.session) {
-          appendSystemMessage(this.session.id, notification.message);
+          seq = appendSystemMessage(this.session.id, notification.message);
         }
+        this.messageSeqs.push(seq);
       }
       return notifications.map((notification) => notification.message);
     } catch {
@@ -600,6 +614,62 @@ export class Agent {
     }
   }
 
+  private getCompactionSettings(): CompactionSettings {
+    return {
+      reserveTokens: Math.max(this.maxTokens, DEFAULT_RESERVE_TOKENS),
+      keepRecentTokens: DEFAULT_KEEP_RECENT_TOKENS,
+    };
+  }
+
+  private async compactForContext(
+    provider: XaiProvider,
+    system: string,
+    contextWindow: number,
+    signal: AbortSignal,
+    settings = this.getCompactionSettings(),
+    force = false,
+  ): Promise<boolean> {
+    if (!this.session) return false;
+
+    const preparation = prepareCompaction(this.messages, system, settings);
+    if (!preparation) return false;
+    if (!force && !shouldCompactContext(preparation.tokensBefore, contextWindow, settings)) {
+      return false;
+    }
+
+    const keptSeqs = this.messageSeqs.slice(preparation.firstKeptIndex);
+    const firstKeptSeq = keptSeqs.find((seq): seq is number => seq !== null) ?? getNextMessageSequence(this.session.id);
+    const summary = await generateCompactionSummary(provider, this.modelId, preparation, undefined, signal);
+
+    appendCompaction(this.session.id, firstKeptSeq, summary, preparation.tokensBefore);
+    this.messages = [createCompactionSummaryMessage(summary), ...preparation.keptMessages];
+    this.messageSeqs = [null, ...keptSeqs];
+    return true;
+  }
+
+  private appendCompletedTurn(userMessage: ModelMessage, newMessages: ModelMessage[]): void {
+    if (newMessages.length === 0) return;
+
+    const userIndex = this.messages.lastIndexOf(userMessage);
+    if (!this.sessionStore || !this.session) {
+      if (userIndex >= 0 && this.messageSeqs[userIndex] == null) {
+        this.messageSeqs[userIndex] = null;
+      }
+      this.messages.push(...newMessages);
+      this.messageSeqs.push(...newMessages.map(() => null));
+      return;
+    }
+
+    const insertedSeqs = appendMessages(this.session.id, [userMessage, ...newMessages]);
+    if (userIndex >= 0) {
+      this.messageSeqs[userIndex] = insertedSeqs[0] ?? this.messageSeqs[userIndex];
+    }
+    this.messages.push(...newMessages);
+    this.messageSeqs.push(...insertedSeqs.slice(1));
+    this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
+    this.session = this.sessionStore.getRequiredSession(this.session.id);
+  }
+
   async *processMessage(userMessage: string): AsyncGenerator<StreamChunk, void, unknown> {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
@@ -608,147 +678,171 @@ export class Agent {
     await this.consumeBackgroundNotifications();
     const userModelMessage: ModelMessage = { role: "user", content: userMessage };
     this.messages.push(userModelMessage);
+    this.messageSeqs.push(null);
 
-    let assistantText = "";
-    let streamOk = false;
-    let closeMcp: (() => Promise<void>) | undefined;
+    const provider = this.requireProvider();
+    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+    const modelInfo = getModelInfo(this.modelId);
+    this.planContext = null;
+    let attemptedOverflowRecovery = false;
 
     try {
-      const provider = this.requireProvider();
-      const baseTools = createTools(this.bash, provider, this.mode, {
-        runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
-        runDelegation: (request, abortSignal) => this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
-        readDelegation: (id) => this.readDelegation(id),
-        listDelegations: () => this.listDelegations(),
-      });
-      let tools: ToolSet = baseTools;
-      if (this.mode === "agent") {
-        const mcpBundle = await buildMcpToolSet(loadMcpServers());
-        closeMcp = mcpBundle.close;
-        tools = { ...baseTools, ...mcpBundle.tools };
-        if (mcpBundle.errors.length > 0) {
-          yield { type: "content", content: `MCP unavailable: ${mcpBundle.errors.join(" | ")}\n\n` };
-        }
-      }
-      const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
-      this.planContext = null;
+      while (true) {
+        let assistantText = "";
+        let streamOk = false;
+        let closeMcp: (() => Promise<void>) | undefined;
 
-      const result = streamText({
-        model: provider(this.modelId),
-        system,
-        messages: this.messages,
-        tools,
-        stopWhen: stepCountIs(this.maxToolRounds),
-        maxRetries: 0,
-        abortSignal: signal,
-        temperature: 0.7,
-        maxOutputTokens: this.maxTokens,
-        onFinish: ({ totalUsage }) => {
-          this.recordUsage(totalUsage, "message");
-        },
-      });
-
-      for await (const part of result.fullStream) {
-        if (signal.aborted) {
-          yield { type: "content", content: "\n\n[Cancelled]" };
-          break;
-        }
-
-        switch (part.type) {
-          case "text-delta":
-            assistantText += part.text;
-            yield { type: "content", content: part.text };
-            break;
-
-          case "reasoning-delta":
-            yield { type: "reasoning", content: part.text };
-            break;
-
-          case "tool-call": {
-            const tc = toToolCall(part);
-            yield { type: "tool_calls", toolCalls: [tc] };
-            break;
+        try {
+          const settings = attemptedOverflowRecovery
+            ? relaxCompactionSettings(this.getCompactionSettings())
+            : this.getCompactionSettings();
+          if (modelInfo) {
+            await this.compactForContext(
+              provider,
+              system,
+              modelInfo.contextWindow,
+              signal,
+              settings,
+              attemptedOverflowRecovery,
+            );
           }
 
-          case "tool-result": {
-            const tc: ToolCall = {
-              id: part.toolCallId,
-              type: "function",
-              function: { name: part.toolName, arguments: JSON.stringify(part.input ?? {}) },
-            };
-            const tr = toToolResult(part.output);
-            yield { type: "tool_result", toolCall: tc, toolResult: tr };
-            break;
+          const baseTools = createTools(this.bash, provider, this.mode, {
+            runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
+            runDelegation: (request, abortSignal) =>
+              this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
+            readDelegation: (id) => this.readDelegation(id),
+            listDelegations: () => this.listDelegations(),
+          });
+          let tools: ToolSet = baseTools;
+          if (this.mode === "agent") {
+            const mcpBundle = await buildMcpToolSet(loadMcpServers());
+            closeMcp = mcpBundle.close;
+            tools = { ...baseTools, ...mcpBundle.tools };
+            if (mcpBundle.errors.length > 0) {
+              yield { type: "content", content: `MCP unavailable: ${mcpBundle.errors.join(" | ")}\n\n` };
+            }
           }
 
-          case "error":
-            yield { type: "error", content: String(part.error) };
-            break;
+          const result = streamText({
+            model: provider(this.modelId),
+            system,
+            messages: this.messages,
+            tools,
+            stopWhen: stepCountIs(this.maxToolRounds),
+            maxRetries: 0,
+            abortSignal: signal,
+            temperature: 0.7,
+            maxOutputTokens: this.maxTokens,
+            onFinish: ({ totalUsage }) => {
+              this.recordUsage(totalUsage, "message");
+            },
+          });
 
-          case "abort":
+          for await (const part of result.fullStream) {
+            if (signal.aborted) {
+              yield { type: "content", content: "\n\n[Cancelled]" };
+              break;
+            }
+
+            switch (part.type) {
+              case "text-delta":
+                assistantText += part.text;
+                yield { type: "content", content: part.text };
+                break;
+
+              case "reasoning-delta":
+                yield { type: "reasoning", content: part.text };
+                break;
+
+              case "tool-call": {
+                const tc = toToolCall(part);
+                yield { type: "tool_calls", toolCalls: [tc] };
+                break;
+              }
+
+              case "tool-result": {
+                const tc: ToolCall = {
+                  id: part.toolCallId,
+                  type: "function",
+                  function: { name: part.toolName, arguments: JSON.stringify(part.input ?? {}) },
+                };
+                const tr = toToolResult(part.output);
+                yield { type: "tool_result", toolCall: tc, toolResult: tr };
+                break;
+              }
+
+              case "error":
+                yield { type: "error", content: String(part.error) };
+                break;
+
+              case "abort":
+                yield { type: "content", content: "\n\n[Cancelled]" };
+                break;
+            }
+          }
+
+          if (signal.aborted) {
+            this.discardAbortedTurn(userModelMessage);
+            yield { type: "done" };
+            return;
+          }
+
+          try {
+            const response = await result.response;
+            if (!signal.aborted) {
+              this.appendCompletedTurn(userModelMessage, response.messages);
+              streamOk = true;
+            }
+          } catch (responseError: unknown) {
+            if (
+              !attemptedOverflowRecovery &&
+              !assistantText.trim() &&
+              modelInfo &&
+              isContextLimitError(responseError)
+            ) {
+              attemptedOverflowRecovery = true;
+              continue;
+            }
+          }
+
+          if (signal.aborted) {
+            this.discardAbortedTurn(userModelMessage);
+            yield { type: "done" };
+            return;
+          }
+
+          if (!streamOk && assistantText.trim()) {
+            this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
+          }
+
+          yield { type: "done" };
+          return;
+        } catch (err: unknown) {
+          if (signal.aborted) {
+            this.discardAbortedTurn(userModelMessage);
             yield { type: "content", content: "\n\n[Cancelled]" };
-            break;
-        }
-      }
-
-      if (signal.aborted) {
-        this.discardAbortedTurn(userModelMessage);
-        yield { type: "done" };
-        return;
-      }
-
-      try {
-        const response = await result.response;
-        if (!signal.aborted) {
-          this.messages.push(...response.messages);
-          if (this.sessionStore && this.session) {
-            appendMessages(this.session.id, [userModelMessage, ...response.messages]);
-            this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
-            this.session = this.sessionStore.getRequiredSession(this.session.id);
+            yield { type: "done" };
+            return;
           }
-          streamOk = true;
-        }
-      } catch {
-        // response promise can fail after stream errors — fall back to manual message
-      }
 
-      if (signal.aborted) {
-        this.discardAbortedTurn(userModelMessage);
-        yield { type: "done" };
-        return;
-      }
+          if (!attemptedOverflowRecovery && !assistantText.trim() && modelInfo && isContextLimitError(err)) {
+            attemptedOverflowRecovery = true;
+            continue;
+          }
 
-      if (!streamOk && assistantText.trim()) {
-        const fallbackMessage: ModelMessage = { role: "assistant", content: assistantText };
-        this.messages.push(fallbackMessage);
-        if (this.sessionStore && this.session) {
-          appendMessages(this.session.id, [userModelMessage, fallbackMessage]);
-          this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
-          this.session = this.sessionStore.getRequiredSession(this.session.id);
+          const msg = err instanceof Error ? err.message : String(err);
+          yield { type: "error", content: `Error: ${msg}` };
+          if (assistantText.trim()) {
+            this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
+          }
+          yield { type: "done" };
+          return;
+        } finally {
+          await closeMcp?.().catch(() => {});
         }
       }
-
-      yield { type: "done" };
-    } catch (err: unknown) {
-      if (signal.aborted) {
-        this.discardAbortedTurn(userModelMessage);
-        yield { type: "content", content: "\n\n[Cancelled]" };
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        yield { type: "error", content: `Error: ${msg}` };
-      }
-      if (!signal.aborted && assistantText.trim()) {
-        const fallbackMessage: ModelMessage = { role: "assistant", content: assistantText };
-        this.messages.push(fallbackMessage);
-        if (this.sessionStore && this.session) {
-          appendMessages(this.session.id, [userModelMessage, fallbackMessage]);
-          this.sessionStore.touchSession(this.session.id, this.bash.getCwd());
-          this.session = this.sessionStore.getRequiredSession(this.session.id);
-        }
-      }
-      yield { type: "done" };
     } finally {
-      await closeMcp?.().catch(() => {});
       if (this.abortController?.signal === signal) {
         this.abortController = null;
       }
@@ -828,10 +922,6 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
 function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
   if (activeSignals.length === 0) return undefined;
@@ -852,4 +942,9 @@ function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortS
   }
 
   return controller.signal;
+}
+
+function isContextLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(context|token|prompt).*(limit|length|large|window|overflow)|too many tokens|maximum context/i.test(message);
 }

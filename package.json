@@ -18,6 +18,8 @@
     "build": "tsc",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "bunx vitest run",
+    "test:watch": "bunx vitest",
     "lint": "biome check src/",
     "format": "biome format src/",
     "format:fix": "biome format --write src/",
@@ -60,7 +62,8 @@
     "@types/react": "^19.2.14",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -1177,6 +1177,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           ]);
         }
 
+        if (!isStale() && agent.getSessionId()) {
+          setMessages(agent.getChatEntries());
+          setSessionTitle(agent.getSessionTitle());
+          setSessionId(agent.getSessionId());
+        }
+
         contentAccRef.current = "";
         if (!isStale()) {
           setStreamContent("");

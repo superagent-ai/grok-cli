@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "./db";
 
-const LATEST_DB_VERSION = 1;
+const LATEST_DB_VERSION = 2;
 
 export function applyMigrations(db: SQLiteDatabase): void {
   const version = Number(db.pragma("user_version", { simple: true })) || 0;
@@ -10,6 +10,10 @@ export function applyMigrations(db: SQLiteDatabase): void {
     if (version < 1) {
       createInitialSchema(db);
       db.pragma("user_version = 1");
+    }
+    if (version < 2) {
+      createCompactionSchema(db);
+      db.pragma("user_version = 2");
     }
   });
 
@@ -84,6 +88,15 @@ function createInitialSchema(db: SQLiteDatabase): void {
       created_at TEXT NOT NULL
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS compactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      first_kept_seq INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      tokens_before INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    ) STRICT;
+
     CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated
       ON sessions(workspace_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_messages_session_seq
@@ -92,5 +105,23 @@ function createInitialSchema(db: SQLiteDatabase): void {
       ON tool_calls(session_id, message_seq);
     CREATE INDEX IF NOT EXISTS idx_usage_events_session_created
       ON usage_events(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_compactions_session_created
+      ON compactions(session_id, created_at DESC);
+  `);
+}
+
+function createCompactionSchema(db: SQLiteDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS compactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      first_kept_seq INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      tokens_before INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    ) STRICT;
+
+    CREATE INDEX IF NOT EXISTS idx_compactions_session_created
+      ON compactions(session_id, created_at DESC);
   `);
 }

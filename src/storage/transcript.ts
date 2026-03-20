@@ -1,6 +1,8 @@
 import type { ModelMessage } from "ai";
+import { getCompactionSummaryText } from "../agent/compaction";
 import type { ChatEntry, ToolCall, ToolResult } from "../types/index";
 import { getDatabase, withTransaction } from "./db";
+import { buildEffectiveTranscript, type LoadedTranscriptState, type PersistedCompaction } from "./transcript-view";
 
 interface MessageRow {
   session_id: string;
@@ -22,8 +24,22 @@ interface StoredToolResultRow {
   output_json: string;
 }
 
-export function loadTranscript(sessionId: string): ModelMessage[] {
-  const rows = getDatabase()
+interface CompactionRow {
+  session_id: string;
+  first_kept_seq: number;
+  summary: string;
+  tokens_before: number;
+  created_at: string;
+}
+
+interface EffectiveMessageRecord {
+  message: ModelMessage;
+  seq: number | null;
+  timestamp: Date;
+}
+
+function loadMessageRows(sessionId: string): MessageRow[] {
+  return getDatabase()
     .prepare(`
     SELECT session_id, seq, role, message_json, created_at
     FROM messages
@@ -31,13 +47,72 @@ export function loadTranscript(sessionId: string): ModelMessage[] {
     ORDER BY seq ASC
   `)
     .all(sessionId) as MessageRow[];
-
-  return rows.map((row) => JSON.parse(row.message_json) as ModelMessage);
 }
 
-export function appendMessages(sessionId: string, messages: ModelMessage[]): void {
-  if (messages.length === 0) return;
+function toPersistedCompaction(row: CompactionRow | undefined): PersistedCompaction | null {
+  if (!row) return null;
+  return {
+    firstKeptSeq: row.first_kept_seq,
+    summary: row.summary,
+    tokensBefore: row.tokens_before,
+    createdAt: new Date(row.created_at),
+  };
+}
 
+export function loadLatestCompaction(sessionId: string): PersistedCompaction | null {
+  const row = getDatabase()
+    .prepare(`
+    SELECT session_id, first_kept_seq, summary, tokens_before, created_at
+    FROM compactions
+    WHERE session_id = ?
+    ORDER BY id DESC
+    LIMIT 1
+  `)
+    .get(sessionId) as CompactionRow | undefined;
+
+  return toPersistedCompaction(row);
+}
+
+function buildEffectiveMessageRecords(sessionId: string): EffectiveMessageRecord[] {
+  const rows = loadMessageRows(sessionId);
+  const messages = rows.map((row) => JSON.parse(row.message_json) as ModelMessage);
+  const seqs = rows.map((row) => row.seq);
+  const timestamps = rows.map((row) => new Date(row.created_at));
+  const transcript = buildEffectiveTranscript(messages, seqs, timestamps, loadLatestCompaction(sessionId));
+
+  return transcript.messages.map((message, index) => ({
+    message,
+    seq: transcript.seqs[index],
+    timestamp: transcript.timestamps[index],
+  }));
+}
+
+export function loadRawTranscript(sessionId: string): ModelMessage[] {
+  return loadMessageRows(sessionId).map((row) => JSON.parse(row.message_json) as ModelMessage);
+}
+
+export function loadTranscriptState(sessionId: string): LoadedTranscriptState {
+  const rows = loadMessageRows(sessionId);
+  return buildEffectiveTranscript(
+    rows.map((row) => JSON.parse(row.message_json) as ModelMessage),
+    rows.map((row) => row.seq),
+    rows.map((row) => new Date(row.created_at)),
+    loadLatestCompaction(sessionId),
+  );
+}
+
+export function loadTranscript(sessionId: string): ModelMessage[] {
+  return loadTranscriptState(sessionId).messages;
+}
+
+export function getNextMessageSequence(sessionId: string): number {
+  return getNextSequence(getDatabase(), sessionId);
+}
+
+export function appendMessages(sessionId: string, messages: ModelMessage[]): number[] {
+  if (messages.length === 0) return [];
+
+  const insertedSeqs: number[] = [];
   withTransaction((db) => {
     const nextSeq = getNextSequence(db, sessionId);
     const insertMessage = db.prepare(`
@@ -72,6 +147,7 @@ export function appendMessages(sessionId: string, messages: ModelMessage[]): voi
     messages.forEach((message, index) => {
       const seq = nextSeq + index;
       const createdAt = new Date().toISOString();
+      insertedSeqs.push(seq);
       insertMessage.run(sessionId, seq, message.role, JSON.stringify(message), createdAt);
 
       if (message.role === "assistant" && Array.isArray(message.content)) {
@@ -122,29 +198,36 @@ export function appendMessages(sessionId: string, messages: ModelMessage[]): voi
 
     updateSession.run(new Date().toISOString(), sessionId);
   });
+
+  return insertedSeqs;
 }
 
-export function appendSystemMessage(sessionId: string, content: string): void {
-  appendMessages(sessionId, [{ role: "system", content }]);
+export function appendSystemMessage(sessionId: string, content: string): number | null {
+  return appendMessages(sessionId, [{ role: "system", content }])[0] ?? null;
+}
+
+export function appendCompaction(sessionId: string, firstKeptSeq: number, summary: string, tokensBefore: number): void {
+  withTransaction((db) => {
+    db.prepare(`
+      INSERT INTO compactions (session_id, first_kept_seq, summary, tokens_before, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(sessionId, firstKeptSeq, summary, tokensBefore, new Date().toISOString());
+
+    db.prepare(`
+      UPDATE sessions
+      SET updated_at = ?
+      WHERE id = ?
+    `).run(new Date().toISOString(), sessionId);
+  });
 }
 
 export function buildChatEntries(sessionId: string): ChatEntry[] {
-  const db = getDatabase();
-  const messageRows = db
-    .prepare(`
-    SELECT session_id, seq, role, message_json, created_at
-    FROM messages
-    WHERE session_id = ?
-    ORDER BY seq ASC
-  `)
-    .all(sessionId) as MessageRow[];
   const toolResults = loadStoredToolResults(sessionId);
   const callMap = new Map<string, ToolCall>();
   const entries: ChatEntry[] = [];
 
-  for (const row of messageRows) {
-    const message = JSON.parse(row.message_json) as ModelMessage;
-    const timestamp = new Date(row.created_at);
+  for (const row of buildEffectiveMessageRecords(sessionId)) {
+    const { message, timestamp } = row;
 
     if (message.role === "user") {
       const content = renderUserContent(message.content);
@@ -155,7 +238,8 @@ export function buildChatEntries(sessionId: string): ChatEntry[] {
     }
 
     if (message.role === "system") {
-      const content = typeof message.content === "string" ? message.content.trim() : "";
+      const content =
+        getCompactionSummaryText(message) ?? (typeof message.content === "string" ? message.content.trim() : "");
       if (content) {
         entries.push({ type: "assistant", content, timestamp });
       }
