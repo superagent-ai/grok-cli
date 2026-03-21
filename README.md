@@ -46,6 +46,7 @@ grok -d /path/to/your/repo
 grok --prompt "run the test suite and summarize failures"
 grok -p "show me package.json" --directory /path/to/project
 grok --prompt "refactor X" --max-tool-rounds 30
+grok --prompt "summarize the repo state" --format json
 ```
 
 **Continue a saved session:**
@@ -56,6 +57,15 @@ grok -s <session-id>
 ```
 
 Works in interactive mode too—same flag.
+
+**Structured headless output:**
+
+```bash
+grok --prompt "summarize the repo state" --format json
+```
+
+`--format json` emits newline-delimited `StreamChunk` objects instead of the
+default human-readable text stream.
 
 **List Grok models and pricing hints:**
 
