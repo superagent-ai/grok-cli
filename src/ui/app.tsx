@@ -51,6 +51,12 @@ import { dark, type Theme } from "./theme";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
+const PROMPT_LOADING_FRAMES = [
+  { active: 0, forward: true },
+  { active: 1, forward: true },
+  { active: 2, forward: true },
+  { active: 1, forward: false },
+] as const;
 
 type Star = { col: number; ch: string };
 type Row = { stars: Star[]; grok?: number };
@@ -2252,9 +2258,7 @@ function PromptBox({
           alignItems="flex-start"
           flexShrink={0}
         >
-          <text fg={modeInfo.color}>
-            <b>{modeInfo.label}</b>
-          </text>
+          <PromptModeLabel t={t} modeInfo={modeInfo} isProcessing={isProcessing} />
           <box flexGrow={1}>
             <textarea
               ref={inputRef}
@@ -2314,6 +2318,79 @@ function PromptBox({
       </box>
     </box>
   );
+}
+
+function PromptModeLabel({
+  t,
+  modeInfo,
+  isProcessing,
+}: {
+  t: Theme;
+  modeInfo: (typeof MODES)[number];
+  isProcessing: boolean;
+}) {
+  if (!isProcessing) {
+    return (
+      <text fg={modeInfo.color}>
+        <b>{modeInfo.label}</b>
+      </text>
+    );
+  }
+
+  return <PromptLoadingBoxes t={t} color={modeInfo.color} />;
+}
+
+function PromptLoadingBoxes({ t, color }: { t: Theme; color: string }) {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setFrame((n) => (n + 1) % PROMPT_LOADING_FRAMES.length), 120);
+    return () => clearInterval(id);
+  }, []);
+
+  const step = PROMPT_LOADING_FRAMES[frame] ?? PROMPT_LOADING_FRAMES[0];
+
+  return (
+    <text>
+      {[0, 1, 2].map((idx) => (
+        <span key={idx} style={{ fg: promptLoadingCellColor(color, idx, step.active, step.forward) }}>
+          {promptLoadingCellGlyph(idx, step.active, step.forward)}
+        </span>
+      ))}
+    </text>
+  );
+}
+
+function promptLoadingCellGlyph(index: number, active: number, forward: boolean): string {
+  const distance = forward ? active - index : index - active;
+  return distance >= 0 && distance < 2 ? "■" : "⬝";
+}
+
+function promptLoadingCellColor(color: string, index: number, active: number, forward: boolean): string {
+  const distance = forward ? active - index : index - active;
+  if (distance === 0) return color;
+  if (distance === 1) return withAlpha(color, 0.72);
+  return withAlpha(color, 0.22);
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const normalized = color.trim();
+  const hex = normalized.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!hex) return color;
+
+  const body = hex[1];
+  const expanded =
+    body.length === 3
+      ? body
+          .split("")
+          .map((ch) => ch + ch)
+          .join("")
+      : body;
+
+  const alphaHex = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${expanded}${alphaHex}`;
 }
 
 function CopyFlashBanner({ t, width }: { t: Theme; width: number }) {
