@@ -1,10 +1,17 @@
 #!/usr/bin/env bun
-import { program } from "commander";
+import { InvalidArgumentError, program } from "commander";
 import * as dotenv from "dotenv";
 import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
 import { MODELS } from "./grok/models";
+import {
+  createHeadlessJsonlEmitter,
+  type HeadlessOutputFormat,
+  isHeadlessOutputFormat,
+  renderHeadlessChunk,
+  renderHeadlessPrelude,
+} from "./headless/output";
 import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
@@ -72,41 +79,31 @@ async function runHeadless(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  format: HeadlessOutputFormat,
   session?: string,
 ) {
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
+  const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
+  if (prelude.stdout) process.stdout.write(prelude.stdout);
+  if (prelude.stderr) process.stderr.write(prelude.stderr);
 
-  process.stdout.write(`\x1b[36m⏳ Processing...\x1b[0m\n`);
-  if (agent.getSessionId()) {
-    process.stderr.write(`\x1b[2mSession: ${agent.getSessionId()}\x1b[0m\n`);
+  if (format === "json") {
+    const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
+    for await (const chunk of agent.processMessage(prompt, observer)) {
+      const writes = consumeChunk(chunk);
+      if (writes.stdout) process.stdout.write(writes.stdout);
+      if (writes.stderr) process.stderr.write(writes.stderr ?? "");
+    }
+    const tail = flush();
+    if (tail.stdout) process.stdout.write(tail.stdout);
+    if (tail.stderr) process.stderr.write(tail.stderr ?? "");
+    return;
   }
 
   for await (const chunk of agent.processMessage(prompt)) {
-    switch (chunk.type) {
-      case "content":
-        if (chunk.content) process.stdout.write(chunk.content);
-        break;
-      case "tool_calls":
-        if (chunk.toolCalls) {
-          for (const tc of chunk.toolCalls) {
-            process.stderr.write(`\x1b[33m⚙ ${tc.function.name}\x1b[0m\n`);
-          }
-        }
-        break;
-      case "tool_result":
-        if (chunk.toolResult) {
-          const icon = chunk.toolResult.success ? "✓" : "✗";
-          const color = chunk.toolResult.success ? "\x1b[32m" : "\x1b[31m";
-          process.stderr.write(`${color}${icon} ${chunk.toolCall?.function.name || "tool"}\x1b[0m\n`);
-        }
-        break;
-      case "error":
-        process.stderr.write(`\x1b[31m${chunk.content}\x1b[0m\n`);
-        break;
-      case "done":
-        process.stdout.write("\n");
-        break;
-    }
+    const writes = renderHeadlessChunk(chunk);
+    if (writes.stdout) process.stdout.write(writes.stdout);
+    if (writes.stderr) process.stderr.write(writes.stderr);
   }
 }
 
@@ -173,6 +170,14 @@ function requireApiKey(apiKey: string | undefined): string {
   return apiKey;
 }
 
+function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
+  if (isHeadlessOutputFormat(value)) {
+    return value;
+  }
+
+  throw new InvalidArgumentError(`Invalid headless format "${value}". Expected "text" or "json".`);
+}
+
 program
   .name("grok")
   .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
@@ -183,6 +188,7 @@ program
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
+  .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
@@ -211,6 +217,7 @@ program
         config.baseURL,
         config.model,
         config.maxToolRounds,
+        options.format,
         options.session,
       );
       return;

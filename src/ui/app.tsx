@@ -1911,69 +1911,70 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     >
       {copyFlashId > 0 ? <CopyFlashBanner t={t} width={width} /> : null}
       {hasMessages ? (
-        <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
-          {/* Session header — ┃ left-border panel like OpenCode's Header */}
+        <box flexGrow={1} flexDirection="column">
           <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} sessionId={sessionId} />
-          {/* Scrollable messages */}
-          {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
-          <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
-            {messages.map((msg, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: append-only message list without stable IDs
-              <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
-            ))}
-            {/* Active tool calls — pending inline */}
-            {activeToolCalls.map((tc) =>
-              tc.function.name === "task" ? (
-                <SubagentTaskLine key={tc.id} t={t} label={toolArgs(tc) || "Working"} pending />
-              ) : tc.function.name === "delegate" ? (
-                <DelegationTaskLine
-                  key={tc.id}
-                  t={t}
-                  label={toolArgs(tc) || "Background research"}
-                  pending
-                  id={undefined}
-                />
-              ) : (
-                <InlineTool key={tc.id} t={t} pending>
-                  {toolLabel(tc)}
-                </InlineTool>
-              ),
-            )}
-            {activeSubagent && <SubagentActivity t={t} status={activeSubagent} />}
-            {/* Streaming assistant content */}
-            {streamContent && (
-              <box paddingLeft={3} marginTop={1} flexShrink={0}>
-                <Markdown content={streamContent} t={t} />
-              </box>
-            )}
-            {/* Waiting indicator */}
-            {isProcessing && !streamContent && activeToolCalls.length === 0 && (
-              <ShimmerText t={t} text="Planning next moves" />
-            )}
-            {/* Plan questions panel — inline, OpenCode-style */}
-            {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
-          </scrollbox>
-          {/* Prompt */}
-          <box flexShrink={0}>
-            <PromptBox
-              t={t}
-              inputRef={inputRef}
-              isProcessing={isProcessing}
-              showModelPicker={showModelPicker}
-              showSlashMenu={showSlashMenu}
-              showPlanQuestions={showPlanPanel}
-              showApiKeyModal={showApiKeyModal}
-              blockPrompt={blockPrompt}
-              onSubmit={handleSubmit}
-              onPaste={handlePaste}
-              pasteBlocks={pasteBlocks}
-              modeInfo={modeInfo}
-              model={model}
-              modelInfo={modelInfo}
-              contextStats={contextStats}
-              queuedCount={queuedMessages.length}
-              queuedMessages={queuedMessages}
-            />
+          <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
+            {/* Scrollable messages */}
+            {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
+            <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
+              {messages.map((msg, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: append-only message list without stable IDs
+                <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
+              ))}
+              {/* Active tool calls — pending inline */}
+              {activeToolCalls.map((tc) =>
+                tc.function.name === "task" ? (
+                  <SubagentTaskLine key={tc.id} t={t} label={toolArgs(tc) || "Working"} pending />
+                ) : tc.function.name === "delegate" ? (
+                  <DelegationTaskLine
+                    key={tc.id}
+                    t={t}
+                    label={toolArgs(tc) || "Background research"}
+                    pending
+                    id={undefined}
+                  />
+                ) : (
+                  <InlineTool key={tc.id} t={t} pending>
+                    {toolLabel(tc)}
+                  </InlineTool>
+                ),
+              )}
+              {activeSubagent && <SubagentActivity t={t} status={activeSubagent} />}
+              {/* Streaming assistant content */}
+              {streamContent && (
+                <box paddingLeft={3} marginTop={1} flexShrink={0}>
+                  <Markdown content={streamContent} t={t} />
+                </box>
+              )}
+              {/* Waiting indicator */}
+              {isProcessing && !streamContent && activeToolCalls.length === 0 && (
+                <ShimmerText t={t} text="Planning next moves" />
+              )}
+              {/* Plan questions panel — inline, OpenCode-style */}
+              {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
+            </scrollbox>
+            {/* Prompt */}
+            <box flexShrink={0}>
+              <PromptBox
+                t={t}
+                inputRef={inputRef}
+                isProcessing={isProcessing}
+                showModelPicker={showModelPicker}
+                showSlashMenu={showSlashMenu}
+                showPlanQuestions={showPlanPanel}
+                showApiKeyModal={showApiKeyModal}
+                blockPrompt={blockPrompt}
+                onSubmit={handleSubmit}
+                onPaste={handlePaste}
+                pasteBlocks={pasteBlocks}
+                modeInfo={modeInfo}
+                model={model}
+                modelInfo={modelInfo}
+                contextStats={contextStats}
+                queuedCount={queuedMessages.length}
+                queuedMessages={queuedMessages}
+              />
+            </box>
           </box>
         </box>
       ) : (
@@ -2123,34 +2124,23 @@ function SessionHeader({
   sessionId: string | null;
 }) {
   return (
-    <box flexShrink={0}>
-      <box
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={1}
-        border={["left"]}
-        customBorderChars={SPLIT}
-        borderColor={t.border}
-        backgroundColor={t.backgroundPanel}
-      >
-        <box flexDirection="row" width="100%">
-          <text>
-            <span style={{ fg: modeInfo.color }}>
-              <b>{modeInfo.label}</b>
+    <box flexShrink={0} width="100%">
+      <box flexDirection="row" width="100%" paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2}>
+        <text>
+          <span style={{ fg: modeInfo.color }}>
+            <b>{modeInfo.label}</b>
+          </span>
+          {sessionTitle ? (
+            <span style={{ fg: t.text }}>
+              <b>
+                {": "}
+                {sessionTitle}
+              </b>
             </span>
-            {sessionTitle ? (
-              <span style={{ fg: t.text }}>
-                <b>
-                  {": "}
-                  {sessionTitle}
-                </b>
-              </span>
-            ) : null}
-          </text>
-          <box flexGrow={1} />
-          {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
-        </box>
+          ) : null}
+        </text>
+        <box flexGrow={1} />
+        {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
       </box>
     </box>
   );
