@@ -53,6 +53,50 @@ interface AgentOptions {
   session?: string;
 }
 
+type ProcessMessageFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
+
+export interface ProcessMessageUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+export interface ProcessMessageStepStart {
+  stepNumber: number;
+  timestamp: number;
+}
+
+export interface ProcessMessageStepFinish {
+  stepNumber: number;
+  timestamp: number;
+  finishReason: ProcessMessageFinishReason;
+  usage: ProcessMessageUsage;
+}
+
+export interface ProcessMessageToolStart {
+  toolCall: ToolCall;
+  timestamp: number;
+}
+
+export interface ProcessMessageToolFinish {
+  toolCall: ToolCall;
+  toolResult: ToolResult;
+  timestamp: number;
+}
+
+export interface ProcessMessageError {
+  message: string;
+  timestamp: number;
+}
+
+export interface ProcessMessageObserver {
+  onStepStart?(info: ProcessMessageStepStart): void;
+  onStepFinish?(info: ProcessMessageStepFinish): void;
+  onToolStart?(info: ProcessMessageToolStart): void;
+  onToolFinish?(info: ProcessMessageToolFinish): void;
+  onError?(info: ProcessMessageError): void;
+}
+
 const ENVIRONMENT = `ENVIRONMENT:
 You are running inside a terminal (CLI). Your text output is rendered in a plain terminal — not a browser, not a rich text editor.
 - Use plain text only. No markdown tables, no HTML, no images, no colored text.
@@ -670,7 +714,10 @@ export class Agent {
     this.session = this.sessionStore.getRequiredSession(this.session.id);
   }
 
-  async *processMessage(userMessage: string): AsyncGenerator<StreamChunk, void, unknown> {
+  async *processMessage(
+    userMessage: string,
+    observer?: ProcessMessageObserver,
+  ): AsyncGenerator<StreamChunk, void, unknown> {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
     this.emitSubagentStatus(null);
@@ -691,6 +738,7 @@ export class Agent {
         let assistantText = "";
         let streamOk = false;
         let closeMcp: (() => Promise<void>) | undefined;
+        let stepNumber = -1;
 
         try {
           const settings = attemptedOverflowRecovery
@@ -734,6 +782,23 @@ export class Agent {
             abortSignal: signal,
             temperature: 0.7,
             maxOutputTokens: this.maxTokens,
+            experimental_onStepStart: (event: unknown) => {
+              stepNumber = getStepNumber(event, stepNumber + 1);
+              notifyObserver(observer?.onStepStart, {
+                stepNumber,
+                timestamp: Date.now(),
+              });
+            },
+            onStepFinish: (event: unknown) => {
+              const currentStep = getStepNumber(event, Math.max(stepNumber, 0));
+              stepNumber = Math.max(stepNumber, currentStep);
+              notifyObserver(observer?.onStepFinish, {
+                stepNumber: currentStep,
+                timestamp: Date.now(),
+                finishReason: getFinishReason(event),
+                usage: getUsage(event),
+              });
+            },
             onFinish: ({ totalUsage }) => {
               this.recordUsage(totalUsage, "message");
             },
@@ -757,6 +822,10 @@ export class Agent {
 
               case "tool-call": {
                 const tc = toToolCall(part);
+                notifyObserver(observer?.onToolStart, {
+                  toolCall: tc,
+                  timestamp: Date.now(),
+                });
                 yield { type: "tool_calls", toolCalls: [tc] };
                 break;
               }
@@ -768,13 +837,24 @@ export class Agent {
                   function: { name: part.toolName, arguments: JSON.stringify(part.input ?? {}) },
                 };
                 const tr = toToolResult(part.output);
+                notifyObserver(observer?.onToolFinish, {
+                  toolCall: tc,
+                  toolResult: tr,
+                  timestamp: Date.now(),
+                });
                 yield { type: "tool_result", toolCall: tc, toolResult: tr };
                 break;
               }
 
-              case "error":
-                yield { type: "error", content: String(part.error) };
+              case "error": {
+                const message = String(part.error);
+                notifyObserver(observer?.onError, {
+                  message,
+                  timestamp: Date.now(),
+                });
+                yield { type: "error", content: message };
                 break;
+              }
 
               case "abort":
                 yield { type: "content", content: "\n\n[Cancelled]" };
@@ -832,6 +912,10 @@ export class Agent {
           }
 
           const msg = err instanceof Error ? err.message : String(err);
+          notifyObserver(observer?.onError, {
+            message: `Error: ${msg}`,
+            timestamp: Date.now(),
+          });
           yield { type: "error", content: `Error: ${msg}` };
           if (assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
@@ -866,6 +950,60 @@ function toToolCall(part: { toolCallId: string; toolName: string; args?: unknown
       name: part.toolName,
       arguments: JSON.stringify(part.input ?? part.args ?? {}),
     },
+  };
+}
+
+function notifyObserver<T>(listener: ((payload: T) => void) | undefined, payload: T): void {
+  if (!listener) {
+    return;
+  }
+
+  try {
+    listener(payload);
+  } catch {
+    // Observer failures should never break generation.
+  }
+}
+
+function getStepNumber(event: unknown, fallback: number): number {
+  if (event && typeof event === "object" && "stepNumber" in event && typeof event.stepNumber === "number") {
+    return event.stepNumber;
+  }
+
+  return fallback;
+}
+
+function getFinishReason(event: unknown): ProcessMessageFinishReason {
+  if (event && typeof event === "object" && "finishReason" in event) {
+    switch (event.finishReason) {
+      case "stop":
+      case "length":
+      case "content-filter":
+      case "tool-calls":
+      case "error":
+      case "other":
+        return event.finishReason;
+    }
+  }
+
+  return "other";
+}
+
+function getUsage(event: unknown): ProcessMessageUsage {
+  if (!(event && typeof event === "object" && "usage" in event)) {
+    return {};
+  }
+
+  const usage = event.usage;
+  if (!usage || typeof usage !== "object") {
+    return {};
+  }
+
+  const u = usage as Record<string, unknown>;
+  return {
+    inputTokens: typeof u.inputTokens === "number" ? u.inputTokens : undefined,
+    outputTokens: typeof u.outputTokens === "number" ? u.outputTokens : undefined,
+    totalTokens: typeof u.totalTokens === "number" ? u.totalTokens : undefined,
   };
 }
 

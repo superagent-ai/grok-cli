@@ -5,6 +5,7 @@ import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
 import { MODELS } from "./grok/models";
 import {
+  createHeadlessJsonlEmitter,
   type HeadlessOutputFormat,
   isHeadlessOutputFormat,
   renderHeadlessChunk,
@@ -85,8 +86,21 @@ async function runHeadless(
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
 
+  if (format === "json") {
+    const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
+    for await (const chunk of agent.processMessage(prompt, observer)) {
+      const writes = consumeChunk(chunk);
+      if (writes.stdout) process.stdout.write(writes.stdout);
+      if (writes.stderr) process.stderr.write(writes.stderr ?? "");
+    }
+    const tail = flush();
+    if (tail.stdout) process.stdout.write(tail.stdout);
+    if (tail.stderr) process.stderr.write(tail.stderr ?? "");
+    return;
+  }
+
   for await (const chunk of agent.processMessage(prompt)) {
-    const writes = renderHeadlessChunk(chunk, format);
+    const writes = renderHeadlessChunk(chunk);
     if (writes.stdout) process.stdout.write(writes.stdout);
     if (writes.stderr) process.stderr.write(writes.stderr);
   }
