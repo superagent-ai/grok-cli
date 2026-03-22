@@ -31,7 +31,7 @@ import type {
   WorkspaceInfo,
 } from "../types/index";
 import { loadCustomInstructions } from "../utils/instructions";
-import { loadMcpServers } from "../utils/settings";
+import { type CustomSubagentConfig, loadMcpServers, loadValidSubAgents } from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import {
   type CompactionSettings,
@@ -119,7 +119,7 @@ TOOLS:
 - process_logs: View recent output from a background process by ID.
 - process_stop: Stop a background process by ID.
 - process_list: List all background processes with status and uptime.
-- task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution and explore for fast read-only research.
+- task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution, explore for fast read-only research, or a configured custom sub-agent name when listed under CUSTOM SUB-AGENTS.
 - delegate: Launch a read-only background agent for longer research while you continue working.
 - delegation_read: Retrieve a completed background delegation result by ID.
 - delegation_list: List running and completed background delegations. Do not poll it repeatedly.
@@ -143,6 +143,7 @@ DEFAULT DELEGATION POLICY:
 - Prefer delegate for longer-running read-only exploration when you can keep making progress without blocking.
 - Use the explore sub-agent for read-only investigation, reviews, research, and "how does this work?" tasks.
 - Use the general sub-agent for delegated work that may need editing files, running commands, or producing a concrete implementation.
+- Use a matching custom sub-agent when the task fits one of the configured specializations.
 - Never use delegate for tasks that should edit files or make shell changes.
 - When a background delegation is running, do not wait idly and do not spam delegation_list(). Continue useful work.
 - Do not wait for the user to explicitly ask for a sub-agent when delegation would clearly help.
@@ -153,6 +154,7 @@ EXAMPLES:
 - "research how auth works" -> delegate to explore first
 - "investigate why this test fails" -> delegate to explore first, then continue with findings
 - "refactor this module" -> delegate a focused part to general when helpful
+- Recurring specialized workflows -> use the matching custom sub-agent via task
 
 IMPORTANT:
 - Prefer edit_file for surgical changes to existing files — it shows a clean diff.
@@ -168,6 +170,7 @@ ${ENVIRONMENT}
 TOOLS:
 - read_file: Read file contents for analysis.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify files.
+- task: Delegate a focused task to a sub-agent when deeper research or specialized analysis would help.
 - generate_plan: ALWAYS use this to present your plan. Creates an interactive UI with steps and questions.
 
 BEHAVIOR:
@@ -186,6 +189,7 @@ ${ENVIRONMENT}
 TOOLS:
 - read_file: Read file contents for context.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify.
+- task: Delegate a focused task to a sub-agent when specialized analysis or deeper investigation would help.
 
 BEHAVIOR:
 - Answer the user's question directly and thoroughly
@@ -195,6 +199,25 @@ BEHAVIOR:
 - Focus on explanation, not execution`,
 };
 
+function findCustomSubagent(agent: string): CustomSubagentConfig | undefined {
+  const subagents = loadValidSubAgents();
+  return (
+    subagents.find((item) => item.name === agent) ??
+    subagents.find((item) => item.name.toLowerCase() === agent.toLowerCase())
+  );
+}
+
+function formatCustomSubagentsPromptSection(subagents: CustomSubagentConfig[]): string {
+  if (subagents.length === 0) return "";
+
+  const lines = subagents.map((agent) => {
+    const instruction = agent.instruction.trim() || "(none)";
+    return `### ${agent.name}\n- model: ${agent.model}\n- instruction:\n${instruction}`;
+  });
+
+  return `\n\nCUSTOM SUB-AGENTS:\nUser-defined foreground sub-agents from ~/.grok/user-settings.json. When one matches the task, call the task tool with agent set to the exact name.\n\n${lines.join("\n\n")}\n`;
+}
+
 function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | null): string {
   const custom = loadCustomInstructions(cwd);
   const customSection = custom
@@ -203,38 +226,43 @@ function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | 
 
   const skillsText = formatSkillsForPrompt(discoverSkills(cwd));
   const skillsSection = skillsText ? `\n\n${skillsText}\n` : "";
+  const subagentsSection = formatCustomSubagentsPromptSection(loadValidSubAgents());
 
   const planSection = planContext
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${customSection}${skillsSection}${planSection}
+  return `${MODE_PROMPTS[mode]}${customSection}${skillsSection}${subagentsSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
 
-function buildSubagentPrompt(request: TaskRequest, cwd: string): string {
-  const mode: AgentMode = request.agent === "explore" ? "ask" : "agent";
-  const role =
-    request.agent === "explore"
+function buildSubagentPrompt(request: TaskRequest, cwd: string, custom: CustomSubagentConfig | null): string {
+  const isExplore = request.agent === "explore";
+  const mode: AgentMode = isExplore ? "ask" : "agent";
+  const role = custom
+    ? `You are the custom sub-agent "${custom.name}". You can investigate, edit files, and run commands unless the delegated task says otherwise.`
+    : request.agent === "explore"
       ? "You are the Explore sub-agent. You are read-only and focus on fast codebase research."
       : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
 
-  const rules =
-    request.agent === "explore"
-      ? [
-          "Do not create, modify, or delete files.",
-          "Prefer `read_file` and search commands over broad shell exploration.",
-          "Return concise findings for the parent agent.",
-        ]
-      : [
-          "Work only on the delegated task below.",
-          "Use tools directly instead of narrating your intent.",
-          "Return a concise summary for the parent agent with key outcomes and any open risks.",
-        ];
+  const rules = isExplore
+    ? [
+        "Do not create, modify, or delete files.",
+        "Prefer `read_file` and search commands over broad shell exploration.",
+        "Return concise findings for the parent agent.",
+      ]
+    : [
+        "Work only on the delegated task below.",
+        "Use tools directly instead of narrating your intent.",
+        "Return a concise summary for the parent agent with key outcomes and any open risks.",
+      ];
+
+  const instructionLines = custom?.instruction.trim() ? ["", "SUB-AGENT INSTRUCTIONS:", custom.instruction.trim()] : [];
 
   return [
     role,
+    ...instructionLines,
     "",
     "You are helping a parent agent. Do not address the end user directly.",
     "Focus tightly on the delegated scope and summarize what matters back to the parent agent.",
@@ -486,14 +514,33 @@ export class Agent {
   ): Promise<ToolResult> {
     const provider = this.requireProvider();
     const signal = abortSignal;
-    const childMode: AgentMode = request.agent === "explore" ? "ask" : "agent";
+    const agentKey = String(request.agent);
+    const isExplore = agentKey === "explore";
+    const isGeneral = agentKey === "general";
+    const custom = !isExplore && !isGeneral ? findCustomSubagent(agentKey) : undefined;
+
+    if (!isExplore && !isGeneral && !custom) {
+      const message = `Unknown sub-agent "${agentKey}". Use general, explore, or a configured name from ~/.grok/user-settings.json.`;
+      return {
+        success: false,
+        output: message,
+        task: {
+          agent: agentKey,
+          description: request.description,
+          summary: message,
+        },
+      };
+    }
+
+    const childMode: AgentMode = isExplore ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd());
     const childBaseTools = createTools(childBash, provider, childMode);
-    const initialDetail = request.agent === "explore" ? "Scanning the codebase" : "Planning delegated work";
+    const initialDetail = isExplore ? "Scanning the codebase" : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
     let closeMcp: (() => Promise<void>) | undefined;
+    const childModelId = isExplore ? "grok-4-1-fast" : custom ? custom.model : this.modelId;
 
     onActivity?.(initialDetail);
 
@@ -509,17 +556,17 @@ export class Agent {
       }
 
       const result = streamText({
-        model: provider(request.agent === "explore" ? "grok-4-1-fast" : this.modelId),
-        system: buildSubagentPrompt(request, childBash.getCwd()),
+        model: provider(childModelId),
+        system: buildSubagentPrompt(request, childBash.getCwd(), custom ?? null),
         messages: [{ role: "user", content: request.prompt }],
         tools: childTools,
-        stopWhen: stepCountIs(Math.min(this.maxToolRounds, request.agent === "explore" ? 60 : 120)),
+        stopWhen: stepCountIs(Math.min(this.maxToolRounds, isExplore ? 60 : 120)),
         maxRetries: 0,
         abortSignal: signal,
-        temperature: request.agent === "explore" ? 0.2 : 0.5,
+        temperature: isExplore ? 0.2 : 0.5,
         maxOutputTokens: Math.min(this.maxTokens, 8_192),
         onFinish: ({ totalUsage }) => {
-          this.recordUsage(totalUsage, "task");
+          this.recordUsage(totalUsage, "task", childModelId);
         },
       });
 

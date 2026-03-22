@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { BashTool } from "../tools/bash";
 import { editFile, readFile, writeFile } from "../tools/file";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
+import { loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
 
 const RESPONSES_SEARCH_MODEL = "grok-4-fast-non-reasoning";
@@ -25,12 +26,14 @@ export function createTools(
   const runResponsesSearch = async (
     query: string,
     toolName: "web_search" | "x_search",
+    abortSignal?: AbortSignal,
   ): Promise<{ success: boolean; output: string }> => {
     try {
       const { text } = await generateText({
         model: provider.responses(RESPONSES_SEARCH_MODEL),
         maxOutputTokens: 4096,
         prompt: query,
+        abortSignal,
         tools: {
           ...(toolName === "web_search" ? { web_search: provider.tools.webSearch() } : {}),
           ...(toolName === "x_search" ? { x_search: provider.tools.xSearch() } : {}),
@@ -67,11 +70,11 @@ export function createTools(
             "Run the command as a background process. Returns immediately with a process ID. Use process_logs/process_stop/process_list to manage it.",
           ),
       }),
-      execute: async ({ command, timeout, background }) => {
+      execute: async ({ command, timeout, background }, { abortSignal }) => {
         if (background) {
           return bash.startBackground(command);
         }
-        const result = await bash.execute(command, timeout);
+        const result = await bash.execute(command, timeout, abortSignal);
         return {
           success: result.success,
           output: result.success
@@ -131,8 +134,8 @@ export function createTools(
       inputSchema: z.object({
         query: z.string().describe("The search query"),
       }),
-      execute: async ({ query }) => {
-        return runResponsesSearch(query, "web_search");
+      execute: async ({ query }, { abortSignal }) => {
+        return runResponsesSearch(query, "web_search", abortSignal);
       },
     }),
 
@@ -142,13 +145,41 @@ export function createTools(
       inputSchema: z.object({
         query: z.string().describe("The search query"),
       }),
-      execute: async ({ query }) => {
-        return runResponsesSearch(query, "x_search");
+      execute: async ({ query }, { abortSignal }) => {
+        return runResponsesSearch(query, "x_search", abortSignal);
       },
     }),
   };
 
   const tools: ToolSet = { ...base };
+
+  if (options.runTask) {
+    const customNames = loadValidSubAgents().map((agent) => agent.name);
+    const taskAgentEnum = ["general", "explore", ...customNames] as [string, ...string[]];
+    const customHint =
+      customNames.length > 0
+        ? ` You may also use these user-defined sub-agents by exact name: ${customNames.join(", ")}.`
+        : "";
+
+    tools.task = tool({
+      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution and \`explore\` for fast read-only investigation.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
+      inputSchema: z.object({
+        agent: z
+          .enum(taskAgentEnum)
+          .default("general")
+          .describe(
+            customNames.length > 0
+              ? "Built-in general or explore, or a configured custom sub-agent name from user settings"
+              : "Which sub-agent to use",
+          ),
+        description: z.string().describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
+        prompt: z.string().describe("Detailed instructions for the sub-agent to complete"),
+      }),
+      execute: async ({ agent, description, prompt }, { abortSignal }) => {
+        return options.runTask!({ agent, description, prompt }, abortSignal);
+      },
+    });
+  }
 
   if (mode === "agent") {
     tools.write_file = tool({
@@ -175,23 +206,6 @@ export function createTools(
         return editFile(path, old_string, new_string, cwd());
       },
     });
-
-    if (options.runTask) {
-      tools.task = tool({
-        description:
-          "Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use `general` for multi-step execution and `explore` for fast read-only investigation. Provide a short description plus a detailed prompt for the child agent.",
-        inputSchema: z.object({
-          agent: z.enum(["general", "explore"]).default("general").describe("Which sub-agent to use"),
-          description: z
-            .string()
-            .describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
-          prompt: z.string().describe("Detailed instructions for the sub-agent to complete"),
-        }),
-        execute: async ({ agent, description, prompt }, { abortSignal }) => {
-          return options.runTask!({ agent, description, prompt }, abortSignal);
-        },
-      });
-    }
 
     if (options.runDelegation) {
       tools.delegate = tool({

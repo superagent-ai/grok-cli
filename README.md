@@ -89,6 +89,7 @@ grok fix the flaky test in src/foo.test.ts
 | **Grok-native** | Defaults tuned for Grok; models like **`grok-code-fast-1`**, **`grok-4-1-fast`**, flagship and fast variants—run `grok models` for the full menu. |
 | **X + web search** | **`search_x`** and **`search_web`** tools—live posts and docs without pretending the internet stopped in 2023. |
 | **Sub-agents (default behavior)** | Foreground **`task`** delegation (e.g. explore vs general) plus background **`delegate`** for read-only deep dives—parallelize like you mean it. |
+| **Custom sub-agents** | Define named agents with **`subAgents`** in **`~/.grok/user-settings.json`** and manage them from the TUI with **`/agents`**. |
 | **Remote control** | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, **`/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone. |
 | **No “mystery meat” UI** | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of. |
 | **Skills** | Agent Skills under **`.agents/skills/<name>/SKILL.md`** (project) or **`~/.agents/skills/`** (user). Use **`/skills`** in the TUI to list what’s installed. |
@@ -128,6 +129,22 @@ grok -k your_key_here
 ```json
 { "apiKey": "your_key_here" }
 ```
+
+Optional **`subAgents`** — custom foreground sub-agents. Each entry needs **`name`**, **`model`**, and **`instruction`**:
+
+```json
+{
+  "subAgents": [
+    {
+      "name": "security-review",
+      "model": "grok-code-fast-1",
+      "instruction": "Prioritize security implications and suggest concrete fixes."
+    }
+  ]
+}
+```
+
+Names cannot be `general` or `explore` because those are reserved for the built-in sub-agents.
 
 Optional: **`GROK_BASE_URL`** (default `https://api.x.ai/v1`), **`GROK_MODEL`**, **`GROK_MAX_TOKENS`**.
 

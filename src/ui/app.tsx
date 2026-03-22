@@ -1,10 +1,10 @@
 import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
-import { decodePasteBytes, type PasteEvent } from "@opentui/core";
+import { decodePasteBytes, type PasteEvent, parseKeypress } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import os from "os";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
-import { getModelInfo, MODELS } from "../grok/models";
+import { getModelIds, getModelInfo, MODELS } from "../grok/models";
 import { POPULAR_MCP_CATALOG } from "../mcp/catalog";
 import { parseEnvLines, parseHeaderLines } from "../mcp/parse-headers";
 import { toMcpServerId, validateMcpServerConfig } from "../mcp/validate";
@@ -25,10 +25,13 @@ import type {
 import { MODES } from "../types/index";
 import { copyTextToHostClipboard } from "../utils/host-clipboard";
 import {
+  type CustomSubagentConfig,
   getApiKey,
   getTelegramBotToken,
+  isReservedSubagentName,
   loadMcpServers,
   loadUserSettings,
+  loadValidSubAgents,
   type McpRemoteTransport,
   type McpServerConfig,
   saveMcpServers,
@@ -36,6 +39,13 @@ import {
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
+import {
+  buildSubagentBrowseRows,
+  SUBAGENT_EDITOR_FIELDS,
+  type SubagentEditorField,
+  SubagentEditorModal,
+  SubagentsBrowserModal,
+} from "./agents-modal";
 import { Markdown } from "./markdown";
 import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
 import { createEmptyMcpEditorDraft, type McpEditorDraft, type McpEditorField } from "./mcp-modal-types";
@@ -240,6 +250,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "exit", label: "exit", description: "Quit the CLI" },
   { id: "help", label: "help", description: "Show available commands" },
   { id: "remote-control", label: "remote-control", description: "Remote control" },
+  { id: "agents", label: "agents", description: "Manage custom sub-agents" },
   { id: "mcp", label: "mcp", description: "Manage MCP servers" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
@@ -372,6 +383,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const mcpArgsRef = useRef<TextareaRenderable>(null);
   const mcpCwdRef = useRef<TextareaRenderable>(null);
   const mcpEnvRef = useRef<TextareaRenderable>(null);
+  const [showAgentsModal, setShowAgentsModal] = useState(false);
+  const [showAgentsEditor, setShowAgentsEditor] = useState(false);
+  const [subAgents, setSubAgents] = useState<CustomSubagentConfig[]>(() => loadValidSubAgents());
+  const [agentsSearchQuery, setAgentsSearchQuery] = useState("");
+  const [agentsModalIndex, setAgentsModalIndex] = useState(0);
+  const [editingSubagent, setEditingSubagent] = useState<CustomSubagentConfig | null>(null);
+  const [agentsEditorDraft, setAgentsEditorDraft] = useState({ name: "", instruction: "" });
+  const [agentsEditorField, setAgentsEditorField] = useState<SubagentEditorField>("name");
+  const [agentsEditorModelIndex, setAgentsEditorModelIndex] = useState(() =>
+    Math.max(
+      0,
+      MODELS.findIndex((model) => model.id === "grok-4-1-fast"),
+    ),
+  );
+  const [agentsEditorSyncKey, setAgentsEditorSyncKey] = useState(0);
+  const [agentsEditorError, setAgentsEditorError] = useState<string | null>(null);
+  const showAgentsModalRef = useRef(false);
+  const showAgentsEditorRef = useRef(false);
+  const subagentNameRef = useRef<TextareaRenderable>(null);
+  const subagentInstructionRef = useRef<TextareaRenderable>(null);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -419,6 +450,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     : SLASH_MENU_ITEMS;
   const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
   const mcpEditorFields = mcpEditorDraft.transport === "stdio" ? MCP_STDIO_FIELDS : MCP_REMOTE_FIELDS;
+  const agentRows = useMemo(
+    () => buildSubagentBrowseRows(subAgents, agentsSearchQuery),
+    [subAgents, agentsSearchQuery],
+  );
 
   const syncStoredMcpServers = useCallback((servers: McpServerConfig[]) => {
     setMcpServers(servers);
@@ -530,6 +565,91 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     },
     [mcpRows.length, mcpServers, syncStoredMcpServers],
   );
+
+  const openAgentsModal = useCallback(() => {
+    setSubAgents(loadValidSubAgents());
+    setAgentsSearchQuery("");
+    setAgentsModalIndex(0);
+    setEditingSubagent(null);
+    setAgentsEditorError(null);
+    setShowAgentsEditor(false);
+    setShowAgentsModal(true);
+  }, []);
+
+  const openSubagentEditor = useCallback((agent: CustomSubagentConfig | null) => {
+    setEditingSubagent(agent);
+    if (agent) {
+      setAgentsEditorDraft({ name: agent.name, instruction: agent.instruction });
+      setAgentsEditorModelIndex(
+        Math.max(
+          0,
+          MODELS.findIndex((model) => model.id === agent.model),
+        ),
+      );
+    } else {
+      setAgentsEditorDraft({ name: "", instruction: "" });
+      setAgentsEditorModelIndex(
+        Math.max(
+          0,
+          MODELS.findIndex((model) => model.id === "grok-4-1-fast"),
+        ),
+      );
+    }
+    setAgentsEditorField("name");
+    setAgentsEditorError(null);
+    setAgentsEditorSyncKey((n) => n + 1);
+    setShowAgentsEditor(true);
+    setShowAgentsModal(true);
+  }, []);
+
+  const submitSubagentEditor = useCallback(() => {
+    const name = (subagentNameRef.current?.plainText || "").trim();
+    const instruction = subagentInstructionRef.current?.plainText || "";
+    const model = MODELS[agentsEditorModelIndex]?.id;
+
+    if (!name) {
+      setAgentsEditorError("Name is required.");
+      return;
+    }
+    if (isReservedSubagentName(name)) {
+      setAgentsEditorError('Names "general" and "explore" are reserved.');
+      return;
+    }
+    if (!model || !getModelIds().includes(model)) {
+      setAgentsEditorError("Pick a valid model.");
+      return;
+    }
+
+    const next = [...subAgents];
+    if (editingSubagent) {
+      const index = next.findIndex((item) => item.name === editingSubagent.name);
+      if (index >= 0) next.splice(index, 1);
+    }
+
+    if (next.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+      setAgentsEditorError("Another sub-agent already uses this name.");
+      return;
+    }
+
+    next.push({ name, model, instruction });
+    saveUserSettings({ subAgents: next });
+    setSubAgents(loadValidSubAgents());
+    setShowAgentsEditor(false);
+    setEditingSubagent(null);
+    setAgentsEditorError(null);
+  }, [agentsEditorModelIndex, editingSubagent, subAgents]);
+
+  const removeEditingSubagent = useCallback(() => {
+    if (!editingSubagent) return;
+
+    const next = subAgents.filter((item) => item.name !== editingSubagent.name);
+    saveUserSettings({ subAgents: next });
+    setSubAgents(loadValidSubAgents());
+    setShowAgentsEditor(false);
+    setEditingSubagent(null);
+    setAgentsEditorError(null);
+    setAgentsModalIndex(0);
+  }, [editingSubagent, subAgents]);
 
   const submitMcpEditor = useCallback(() => {
     const draft: McpEditorDraft = {
@@ -940,6 +1060,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     showMcpEditorRef.current = showMcpEditor;
   }, [showMcpEditor]);
+  useEffect(() => {
+    showAgentsModalRef.current = showAgentsModal;
+  }, [showAgentsModal]);
+  useEffect(() => {
+    showAgentsEditorRef.current = showAgentsEditor;
+  }, [showAgentsEditor]);
 
   useEffect(() => {
     return () => {
@@ -1048,13 +1174,63 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     }
   }, [openApiKeyModal, startTelegramBridge]);
 
-  const invalidateActiveRun = useCallback(() => {
-    activeRunIdRef.current += 1;
-    setActiveToolCalls([]);
-    setActiveSubagent(null);
-    setStreamContent("");
-    setStreamReasoning("");
-  }, []);
+  const interruptActiveRun = useCallback(
+    (key?: KeyEvent) => {
+      if (!isProcessingRef.current) return false;
+      key?.preventDefault();
+      key?.stopPropagation();
+      interruptedRunIdRef.current = activeRunIdRef.current;
+      setStreamContent("");
+      setStreamReasoning("");
+      setActiveToolCalls([]);
+      setActiveSubagent(null);
+      agent.abort();
+      return true;
+    },
+    [agent],
+  );
+
+  useEffect(() => {
+    const onInternalKey = (key: KeyEvent) => {
+      if (isEscapeKey(key)) {
+        interruptActiveRun(key);
+      }
+    };
+
+    renderer._internalKeyInput.onInternal("keypress", onInternalKey);
+    return () => {
+      renderer._internalKeyInput.offInternal("keypress", onInternalKey);
+    };
+  }, [interruptActiveRun, renderer]);
+
+  useEffect(() => {
+    const onRawInput = (sequence: string) => {
+      const parsed = parseKeypress(sequence, { useKittyKeyboard: renderer.useKittyKeyboard });
+      if (parsed?.name === "escape" || sequence === "\u001b" || sequence === "\u001b\u001b") {
+        return interruptActiveRun();
+      }
+      return false;
+    };
+
+    renderer.prependInputHandler(onRawInput);
+    return () => {
+      renderer.removeInputHandler(onRawInput);
+    };
+  }, [interruptActiveRun, renderer]);
+
+  useEffect(() => {
+    const onStdinData = (chunk: Buffer | string) => {
+      const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (data.length === 1 && data[0] === 27) {
+        interruptActiveRun();
+      }
+    };
+
+    renderer.stdin.on("data", onStdinData);
+    return () => {
+      renderer.stdin.off("data", onStdinData);
+    };
+  }, [interruptActiveRun, renderer]);
 
   const resetToNewSession = useCallback(() => {
     const snapshot = agent.startNewSession();
@@ -1271,6 +1447,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openMcpModal();
         return true;
       }
+      if (c === "/agents" || c === "/agent") {
+        openAgentsModal();
+        return true;
+      }
       if (c === "/quit" || c === "/exit" || c === "/q") {
         handleExit();
         return true;
@@ -1281,7 +1461,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       return false;
     },
-    [handleExit, openMcpModal, processMessage, resetToNewSession],
+    [handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -1327,15 +1507,24 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "mcp":
           openMcpModal();
           break;
+        case "agents":
+          openAgentsModal();
+          break;
         case "review":
           processMessage(REVIEW_PROMPT);
           break;
       }
     },
-    [agent, handleExit, openMcpModal, processMessage, resetToNewSession],
+    [agent, handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession],
   );
 
-  const blockPrompt = showConnectModal || showTelegramTokenModal || showTelegramPairModal || showMcpModal;
+  const blockPrompt =
+    showConnectModal ||
+    showTelegramTokenModal ||
+    showTelegramPairModal ||
+    showMcpModal ||
+    showAgentsModal ||
+    showAgentsEditor;
 
   const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
@@ -1400,11 +1589,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (isEscapeKey(key) && interruptActiveRun(key)) {
+        return;
+      }
+
       if (showPlanPanel) {
         const q = planQuestions[pqs.tab];
 
         // Escape always dismisses
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           dismissPlan();
           return;
         }
@@ -1526,7 +1719,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showMcpEditorRef.current) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowMcpEditor(false);
           setMcpEditorError(null);
           setMcpSearchQuery("");
@@ -1550,9 +1743,49 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
       }
+      if (showAgentsEditorRef.current) {
+        if (isEscapeKey(key)) {
+          setShowAgentsEditor(false);
+          setAgentsEditorError(null);
+          return;
+        }
+        if (key.name === "x" && key.ctrl && editingSubagent) {
+          removeEditingSubagent();
+          return;
+        }
+        if (key.name === "return") {
+          submitSubagentEditor();
+          return;
+        }
+        if (
+          agentsEditorField === "model" &&
+          (key.name === "up" ||
+            key.name === "down" ||
+            key.name === "left" ||
+            key.name === "right" ||
+            key.name === "j" ||
+            key.name === "k")
+        ) {
+          const decrement = key.name === "up" || key.name === "left" || key.name === "k";
+          setAgentsEditorModelIndex((index) =>
+            decrement ? Math.max(0, index - 1) : Math.min(MODELS.length - 1, index + 1),
+          );
+          return;
+        }
+        if (key.name === "tab") {
+          const index = SUBAGENT_EDITOR_FIELDS.indexOf(agentsEditorField);
+          const nextIndex =
+            (index + (key.shift ? -1 : 1) + SUBAGENT_EDITOR_FIELDS.length) % SUBAGENT_EDITOR_FIELDS.length;
+          setAgentsEditorField(SUBAGENT_EDITOR_FIELDS[nextIndex]);
+          return;
+        }
+        if (agentsEditorField === "model") {
+          return;
+        }
+      }
       if (showMcpModalRef.current) {
         const row = mcpRows[mcpModalIndex];
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowMcpEditor(false);
           setShowMcpModal(false);
           setMcpSearchQuery("");
@@ -1602,8 +1835,48 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (showAgentsModalRef.current && !showAgentsEditorRef.current) {
+        const row = agentRows[agentsModalIndex];
+        if (isEscapeKey(key)) {
+          setShowAgentsModal(false);
+          setShowAgentsEditor(false);
+          setAgentsSearchQuery("");
+          setEditingSubagent(null);
+          setAgentsEditorError(null);
+          return;
+        }
+        if (key.name === "up") {
+          setAgentsModalIndex((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setAgentsModalIndex((index) => Math.min(Math.max(0, agentRows.length - 1), index + 1));
+          return;
+        }
+        if (key.name === "return") {
+          if (row?.kind === "agent") {
+            openSubagentEditor(row.agent);
+          }
+          return;
+        }
+        if (key.name === "a" && key.ctrl) {
+          openSubagentEditor(null);
+          return;
+        }
+        if (key.name === "backspace") {
+          setAgentsSearchQuery((query) => query.slice(0, -1));
+          setAgentsModalIndex(0);
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          setAgentsSearchQuery((query) => query + key.sequence);
+          setAgentsModalIndex(0);
+          return;
+        }
+        return;
+      }
       if (showTelegramTokenModalRef.current) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowTelegramTokenModal(false);
           setTelegramTokenError(null);
           return;
@@ -1614,7 +1887,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showTelegramPairModalRef.current) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowTelegramPairModal(false);
           setTelegramPairError(null);
           return;
@@ -1625,7 +1898,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showConnectModalRef.current) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowConnectModal(false);
           return;
         }
@@ -1645,7 +1918,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showApiKeyModalRef.current) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           closeApiKeyModal();
           return;
         }
@@ -1655,7 +1928,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showSlashMenu) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowSlashMenu(false);
           setSlashSearchQuery("");
           inputRef.current?.clear();
@@ -1688,7 +1961,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showModelPicker) {
-        if (key.name === "escape") {
+        if (isEscapeKey(key)) {
           setShowModelPicker(false);
           setModelSearchQuery("");
           return;
@@ -1727,16 +2000,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       if (!hasApiKeyRef.current && shouldOpenApiKeyModalForKey(key)) {
         openApiKeyModal();
-        return;
-      }
-      if (isProcessing && key.name === "escape") {
-        invalidateActiveRun();
-        if (queuedMessagesRef.current.length > 0) {
-          queuedMessagesRef.current = [];
-          setQueuedMessages([]);
-        } else {
-          agent.abort();
-        }
         return;
       }
       if (key.sequence === "/" && !isProcessing) {
@@ -1791,6 +2054,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     },
     [
       agent,
+      agentRows,
+      agentsEditorField,
+      agentsModalIndex,
       beginTelegramFromConnect,
       closeApiKeyModal,
       connectModalIndex,
@@ -1798,13 +2064,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       cycleMcpEditorTransport,
       deleteSavedMcp,
       dismissPlan,
+      editingSubagent,
       editSavedMcp,
       filteredModelIds,
       filteredSlashItems,
       handleExit,
       handlePlanSelect,
       handleSlashMenuSelect,
-      invalidateActiveRun,
+      interruptActiveRun,
       isPlanConfirmTab,
       isProcessing,
       isSinglePlan,
@@ -1816,12 +2083,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openApiKeyModal,
       openCatalogMcp,
       openMcpEditor,
+      openSubagentEditor,
       submitTelegramPair,
       submitTelegramToken,
       submitMcpEditor,
+      submitSubagentEditor,
       planQuestions,
       planTabCount,
       pqs,
+      removeEditingSubagent,
       showModelPicker,
       showPlanPanel,
       showSlashMenu,
@@ -1930,7 +2200,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
               {/* Active tool calls — pending inline */}
               {activeToolCalls.map((tc) =>
                 tc.function.name === "task" ? (
-                  <SubagentTaskLine key={tc.id} t={t} label={toolArgs(tc) || "Working"} pending />
+                  <SubagentTaskLine
+                    key={tc.id}
+                    t={t}
+                    agent={tryParseArg(tc, "agent") || "sub-agent"}
+                    label={toolArgs(tc) || "Working"}
+                    pending
+                  />
                 ) : tc.function.name === "delegate" ? (
                   <DelegationTaskLine
                     key={tc.id}
@@ -2070,6 +2346,33 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           cwdRef={mcpCwdRef}
           envRef={mcpEnvRef}
           onSubmit={submitMcpEditor}
+        />
+      )}
+      {showAgentsModal && !showAgentsEditor && (
+        <SubagentsBrowserModal
+          t={t}
+          width={width}
+          height={height}
+          selectedIndex={agentsModalIndex}
+          searchQuery={agentsSearchQuery}
+          rows={agentRows}
+        />
+      )}
+      {showAgentsEditor && (
+        <SubagentEditorModal
+          key={`subagent-editor-${agentsEditorSyncKey}`}
+          t={t}
+          width={width}
+          height={height}
+          draft={agentsEditorDraft}
+          focusedField={agentsEditorField}
+          modelIndex={agentsEditorModelIndex}
+          error={agentsEditorError}
+          title={editingSubagent ? `Edit sub-agent: ${editingSubagent.name}` : "Add sub-agent"}
+          nameRef={subagentNameRef}
+          instructionRef={subagentInstructionRef}
+          onSubmit={submitSubagentEditor}
+          showRemoveHint={!!editingSubagent}
         />
       )}
       {showModelPicker && (
@@ -2340,7 +2643,7 @@ function PromptModeLabel({
   return <PromptLoadingBoxes t={t} color={modeInfo.color} />;
 }
 
-function PromptLoadingBoxes({ t, color }: { t: Theme; color: string }) {
+function PromptLoadingBoxes({ t: _t, color }: { t: Theme; color: string }) {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
@@ -2786,8 +3089,15 @@ function InlineTool({ t, pending: _pending, children }: { t: Theme; pending: boo
   );
 }
 
-function SubagentTaskLine({ t, label, pending }: { t: Theme; label: string; pending: boolean }) {
+function formatSubagentName(agent: string): string {
+  if (agent === "general") return "General";
+  if (agent === "explore") return "Explore";
+  return agent || "Sub-agent";
+}
+
+function SubagentTaskLine({ t, agent, label, pending }: { t: Theme; agent: string; label: string; pending: boolean }) {
   const displayLabel = compactTaskLabel(label);
+  const displayAgent = formatSubagentName(agent);
 
   return (
     <box paddingLeft={3}>
@@ -2799,7 +3109,7 @@ function SubagentTaskLine({ t, label, pending }: { t: Theme; label: string; pend
         ) : null}
         {pending ? " " : ""}
         <span style={{ fg: t.subagentAccent }}>
-          <b>{`Sub-agent: ${displayLabel}`}</b>
+          <b>{`${displayAgent}: ${displayLabel}`}</b>
         </span>
       </text>
     </box>
@@ -2860,7 +3170,7 @@ function TaskResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
 
   return (
     <box gap={0}>
-      <SubagentTaskLine t={t} label={task.description} pending={false} />
+      <SubagentTaskLine t={t} agent={task.agent} label={task.description} pending={false} />
       <box paddingLeft={5}>
         <text fg={t.text}>
           {task.agent}
@@ -3416,6 +3726,16 @@ function ModelPickerModal({
 }
 
 /* ── Helpers ──────────────────────────────────────────────────── */
+
+function isEscapeKey(key: KeyEvent): boolean {
+  return (
+    key.name === "escape" ||
+    key.code === "Escape" ||
+    key.baseCode === 27 ||
+    key.sequence === "\u001b" ||
+    key.raw === "\u001b"
+  );
+}
 
 function toolArgs(tc?: ToolCall): string {
   if (!tc) return "";
