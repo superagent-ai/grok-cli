@@ -64,8 +64,9 @@ Works in interactive mode too—same flag.
 grok --prompt "summarize the repo state" --format json
 ```
 
-`--format json` emits newline-delimited `StreamChunk` objects instead of the
-default human-readable text stream.
+`--format json` emits a newline-delimited JSON event stream instead of the
+default human-readable text output. Events are semantic, step-level records such
+as `step_start`, `text`, `tool_use`, `step_finish`, and `error`.
 
 **List Grok models and pricing hints:**
 
