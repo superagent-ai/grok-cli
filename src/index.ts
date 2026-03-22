@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { program } from "commander";
 import * as dotenv from "dotenv";
+import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
 import { MODELS } from "./grok/models";
@@ -175,7 +176,7 @@ function requireApiKey(apiKey: string | undefined): string {
 program
   .name("grok")
   .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
-  .version("1.0.0")
+  .version(packageJson.version)
   .argument("[message...]", "Initial message to send")
   .option("-k, --api-key <key>", "Grok API key")
   .option("-u, --base-url <url>", "API base URL")
