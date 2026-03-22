@@ -57,5 +57,8 @@ export function renderHeadlessChunk(chunk: StreamChunk, format: HeadlessOutputFo
 
     case "reasoning":
       return {};
+
+    default:
+      return {};
   }
 }
