@@ -199,8 +199,10 @@ BEHAVIOR:
 - Focus on explanation, not execution`,
 };
 
-function findCustomSubagent(agent: string): CustomSubagentConfig | undefined {
-  const subagents = loadValidSubAgents();
+function findCustomSubagent(
+  agent: string,
+  subagents: CustomSubagentConfig[] = loadValidSubAgents(),
+): CustomSubagentConfig | undefined {
   return (
     subagents.find((item) => item.name === agent) ??
     subagents.find((item) => item.name.toLowerCase() === agent.toLowerCase())
@@ -218,7 +220,12 @@ function formatCustomSubagentsPromptSection(subagents: CustomSubagentConfig[]): 
   return `\n\nCUSTOM SUB-AGENTS:\nUser-defined foreground sub-agents from ~/.grok/user-settings.json. When one matches the task, call the task tool with agent set to the exact name.\n\n${lines.join("\n\n")}\n`;
 }
 
-function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | null): string {
+function buildSystemPrompt(
+  cwd: string,
+  mode: AgentMode,
+  planContext?: string | null,
+  subagents?: CustomSubagentConfig[],
+): string {
   const custom = loadCustomInstructions(cwd);
   const customSection = custom
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
@@ -226,7 +233,7 @@ function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | 
 
   const skillsText = formatSkillsForPrompt(discoverSkills(cwd));
   const skillsSection = skillsText ? `\n\n${skillsText}\n` : "";
-  const subagentsSection = formatCustomSubagentsPromptSection(loadValidSubAgents());
+  const subagentsSection = formatCustomSubagentsPromptSection(subagents ?? loadValidSubAgents());
 
   const planSection = planContext
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
@@ -237,7 +244,12 @@ function buildSystemPrompt(cwd: string, mode: AgentMode, planContext?: string | 
 Current working directory: ${cwd}`;
 }
 
-function buildSubagentPrompt(request: TaskRequest, cwd: string, custom: CustomSubagentConfig | null): string {
+function buildSubagentPrompt(
+  request: TaskRequest,
+  cwd: string,
+  custom: CustomSubagentConfig | null,
+  subagents?: CustomSubagentConfig[],
+): string {
   const isExplore = request.agent === "explore";
   const mode: AgentMode = isExplore ? "ask" : "agent";
   const role = custom
@@ -271,7 +283,7 @@ function buildSubagentPrompt(request: TaskRequest, cwd: string, custom: CustomSu
     "",
     `Delegated task: ${request.description}`,
     "",
-    buildSystemPrompt(cwd, mode),
+    buildSystemPrompt(cwd, mode, undefined, subagents),
   ].join("\n");
 }
 
@@ -517,7 +529,8 @@ export class Agent {
     const agentKey = String(request.agent);
     const isExplore = agentKey === "explore";
     const isGeneral = agentKey === "general";
-    const custom = !isExplore && !isGeneral ? findCustomSubagent(agentKey) : undefined;
+    const subagents = loadValidSubAgents();
+    const custom = !isExplore && !isGeneral ? findCustomSubagent(agentKey, subagents) : undefined;
 
     if (!isExplore && !isGeneral && !custom) {
       const message = `Unknown sub-agent "${agentKey}". Use general, explore, or a configured name from ~/.grok/user-settings.json.`;
@@ -557,7 +570,7 @@ export class Agent {
 
       const result = streamText({
         model: provider(childModelId),
-        system: buildSubagentPrompt(request, childBash.getCwd(), custom ?? null),
+        system: buildSubagentPrompt(request, childBash.getCwd(), custom ?? null, subagents),
         messages: [{ role: "user", content: request.prompt }],
         tools: childTools,
         stopWhen: stepCountIs(Math.min(this.maxToolRounds, isExplore ? 60 : 120)),
@@ -775,7 +788,8 @@ export class Agent {
     this.messageSeqs.push(null);
 
     const provider = this.requireProvider();
-    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext);
+    const subagents = loadValidSubAgents();
+    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext, subagents);
     const modelInfo = getModelInfo(this.modelId);
     this.planContext = null;
     let attemptedOverflowRecovery = false;
@@ -808,6 +822,7 @@ export class Agent {
               this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
             readDelegation: (id) => this.readDelegation(id),
             listDelegations: () => this.listDelegations(),
+            subagents,
           });
           let tools: ToolSet = baseTools;
           if (this.mode === "agent") {

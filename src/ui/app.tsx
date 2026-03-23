@@ -1180,6 +1180,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       key?.preventDefault();
       key?.stopPropagation();
       interruptedRunIdRef.current = activeRunIdRef.current;
+      queuedMessagesRef.current = [];
+      setQueuedMessages([]);
       setStreamContent("");
       setStreamReasoning("");
       setActiveToolCalls([]);
@@ -1589,10 +1591,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
-      if (isEscapeKey(key) && interruptActiveRun(key)) {
-        return;
-      }
-
       if (showPlanPanel) {
         const q = planQuestions[pqs.tab];
 
@@ -1998,6 +1996,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+
+      if (isEscapeKey(key) && interruptActiveRun(key)) {
+        return;
+      }
+
       if (!hasApiKeyRef.current && shouldOpenApiKeyModalForKey(key)) {
         openApiKeyModal();
         return;

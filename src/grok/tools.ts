@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { BashTool } from "../tools/bash";
 import { editFile, readFile, writeFile } from "../tools/file";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
-import { loadValidSubAgents } from "../utils/settings";
+import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
 
 const RESPONSES_SEARCH_MODEL = "grok-4-fast-non-reasoning";
@@ -13,6 +13,7 @@ interface CreateToolsOptions {
   runDelegation?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
   readDelegation?: (id: string) => Promise<ToolResult>;
   listDelegations?: () => Promise<ToolResult>;
+  subagents?: CustomSubagentConfig[];
 }
 
 export function createTools(
@@ -154,7 +155,7 @@ export function createTools(
   const tools: ToolSet = { ...base };
 
   if (options.runTask) {
-    const customNames = loadValidSubAgents().map((agent) => agent.name);
+    const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
     const taskAgentEnum = ["general", "explore", ...customNames] as [string, ...string[]];
     const customHint =
       customNames.length > 0
