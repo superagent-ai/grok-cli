@@ -1,5 +1,6 @@
 import { createXai } from "@ai-sdk/xai";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as settings from "../utils/settings";
 import { resolveModelRuntime } from "./client";
 
 describe("client", () => {
@@ -9,40 +10,95 @@ describe("client", () => {
   });
 
   describe("resolveModelRuntime", () => {
-    it("includes providerOptions with reasoningEffort for grok-3-mini", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
-      expect(runtime.modelId).toBe("grok-3-mini");
-      expect(runtime.providerOptions).toBeUndefined();
+    describe("without configured reasoning effort", () => {
+      it("does not include providerOptions for grok-3-mini when no effort configured", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
+        expect(runtime.modelId).toBe("grok-3-mini");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-4-0709 even though it has reasoning flag", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-4-0709");
+        expect(runtime.modelId).toBe("grok-4-0709");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-code-fast-1", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-code-fast-1");
+        expect(runtime.modelId).toBe("grok-code-fast-1");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-4-1-fast-reasoning", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-4-1-fast-reasoning");
+        expect(runtime.modelId).toBe("grok-4-1-fast-reasoning");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-4.20-multi-agent", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-4.20-multi-agent");
+        expect(runtime.modelId).toBe("grok-4.20-multi-agent-0309");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-3", () => {
+        const runtime = resolveModelRuntime(mockProvider, "grok-3");
+        expect(runtime.modelId).toBe("grok-3");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
     });
 
-    it("does not include providerOptions for grok-4-0709 even though it has reasoning flag", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-4-0709");
-      expect(runtime.modelId).toBe("grok-4-0709");
-      expect(runtime.providerOptions).toBeUndefined();
-    });
+    describe("with configured reasoning effort", () => {
+      beforeEach(() => {
+        vi.spyOn(settings, "getReasoningEffortForModel");
+      });
 
-    it("does not include providerOptions for grok-code-fast-1", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-code-fast-1");
-      expect(runtime.modelId).toBe("grok-code-fast-1");
-      expect(runtime.providerOptions).toBeUndefined();
-    });
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
 
-    it("does not include providerOptions for grok-4-1-fast-reasoning", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-4-1-fast-reasoning");
-      expect(runtime.modelId).toBe("grok-4-1-fast-reasoning");
-      expect(runtime.providerOptions).toBeUndefined();
-    });
+      it("includes providerOptions with reasoningEffort for grok-3-mini when effort is configured", () => {
+        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
+        expect(runtime.modelId).toBe("grok-3-mini");
+        expect(runtime.providerOptions).toEqual({
+          xai: {
+            reasoningEffort: "high",
+          },
+        });
+      });
 
-    it("does not include providerOptions for grok-4.20-multi-agent", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-4.20-multi-agent");
-      expect(runtime.modelId).toBe("grok-4.20-multi-agent-0309");
-      expect(runtime.providerOptions).toBeUndefined();
-    });
+      it("includes providerOptions with low effort for grok-3-mini when configured", () => {
+        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("low");
+        const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
+        expect(runtime.modelId).toBe("grok-3-mini");
+        expect(runtime.providerOptions).toEqual({
+          xai: {
+            reasoningEffort: "low",
+          },
+        });
+      });
 
-    it("does not include providerOptions for grok-3", () => {
-      const runtime = resolveModelRuntime(mockProvider, "grok-3");
-      expect(runtime.modelId).toBe("grok-3");
-      expect(runtime.providerOptions).toBeUndefined();
+      it("does not include providerOptions for grok-4-0709 even when effort is configured", () => {
+        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        const runtime = resolveModelRuntime(mockProvider, "grok-4-0709");
+        expect(runtime.modelId).toBe("grok-4-0709");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-code-fast-1 even when effort is configured", () => {
+        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        const runtime = resolveModelRuntime(mockProvider, "grok-code-fast-1");
+        expect(runtime.modelId).toBe("grok-code-fast-1");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
+
+      it("does not include providerOptions for grok-4-1-fast-reasoning even when effort is configured", () => {
+        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        const runtime = resolveModelRuntime(mockProvider, "grok-4-1-fast-reasoning");
+        expect(runtime.modelId).toBe("grok-4-1-fast-reasoning");
+        expect(runtime.providerOptions).toBeUndefined();
+      });
     });
   });
 });
