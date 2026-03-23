@@ -1,5 +1,6 @@
 import { generateText, type ModelMessage } from "ai";
-import type { XaiProvider } from "../grok/client";
+import { resolveModelRuntime, type XaiProvider } from "../grok/client";
+import { containsEncryptedReasoning } from "./reasoning";
 
 export interface CompactionSettings {
   reserveTokens: number;
@@ -110,11 +111,15 @@ function getTextParts(content: unknown): string[] {
       continue;
     }
     if (part.type === "reasoning" && typeof part.text === "string") {
-      parts.push(part.text);
+      if (!containsEncryptedReasoning(part.text)) {
+        parts.push(part.text);
+      }
       continue;
     }
     if (part.type === "reasoning" && typeof part.reasoning === "string") {
-      parts.push(part.reasoning);
+      if (!containsEncryptedReasoning(part.reasoning)) {
+        parts.push(part.reasoning);
+      }
     }
   }
   return parts;
@@ -409,14 +414,18 @@ async function summarizeConversation(
     promptParts.push(`Additional focus: ${customInstructions.trim()}`);
   }
 
+  const runtime = resolveModelRuntime(provider, modelId);
   const { text } = await generateText({
-    model: provider(modelId),
+    model: runtime.model,
     system: SUMMARIZATION_SYSTEM_PROMPT,
     prompt: promptParts.filter(Boolean).join("\n\n"),
     abortSignal: signal,
     maxRetries: 0,
     temperature: 0.2,
-    maxOutputTokens: Math.max(512, Math.floor(reserveTokens * 0.8)),
+    ...(runtime.modelInfo?.supportsMaxOutputTokens === false
+      ? {}
+      : { maxOutputTokens: Math.max(512, Math.floor(reserveTokens * 0.8)) }),
+    ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
   });
 
   return text.trim();

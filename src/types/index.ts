@@ -107,6 +107,8 @@ export interface StreamChunk {
   toolResult?: ToolResult;
 }
 
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -115,6 +117,12 @@ export interface ModelInfo {
   outputPrice: number;
   reasoning: boolean;
   description: string;
+  aliases?: string[];
+  responsesOnly?: boolean;
+  multiAgent?: boolean;
+  supportsClientTools?: boolean;
+  supportsMaxOutputTokens?: boolean;
+  defaultReasoningEffort?: ReasoningEffort;
 }
 
 export type AgentMode = "agent" | "plan" | "ask";

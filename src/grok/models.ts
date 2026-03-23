@@ -1,6 +1,78 @@
-import type { ModelInfo } from "../types/index";
+import type { ModelInfo, ReasoningEffort } from "../types/index";
 
 export const MODELS: ModelInfo[] = [
+  {
+    id: "grok-4.20-multi-agent-0309",
+    name: "Grok 4.20 Multi-Agent",
+    contextWindow: 2_000_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Realtime multi-agent research model",
+    aliases: ["grok-4.20-multi-agent", "grok-4.20-multi-agent-beta"],
+    responsesOnly: true,
+    multiAgent: true,
+    supportsClientTools: false,
+    supportsMaxOutputTokens: false,
+    defaultReasoningEffort: "low",
+  },
+  {
+    id: "grok-4.20-0309-reasoning",
+    name: "Grok 4.20 Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Grok 4.20 reasoning release",
+    aliases: ["grok-4.20-beta-0309", "grok-4.20-beta", "grok-beta"],
+  },
+  {
+    id: "grok-4.20-0309-non-reasoning",
+    name: "Grok 4.20 Non-Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: false,
+    description: "Grok 4.20 non-reasoning release",
+  },
+  {
+    id: "grok-4-1-fast-reasoning",
+    name: "Grok 4.1 Fast Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 0.2,
+    outputPrice: 0.5,
+    reasoning: true,
+    description: "Fast reasoning model with 2M context",
+    aliases: ["grok-4-1-fast"],
+  },
+  {
+    id: "grok-4-1-fast-non-reasoning",
+    name: "Grok 4.1 Fast Non-Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 0.2,
+    outputPrice: 0.5,
+    reasoning: false,
+    description: "Fast non-reasoning model with 2M context",
+  },
+  {
+    id: "grok-4-fast-reasoning",
+    name: "Grok 4 Fast Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 0.2,
+    outputPrice: 0.5,
+    reasoning: true,
+    description: "Legacy fast reasoning model",
+    aliases: ["grok-4-fast"],
+  },
+  {
+    id: "grok-4-fast-non-reasoning",
+    name: "Grok 4 Fast Non-Reasoning",
+    contextWindow: 2_000_000,
+    inputPrice: 0.2,
+    outputPrice: 0.5,
+    reasoning: false,
+    description: "Legacy fast non-reasoning model",
+  },
   {
     id: "grok-4-0709",
     name: "Grok 4",
@@ -11,45 +83,19 @@ export const MODELS: ModelInfo[] = [
     description: "Flagship reasoning model",
   },
   {
-    id: "grok-4.20-beta-0309",
-    name: "Grok 4.20 Beta",
-    contextWindow: 2_000_000,
-    inputPrice: 2.0,
-    outputPrice: 6.0,
-    reasoning: true,
-    description: "Multi-agent reasoning beta with 2M context",
-  },
-  {
-    id: "grok-4-fast",
-    name: "Grok 4 Fast",
-    contextWindow: 2_000_000,
-    inputPrice: 0.2,
-    outputPrice: 0.5,
-    reasoning: true,
-    description: "Fast reasoning with 2M context",
-  },
-  {
-    id: "grok-4-1-fast",
-    name: "Grok 4.1 Fast",
-    contextWindow: 2_000_000,
-    inputPrice: 0.2,
-    outputPrice: 0.5,
-    reasoning: true,
-    description: "Latest fast model with 2M context",
-  },
-  {
     id: "grok-code-fast-1",
-    name: "Grok Code Fast",
+    name: "Grok Code Fast 1",
     contextWindow: 256_000,
     inputPrice: 0.2,
     outputPrice: 1.5,
-    reasoning: false,
-    description: "Optimized for code generation",
+    reasoning: true,
+    description: "Fast coding model with reasoning",
+    aliases: ["grok-code-fast"],
   },
   {
     id: "grok-3",
     name: "Grok 3",
-    contextWindow: 131_000,
+    contextWindow: 131_072,
     inputPrice: 3.0,
     outputPrice: 15.0,
     reasoning: false,
@@ -58,20 +104,61 @@ export const MODELS: ModelInfo[] = [
   {
     id: "grok-3-mini",
     name: "Grok 3 Mini",
-    contextWindow: 131_000,
+    contextWindow: 131_072,
     inputPrice: 0.3,
     outputPrice: 0.5,
     reasoning: false,
     description: "Budget-friendly compact model",
+    aliases: ["grok-3-mini-fast"],
   },
 ];
 
-export const DEFAULT_MODEL = "grok-4-1-fast";
+const PROVIDER_PREFIX_RE = /^(x-ai|xai)\//i;
+const aliasMap = new Map<string, string>();
+
+for (const model of MODELS) {
+  aliasMap.set(model.id.toLowerCase(), model.id);
+  for (const alias of model.aliases ?? []) {
+    aliasMap.set(alias.toLowerCase(), model.id);
+  }
+}
+
+export const DEFAULT_MODEL =
+  MODELS.find((model) => model.id === "grok-4-1-fast-reasoning")?.id ?? MODELS[0]?.id ?? "grok-4-1-fast-reasoning";
+
+export function normalizeModelId(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (!trimmed) return trimmed;
+
+  const withoutProviderPrefix = trimmed.replace(PROVIDER_PREFIX_RE, "");
+  return aliasMap.get(withoutProviderPrefix.toLowerCase()) ?? withoutProviderPrefix;
+}
 
 export function getModelInfo(modelId: string): ModelInfo | undefined {
-  return MODELS.find((m) => m.id === modelId);
+  const normalized = normalizeModelId(modelId);
+  return MODELS.find((m) => m.id === normalized);
 }
 
 export function getModelIds(): string[] {
   return MODELS.map((m) => m.id);
+}
+
+export function isKnownModelId(modelId: string): boolean {
+  return !!getModelInfo(modelId);
+}
+
+export function getSupportedReasoningEfforts(modelId: string): ReasoningEffort[] {
+  const modelInfo = getModelInfo(modelId);
+  if (!modelInfo?.reasoning) return [];
+  if (modelInfo.multiAgent) return ["low", "medium", "high", "xhigh"];
+  if (modelInfo.responsesOnly) return ["low", "medium", "high"];
+  return ["low", "high"];
+}
+
+export function getEffectiveReasoningEffort(modelId: string, override?: ReasoningEffort): ReasoningEffort | undefined {
+  const supported = getSupportedReasoningEfforts(modelId);
+  if (supported.length === 0) return undefined;
+  if (override && supported.includes(override)) return override;
+  const defaultEffort = getModelInfo(modelId)?.defaultReasoningEffort;
+  return defaultEffort && supported.includes(defaultEffort) ? defaultEffort : undefined;
 }

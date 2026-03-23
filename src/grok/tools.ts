@@ -6,7 +6,7 @@ import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
 
-const RESPONSES_SEARCH_MODEL = "grok-4-fast-non-reasoning";
+const RESPONSES_SEARCH_MODEL = "grok-4-1-fast-non-reasoning";
 
 interface CreateToolsOptions {
   runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
