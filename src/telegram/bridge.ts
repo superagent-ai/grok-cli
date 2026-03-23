@@ -77,6 +77,7 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
                 case "content":
                   if (chunk.content) {
                     acc += chunk.content;
+                    opts.onAssistantMessage?.({ turnKey, userId, content: acc, done: false });
                   }
                   break;
                 case "tool_calls":

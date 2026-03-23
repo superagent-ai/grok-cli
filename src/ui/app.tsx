@@ -65,6 +65,15 @@ import {
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import {
+  buildAssistantEntry,
+  buildToolResultEntry,
+  buildUserEntry,
+  decorateTelegramEntries,
+  getTelegramSourceLabel,
+  getUnflushedTelegramAssistantContent,
+  replaceTurnEntries,
+} from "./telegram-turn-ui";
 import { getCompactTuiSelectionText } from "./terminal-selection-text";
 import { dark, type Theme } from "./theme";
 
@@ -320,6 +329,17 @@ interface AppProps {
   onExit?: () => void;
 }
 
+interface ActiveTurnState {
+  kind: "local" | "telegram";
+  agent: Agent;
+  modeColor?: string;
+  remoteKey?: string;
+  sourceLabel?: string;
+  userId?: number;
+  latestAssistantText: string;
+  flushedAssistantChars: number;
+}
+
 export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) {
   const t = dark;
   const renderer = useRenderer();
@@ -329,6 +349,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [streamContent, setStreamContent] = useState("");
   const [_streamReasoning, setStreamReasoning] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [liveTurnSourceLabel, setLiveTurnSourceLabel] = useState<string | null>(null);
   const [model, setModel] = useState(agent.getModel());
   const [mode, setModeState] = useState<AgentMode>(agent.getMode());
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -369,13 +390,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const hasApiKeyRef = useRef(initialHasApiKey);
   const showApiKeyModalRef = useRef(!initialHasApiKey);
   const queuedMessagesRef = useRef<string[]>([]);
+  const processMessageRef = useRef<(text: string) => Promise<void> | void>(() => {});
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
   const interruptedRunIdRef = useRef<number | null>(null);
+  const activeTurnRef = useRef<ActiveTurnState | null>(null);
   const coordinatorRef = useRef(createTurnCoordinator());
   const bridgeRef = useRef<TelegramBridgeHandle | null>(null);
   const telegramAgentsRef = useRef<Map<number, Agent>>(new Map());
+  const telegramEntryCountsRef = useRef<Map<number, number>>(new Map());
+  const telegramSubagentUnsubsRef = useRef<Map<number, () => void>>(new Map());
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showTelegramTokenModal, setShowTelegramTokenModal] = useState(false);
   const [showTelegramPairModal, setShowTelegramPairModal] = useState(false);
@@ -886,11 +911,205 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     }
   }, []);
 
+  const clearLiveTurnUi = useCallback(() => {
+    setStreamContent("");
+    setStreamReasoning("");
+    setActiveToolCalls([]);
+    setActiveSubagent(null);
+    setLiveTurnSourceLabel(null);
+    contentAccRef.current = "";
+  }, []);
+
+  const finishTurnProcessing = useCallback(() => {
+    const nextQueued = queuedMessagesRef.current.shift();
+    if (nextQueued) {
+      setQueuedMessages([...queuedMessagesRef.current]);
+      isProcessingRef.current = false;
+      void processMessageRef.current(nextQueued);
+      return;
+    }
+
+    isProcessingRef.current = false;
+    setIsProcessing(false);
+  }, []);
+
+  const beginLiveTurn = useCallback(
+    (turn: Omit<ActiveTurnState, "latestAssistantText" | "flushedAssistantChars">) => {
+      clearLiveTurnUi();
+      activeTurnRef.current = {
+        ...turn,
+        latestAssistantText: "",
+        flushedAssistantChars: 0,
+      };
+      isProcessingRef.current = true;
+      setIsProcessing(true);
+      setLiveTurnSourceLabel(turn.sourceLabel ?? null);
+      startTimeRef.current = Date.now();
+    },
+    [clearLiveTurnUi],
+  );
+
+  const flushPendingAssistantMessage = useCallback(() => {
+    const activeTurn = activeTurnRef.current;
+    if (!activeTurn) return;
+
+    const cleaned = sanitizeContent(contentAccRef.current);
+    if (!cleaned) {
+      contentAccRef.current = "";
+      setStreamContent("");
+      if (activeTurn.kind === "telegram") {
+        activeTurn.flushedAssistantChars = activeTurn.latestAssistantText.length;
+      }
+      return;
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      buildAssistantEntry(cleaned, {
+        modeColor: activeTurn.modeColor,
+        remoteKey: activeTurn.remoteKey,
+        sourceLabel: activeTurn.sourceLabel,
+      }),
+    ]);
+
+    if (activeTurn.kind === "telegram") {
+      activeTurn.flushedAssistantChars = activeTurn.latestAssistantText.length;
+    }
+
+    contentAccRef.current = "";
+    setStreamContent("");
+  }, []);
+
+  const applyLocalAssistantDelta = useCallback(
+    (delta: string) => {
+      contentAccRef.current += delta;
+      setStreamContent(sanitizeContent(contentAccRef.current));
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const applyTelegramAssistantPreview = useCallback(
+    (fullContent: string) => {
+      const activeTurn = activeTurnRef.current;
+      if (!activeTurn || activeTurn.kind !== "telegram") return;
+
+      activeTurn.latestAssistantText = fullContent;
+      contentAccRef.current = getUnflushedTelegramAssistantContent(fullContent, activeTurn.flushedAssistantChars);
+      setStreamContent(sanitizeContent(contentAccRef.current));
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const showLiveToolCalls = useCallback(
+    (toolCalls: ToolCall[]) => {
+      flushPendingAssistantMessage();
+      setActiveToolCalls(toolCalls);
+      setTimeout(scrollToBottom, 10);
+    },
+    [flushPendingAssistantMessage, scrollToBottom],
+  );
+
+  const appendLiveToolResult = useCallback(
+    (toolCall: ToolCall, toolResult: ToolResult) => {
+      const activeTurn = activeTurnRef.current;
+      if (!activeTurn) return;
+
+      setMessages((prev) => [
+        ...prev,
+        buildToolResultEntry(toolCall, toolResult, {
+          modeColor: activeTurn.modeColor,
+          remoteKey: activeTurn.remoteKey,
+          sourceLabel: activeTurn.sourceLabel,
+        }),
+      ]);
+
+      if (toolResult.plan?.questions?.length) {
+        setActivePlan(toolResult.plan);
+        setPqs(initialPlanQuestionsState());
+      }
+
+      setActiveToolCalls([]);
+      setTimeout(scrollToBottom, 10);
+    },
+    [scrollToBottom],
+  );
+
+  const syncTelegramTurnEntries = useCallback((activeTurn: ActiveTurnState) => {
+    if (activeTurn.kind !== "telegram" || activeTurn.userId === undefined || !activeTurn.remoteKey) return;
+
+    const currentEntries = activeTurn.agent.getChatEntries();
+    const syncedCount = telegramEntryCountsRef.current.get(activeTurn.userId) ?? 0;
+    if (currentEntries.length <= syncedCount) return;
+
+    const delta = decorateTelegramEntries(currentEntries.slice(syncedCount), activeTurn.userId, activeTurn.remoteKey);
+    telegramEntryCountsRef.current.set(activeTurn.userId, currentEntries.length);
+    setMessages((prev) => replaceTurnEntries(prev, activeTurn.remoteKey!, delta));
+  }, []);
+
+  const finalizeActiveTurn = useCallback(
+    ({ wasInterrupted = false }: { wasInterrupted?: boolean } = {}) => {
+      const activeTurn = activeTurnRef.current;
+      if (!activeTurn) {
+        finishTurnProcessing();
+        return;
+      }
+
+      const finalContent = sanitizeContent(contentAccRef.current);
+      if (!wasInterrupted && finalContent) {
+        setMessages((prev) => [
+          ...prev,
+          buildAssistantEntry(finalContent, {
+            modeColor: activeTurn.modeColor,
+            remoteKey: activeTurn.remoteKey,
+            sourceLabel: activeTurn.sourceLabel,
+          }),
+        ]);
+      }
+
+      if (!wasInterrupted) {
+        if (activeTurn.kind === "local" && activeTurn.agent.getSessionId()) {
+          setMessages(activeTurn.agent.getChatEntries());
+          setSessionTitle(activeTurn.agent.getSessionTitle());
+          setSessionId(activeTurn.agent.getSessionId());
+        } else if (activeTurn.kind === "telegram") {
+          syncTelegramTurnEntries(activeTurn);
+        }
+      }
+
+      activeTurnRef.current = null;
+      clearLiveTurnUi();
+      finishTurnProcessing();
+      setTimeout(scrollToBottom, 50);
+    },
+    [clearLiveTurnUi, finishTurnProcessing, scrollToBottom, syncTelegramTurnEntries],
+  );
+
+  const wireTelegramAgentUi = useCallback((userId: number, telegramAgent: Agent) => {
+    if (!telegramEntryCountsRef.current.has(userId)) {
+      telegramEntryCountsRef.current.set(userId, telegramAgent.getChatEntries().length);
+    }
+
+    if (telegramSubagentUnsubsRef.current.has(userId)) {
+      return;
+    }
+
+    const unsubscribe = telegramAgent.onSubagentStatus((status) => {
+      if (activeTurnRef.current?.agent !== telegramAgent) return;
+      setActiveSubagent(status);
+    });
+    telegramSubagentUnsubsRef.current.set(userId, unsubscribe);
+  }, []);
+
   const getTelegramAgent = useCallback(
     (userId: number) => {
       const map = telegramAgentsRef.current;
       const existing = map.get(userId);
-      if (existing) return existing;
+      if (existing) {
+        wireTelegramAgentUi(userId, existing);
+        return existing;
+      }
 
       const apiKey = getApiKey();
       if (!apiKey) {
@@ -913,92 +1132,88 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           },
         });
       }
+      wireTelegramAgentUi(userId, a);
       map.set(userId, a);
       return a;
     },
-    [startupConfig],
+    [startupConfig, wireTelegramAgentUi],
   );
 
   const appendTelegramUserMessage = useCallback(
-    (event: { userId: number; content: string }) => {
+    (event: { turnKey: string; userId: number; content: string }) => {
+      const telegramAgent = getTelegramAgent(event.userId);
+      beginLiveTurn({
+        kind: "telegram",
+        agent: telegramAgent,
+        remoteKey: event.turnKey,
+        userId: event.userId,
+        sourceLabel: getTelegramSourceLabel("assistant", event.userId),
+      });
       setMessages((prev) => [
         ...prev,
-        {
-          type: "user",
-          content: event.content,
-          timestamp: new Date(),
-          sourceLabel: `Telegram user ${event.userId}`,
-        },
+        buildUserEntry(event.content, {
+          remoteKey: event.turnKey,
+          sourceLabel: getTelegramSourceLabel("user", event.userId),
+        }),
       ]);
       setTimeout(scrollToBottom, 10);
     },
-    [scrollToBottom],
+    [beginLiveTurn, getTelegramAgent, scrollToBottom],
   );
 
   const upsertTelegramAssistantMessage = useCallback(
     (event: { turnKey: string; userId: number; content: string; done: boolean }) => {
-      const content = sanitizeContent(event.content);
-      if (!content && !event.done) return;
-
-      setMessages((prev) => {
-        const next = [...prev];
-        const idx = next.findIndex((entry) => entry.type === "assistant" && entry.remoteKey === event.turnKey);
-        const entry: ChatEntry = {
-          type: "assistant",
-          content: content || "(no text output)",
-          timestamp: new Date(),
+      if (activeTurnRef.current?.remoteKey !== event.turnKey) {
+        const telegramAgent = getTelegramAgent(event.userId);
+        beginLiveTurn({
+          kind: "telegram",
+          agent: telegramAgent,
           remoteKey: event.turnKey,
-          sourceLabel: `Telegram Grok • user ${event.userId}`,
-        };
-
-        if (idx === -1) {
-          next.push(entry);
-        } else {
-          next[idx] = {
-            ...next[idx],
-            content: entry.content,
-            timestamp: entry.timestamp,
-            sourceLabel: entry.sourceLabel,
-          };
-        }
-        return next;
-      });
-      if (event.done) {
-        setActiveToolCalls([]);
+          userId: event.userId,
+          sourceLabel: getTelegramSourceLabel("assistant", event.userId),
+        });
       }
-      setTimeout(scrollToBottom, 10);
+
+      applyTelegramAssistantPreview(event.content);
+      if (event.done) {
+        finalizeActiveTurn();
+      }
     },
-    [scrollToBottom],
+    [applyTelegramAssistantPreview, beginLiveTurn, finalizeActiveTurn, getTelegramAgent],
   );
 
   const showTelegramToolCalls = useCallback(
-    (event: { toolCalls: ToolCall[] }) => {
-      setActiveToolCalls(event.toolCalls);
-      setTimeout(scrollToBottom, 10);
+    (event: { turnKey: string; userId: number; toolCalls: ToolCall[] }) => {
+      if (activeTurnRef.current?.remoteKey !== event.turnKey) {
+        const telegramAgent = getTelegramAgent(event.userId);
+        beginLiveTurn({
+          kind: "telegram",
+          agent: telegramAgent,
+          remoteKey: event.turnKey,
+          userId: event.userId,
+          sourceLabel: getTelegramSourceLabel("assistant", event.userId),
+        });
+      }
+      showLiveToolCalls(event.toolCalls);
     },
-    [scrollToBottom],
+    [beginLiveTurn, getTelegramAgent, showLiveToolCalls],
   );
 
   const appendTelegramToolResult = useCallback(
-    (event: { toolCall: ToolCall; toolResult: ToolResult }) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          type: "tool_result",
-          content: event.toolResult.success ? event.toolResult.output || "Success" : event.toolResult.error || "Error",
-          timestamp: new Date(),
-          toolCall: event.toolCall,
-          toolResult: event.toolResult,
-        },
-      ]);
-      if (event.toolResult.plan?.questions?.length) {
-        setActivePlan(event.toolResult.plan);
-        setPqs(initialPlanQuestionsState());
+    (event: { turnKey: string; userId: number; toolCall: ToolCall; toolResult: ToolResult }) => {
+      if (activeTurnRef.current?.remoteKey !== event.turnKey) {
+        const telegramAgent = getTelegramAgent(event.userId);
+        beginLiveTurn({
+          kind: "telegram",
+          agent: telegramAgent,
+          remoteKey: event.turnKey,
+          userId: event.userId,
+          sourceLabel: getTelegramSourceLabel("assistant", event.userId),
+        });
       }
-      setActiveToolCalls([]);
-      setTimeout(scrollToBottom, 10);
+      appendLiveToolResult(event.toolCall, event.toolResult);
     },
-    [scrollToBottom],
+    [appendLiveToolResult, beginLiveTurn, getTelegramAgent],
   );
 
   const startTelegramBridge = useCallback(() => {
@@ -1250,14 +1465,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       interruptedRunIdRef.current = activeRunIdRef.current;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
-      setStreamContent("");
-      setStreamReasoning("");
-      setActiveToolCalls([]);
-      setActiveSubagent(null);
-      agent.abort();
+      const activeAgent = activeTurnRef.current?.agent ?? agent;
+      activeTurnRef.current = null;
+      clearLiveTurnUi();
+      activeAgent.abort();
       return true;
     },
-    [agent],
+    [agent, clearLiveTurnUi],
   );
 
   useEffect(() => {
@@ -1305,18 +1519,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const resetToNewSession = useCallback(() => {
     const snapshot = agent.startNewSession();
     setMessages(snapshot?.entries ?? []);
-    setStreamContent("");
-    setStreamReasoning("");
+    activeTurnRef.current = null;
+    clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);
     setSessionId(snapshot?.session.id ?? agent.getSessionId());
-    setActiveToolCalls([]);
-    setActiveSubagent(null);
     setActivePlan(null);
     setPqs(initialPlanQuestionsState());
     replacePasteBlocks([]);
     queuedMessagesRef.current = [];
     setQueuedMessages([]);
-  }, [agent, replacePasteBlocks]);
+  }, [agent, clearLiveTurnUi, replacePasteBlocks]);
 
   const processMessage = useCallback(
     async (text: string) => {
@@ -1331,17 +1543,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           .then(setSessionTitle)
           .catch(() => {});
       await coordinatorRef.current.run(async () => {
-        setStreamContent("");
-        setStreamReasoning("");
-        setActiveToolCalls([]);
-        setActiveSubagent(null);
-        contentAccRef.current = "";
-        startTimeRef.current = Date.now();
         const color = modeInfoRef.current.color;
-        setMessages((prev) => [
-          ...prev,
-          { type: "user", content: text.trim(), timestamp: new Date(), modeColor: color },
-        ]);
+        beginLiveTurn({ kind: "local", agent, modeColor: color });
+        setMessages((prev) => [...prev, buildUserEntry(text.trim(), { modeColor: color })]);
         setTimeout(scrollToBottom, 50);
         try {
           for await (const chunk of agent.processMessage(text.trim())) {
@@ -1351,53 +1555,19 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
             switch (chunk.type) {
               case "content":
-                contentAccRef.current += chunk.content || "";
-                setStreamContent(sanitizeContent(contentAccRef.current));
-                setTimeout(scrollToBottom, 10);
+                applyLocalAssistantDelta(chunk.content || "");
                 break;
               case "reasoning":
                 setStreamReasoning((p) => p + (chunk.content || ""));
                 break;
               case "tool_calls":
                 if (chunk.toolCalls) {
-                  const cleaned = sanitizeContent(contentAccRef.current);
-                  if (cleaned) {
-                    setMessages((p) => [
-                      ...p,
-                      {
-                        type: "assistant",
-                        content: cleaned,
-                        timestamp: new Date(),
-                        modeColor: modeInfoRef.current.color,
-                      },
-                    ]);
-                  }
-                  contentAccRef.current = "";
-                  setStreamContent("");
-                  setActiveToolCalls(chunk.toolCalls);
+                  showLiveToolCalls(chunk.toolCalls);
                 }
                 break;
               case "tool_result":
                 if (chunk.toolCall && chunk.toolResult) {
-                  setMessages((p) => [
-                    ...p,
-                    {
-                      type: "tool_result",
-                      content: chunk.toolResult!.success
-                        ? chunk.toolResult!.output || "Success"
-                        : chunk.toolResult!.error || "Error",
-                      timestamp: new Date(),
-                      modeColor: modeInfoRef.current.color,
-                      toolCall: chunk.toolCall,
-                      toolResult: chunk.toolResult,
-                    },
-                  ]);
-                  if (chunk.toolResult.plan?.questions?.length) {
-                    setActivePlan(chunk.toolResult.plan);
-                    setPqs(initialPlanQuestionsState());
-                  }
-                  setActiveToolCalls([]);
-                  setTimeout(scrollToBottom, 10);
+                  appendLiveToolResult(chunk.toolCall, chunk.toolResult);
                 }
                 break;
               case "error":
@@ -1415,50 +1585,29 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           }
         }
         const wasInterrupted = interruptedRunIdRef.current === runId;
-        const finalContent = sanitizeContent(contentAccRef.current);
         if (isStale()) {
           contentAccRef.current = "";
           return;
         }
 
-        if (!wasInterrupted && finalContent) {
-          setMessages((p) => [
-            ...p,
-            { type: "assistant", content: finalContent, timestamp: new Date(), modeColor: modeInfoRef.current.color },
-          ]);
-        }
-
-        if (!isStale() && agent.getSessionId()) {
-          setMessages(agent.getChatEntries());
-          setSessionTitle(agent.getSessionTitle());
-          setSessionId(agent.getSessionId());
-        }
-
-        contentAccRef.current = "";
         if (!isStale()) {
-          setStreamContent("");
-          setStreamReasoning("");
-          setActiveToolCalls([]);
-          setActiveSubagent(null);
+          finalizeActiveTurn({ wasInterrupted });
         }
         if (wasInterrupted) {
           interruptedRunIdRef.current = null;
         }
-        const nextQueued = queuedMessagesRef.current.shift();
-        if (nextQueued) {
-          setQueuedMessages([...queuedMessagesRef.current]);
-          isProcessingRef.current = false;
-          processMessage(nextQueued);
-        } else {
-          isProcessingRef.current = false;
-          if (!isStale()) {
-            setIsProcessing(false);
-          }
-        }
-        setTimeout(scrollToBottom, 50);
       });
     },
-    [agent, scrollToBottom, sessionTitle],
+    [
+      agent,
+      appendLiveToolResult,
+      applyLocalAssistantDelta,
+      beginLiveTurn,
+      finalizeActiveTurn,
+      scrollToBottom,
+      sessionTitle,
+      showLiveToolCalls,
+    ],
   );
 
   useEffect(() => {
@@ -1467,7 +1616,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       processMessage(initialMessage);
     }
   }, [hasApiKey, initialMessage, processMessage]);
-  useEffect(() => agent.onSubagentStatus(setActiveSubagent), [agent]);
+  useEffect(() => {
+    processMessageRef.current = processMessage;
+  }, [processMessage]);
+  useEffect(
+    () =>
+      agent.onSubagentStatus((status) => {
+        if (activeTurnRef.current?.agent !== agent) return;
+        setActiveSubagent(status);
+      }),
+    [agent],
+  );
+  useEffect(
+    () => () => {
+      for (const unsubscribe of telegramSubagentUnsubsRef.current.values()) {
+        unsubscribe();
+      }
+      telegramSubagentUnsubsRef.current.clear();
+    },
+    [],
+  );
   useEffect(() => {
     let active = true;
     const id = setInterval(() => {
@@ -2218,11 +2386,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (!raw.trim() && pasteBlocksRef.current.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
         interruptedRunIdRef.current = activeRunIdRef.current;
-        setStreamContent("");
-        setStreamReasoning("");
-        setActiveToolCalls([]);
-        setActiveSubagent(null);
-        agent.abort();
+        const activeAgent = activeTurnRef.current?.agent ?? agent;
+        activeTurnRef.current = null;
+        clearLiveTurnUi();
+        activeAgent.abort();
       }
       return;
     }
@@ -2246,7 +2413,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     processMessage(message);
-  }, [agent, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
+  }, [agent, clearLiveTurnUi, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -2271,6 +2438,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 // biome-ignore lint/suspicious/noArrayIndexKey: append-only message list without stable IDs
                 <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
               ))}
+              {liveTurnSourceLabel && (activeToolCalls.length > 0 || streamContent || isProcessing) && (
+                <box paddingLeft={3} marginTop={1} flexShrink={0}>
+                  <text fg={t.textMuted}>{liveTurnSourceLabel}</text>
+                </box>
+              )}
               {/* Active tool calls — pending inline */}
               {activeToolCalls.map((tc) =>
                 tc.function.name === "task" ? (
