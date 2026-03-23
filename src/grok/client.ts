@@ -1,13 +1,34 @@
 import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
+import type { ModelInfo, ReasoningEffort } from "../types/index";
+import { getReasoningEffortForModel } from "../utils/settings";
+import { getEffectiveReasoningEffort, getModelInfo, normalizeModelId } from "./models";
 
 export type XaiProvider = ReturnType<typeof createXai>;
+export type XaiChatModel = ReturnType<XaiProvider>;
+export type XaiResponsesModel = ReturnType<XaiProvider["responses"]>;
+export type GrokRuntimeModel = XaiChatModel | XaiResponsesModel;
+
+const DEFAULT_TITLE_MODEL = "grok-4-1-fast-non-reasoning";
+
 export interface GeneratedTitle {
   title: string;
+  modelId: string;
   usage?: {
     totalTokens?: number;
     inputTokens?: number;
     outputTokens?: number;
+  };
+}
+
+export interface ResolvedModelRuntime {
+  model: GrokRuntimeModel;
+  modelId: string;
+  modelInfo?: ModelInfo;
+  providerOptions?: {
+    xai: {
+      reasoningEffort: ReasoningEffort;
+    };
   };
 }
 
@@ -18,12 +39,33 @@ export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
   });
 }
 
+export function resolveModelRuntime(provider: XaiProvider, requestedModelId: string): ResolvedModelRuntime {
+  const modelId = normalizeModelId(requestedModelId);
+  const modelInfo = getModelInfo(modelId);
+  const reasoningEffort = getEffectiveReasoningEffort(modelId, getReasoningEffortForModel(modelId));
+
+  return {
+    model: modelInfo?.responsesOnly ? provider.responses(modelId) : provider(modelId),
+    modelId,
+    modelInfo,
+    providerOptions: reasoningEffort
+      ? {
+          xai: {
+            reasoningEffort,
+          },
+        }
+      : undefined,
+  };
+}
+
 export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<GeneratedTitle> {
+  const runtime = resolveModelRuntime(provider, DEFAULT_TITLE_MODEL);
   try {
     const { text, usage } = await generateText({
-      model: provider("grok-3-mini-fast"),
+      model: runtime.model,
       temperature: 0.5,
-      maxOutputTokens: 60,
+      ...(runtime.modelInfo?.supportsMaxOutputTokens === false ? {} : { maxOutputTokens: 60 }),
+      ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
       system: [
         "You are a title generator. Output ONLY a short title. Nothing else.",
         "Rules:",
@@ -39,9 +81,10 @@ export async function generateTitle(provider: XaiProvider, userMessage: string):
     });
     return {
       title: text?.trim().replace(/^["']|["']$/g, "") || "New session",
+      modelId: runtime.modelId,
       usage,
     };
   } catch {
-    return { title: "New session" };
+    return { title: "New session", modelId: runtime.modelId };
   }
 }

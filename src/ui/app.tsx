@@ -4,7 +4,15 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import os from "os";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
-import { getModelIds, getModelInfo, MODELS } from "../grok/models";
+import {
+  DEFAULT_MODEL,
+  getEffectiveReasoningEffort,
+  getModelIds,
+  getModelInfo,
+  getSupportedReasoningEfforts,
+  MODELS,
+  normalizeModelId,
+} from "../grok/models";
 import { POPULAR_MCP_CATALOG } from "../mcp/catalog";
 import { parseEnvLines, parseHeaderLines } from "../mcp/parse-headers";
 import { toMcpServerId, validateMcpServerConfig } from "../mcp/validate";
@@ -18,6 +26,7 @@ import type {
   ModelInfo,
   Plan,
   PlanQuestion,
+  ReasoningEffort,
   SubagentStatus,
   ToolCall,
   ToolResult,
@@ -77,6 +86,14 @@ type ContextStats = {
   ratioUsed: number;
   ratioRemaining: number;
 };
+type PasteBlock = { id: number; content: string; lines: number; isImage?: boolean };
+
+function getPasteBlockToken(block: Pick<PasteBlock, "id" | "lines" | "isImage">): string {
+  if (block.isImage) {
+    return `[Image #${block.id}]`;
+  }
+  return `[Pasted #${block.id} ${block.lines}+ lines]`;
+}
 
 const HERO_ROWS: Row[] = [
   {
@@ -325,16 +342,22 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
-  const [pasteBlocks, setPasteBlocks] = useState<{ id: number; content: string; lines: number; isImage?: boolean }[]>(
-    [],
+  const [reasoningEffortByModel, setReasoningEffortByModel] = useState<Record<string, ReasoningEffort>>(() =>
+    Object.fromEntries(
+      Object.entries(loadUserSettings().reasoningEffortByModel ?? {}).map(([modelId, effort]) => [
+        normalizeModelId(modelId),
+        effort,
+      ]),
+    ),
   );
+  const [pasteBlocks, setPasteBlocks] = useState<PasteBlock[]>([]);
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
-  const imageCounterRef = useRef(0);
   const pasteCounterRef = useRef(0);
+  const pasteBlocksRef = useRef<PasteBlock[]>([]);
   const apiKeyInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
@@ -394,7 +417,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [agentsEditorModelIndex, setAgentsEditorModelIndex] = useState(() =>
     Math.max(
       0,
-      MODELS.findIndex((model) => model.id === "grok-4-1-fast"),
+      MODELS.findIndex((model) => model.id === DEFAULT_MODEL),
     ),
   );
   const [agentsEditorSyncKey, setAgentsEditorSyncKey] = useState(0);
@@ -459,6 +482,51 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setMcpServers(servers);
     saveMcpServers(servers);
   }, []);
+
+  const setReasoningEfforts = useCallback((next: Record<string, ReasoningEffort>) => {
+    setReasoningEffortByModel(next);
+    saveUserSettings({ reasoningEffortByModel: next });
+  }, []);
+
+  const replacePasteBlocks = useCallback((next: PasteBlock[]) => {
+    pasteBlocksRef.current = next;
+    setPasteBlocks(next);
+  }, []);
+
+  const getModelReasoningEffort = useCallback(
+    (modelId: string): ReasoningEffort | undefined => {
+      const normalizedModelId = normalizeModelId(modelId);
+      return getEffectiveReasoningEffort(normalizedModelId, reasoningEffortByModel[normalizedModelId]);
+    },
+    [reasoningEffortByModel],
+  );
+
+  const adjustModelReasoningEffort = useCallback(
+    (modelId: string, direction: -1 | 1) => {
+      const normalizedModelId = normalizeModelId(modelId);
+      const supported = getSupportedReasoningEfforts(normalizedModelId);
+      if (supported.length === 0) return;
+
+      const current = getModelReasoningEffort(normalizedModelId);
+
+      if (!current) {
+        if (direction > 0) {
+          setReasoningEfforts({ ...reasoningEffortByModel, [normalizedModelId]: supported[0] });
+        }
+        return;
+      }
+
+      const currentIndex = supported.indexOf(current);
+      if (direction < 0 && currentIndex <= 0) {
+        const { [normalizedModelId]: _, ...rest } = reasoningEffortByModel;
+        setReasoningEfforts(rest);
+      } else {
+        const nextIndex = direction < 0 ? currentIndex - 1 : Math.min(supported.length - 1, currentIndex + 1);
+        setReasoningEfforts({ ...reasoningEffortByModel, [normalizedModelId]: supported[nextIndex] });
+      }
+    },
+    [getModelReasoningEffort, reasoningEffortByModel, setReasoningEfforts],
+  );
 
   const snapshotMcpEditorDraft = useCallback((): McpEditorDraft => {
     return {
@@ -583,7 +651,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setAgentsEditorModelIndex(
         Math.max(
           0,
-          MODELS.findIndex((model) => model.id === agent.model),
+          MODELS.findIndex((model) => model.id === normalizeModelId(agent.model)),
         ),
       );
     } else {
@@ -591,7 +659,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setAgentsEditorModelIndex(
         Math.max(
           0,
-          MODELS.findIndex((model) => model.id === "grok-4-1-fast"),
+          MODELS.findIndex((model) => model.id === DEFAULT_MODEL),
         ),
       );
     }
@@ -1245,11 +1313,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setActiveSubagent(null);
     setActivePlan(null);
     setPqs(initialPlanQuestionsState());
-    setPasteBlocks([]);
+    replacePasteBlocks([]);
     queuedMessagesRef.current = [];
     setQueuedMessages([]);
-    imageCounterRef.current = 0;
-  }, [agent]);
+  }, [agent, replacePasteBlocks]);
 
   const processMessage = useCallback(
     async (text: string) => {
@@ -1972,6 +2039,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           setModelPickerIndex((i) => Math.min(filteredModelIds.length - 1, i + 1));
           return;
         }
+        if (key.name === "left" || key.name === "right") {
+          const sel = filteredModelIds[modelPickerIndex];
+          if (sel) {
+            adjustModelReasoningEffort(sel, key.name === "left" ? -1 : 1);
+          }
+          return;
+        }
         if (key.name === "return") {
           const sel = filteredModelIds[modelPickerIndex];
           if (sel) {
@@ -2044,7 +2118,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         const text = inputRef.current?.plainText || "";
         if (text.trim()) {
           inputRef.current?.clear();
-          setPasteBlocks([]);
+          replacePasteBlocks([]);
         } else {
           handleExit();
         }
@@ -2069,6 +2143,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       dismissPlan,
       editingSubagent,
       editSavedMcp,
+      adjustModelReasoningEffort,
       filteredModelIds,
       filteredSlashItems,
       handleExit,
@@ -2086,6 +2161,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openApiKeyModal,
       openCatalogMcp,
       openMcpEditor,
+      replacePasteBlocks,
       openSubagentEditor,
       submitTelegramPair,
       submitTelegramToken,
@@ -2121,24 +2197,25 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       if (imageExts.test(trimmed) && !trimmed.includes("\n")) {
         event.preventDefault();
         const id = ++pasteCounterRef.current;
-        const imgNum = ++imageCounterRef.current;
-        setPasteBlocks((prev) => [...prev, { id, content: trimmed, lines: 1, isImage: true }]);
-        inputRef.current?.insertText(`[Image ${imgNum}]`);
+        const block = { id, content: trimmed, lines: 1, isImage: true } satisfies PasteBlock;
+        replacePasteBlocks([...pasteBlocksRef.current, block]);
+        inputRef.current?.insertText(getPasteBlockToken(block));
         return;
       }
       const lineCount = text.split("\n").length;
       if (lineCount < 2) return;
       event.preventDefault();
       const id = ++pasteCounterRef.current;
-      setPasteBlocks((prev) => [...prev, { id, content: text, lines: lineCount }]);
-      inputRef.current?.insertText(`[Pasted ~${lineCount} lines]`);
+      const block = { id, content: text, lines: lineCount } satisfies PasteBlock;
+      replacePasteBlocks([...pasteBlocksRef.current, block]);
+      inputRef.current?.insertText(getPasteBlockToken(block));
     },
-    [openApiKeyModal],
+    [openApiKeyModal, replacePasteBlocks],
   );
 
   const handleSubmit = useCallback(() => {
     const raw = inputRef.current?.plainText || "";
-    if (!raw.trim() && pasteBlocks.length === 0) {
+    if (!raw.trim() && pasteBlocksRef.current.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
         interruptedRunIdRef.current = activeRunIdRef.current;
         setStreamContent("");
@@ -2151,16 +2228,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     }
     inputRef.current?.clear();
     let message = raw;
-    const blocks = [...pasteBlocks];
-    let imgIdx = 0;
-    setPasteBlocks([]);
+    const blocks = [...pasteBlocksRef.current];
+    replacePasteBlocks([]);
     for (const block of blocks) {
-      if (block.isImage) {
-        imgIdx++;
-        message = message.replace(`[Image ${imgIdx}]`, block.content);
-      } else {
-        message = message.replace(`[Pasted ~${block.lines} lines]`, block.content);
-      }
+      message = message.replace(getPasteBlockToken(block), block.content);
     }
     if (!message.trim()) return;
     if (!hasApiKeyRef.current) {
@@ -2175,7 +2246,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     processMessage(message);
-  }, [agent, handleCommand, openApiKeyModal, processMessage, pasteBlocks, scrollToBottom]);
+  }, [agent, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -2387,6 +2458,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           height={height}
           searchQuery={modelSearchQuery}
           filteredModels={filteredModels}
+          reasoningEffortByModel={reasoningEffortByModel}
         />
       )}
       {showConnectModal && (
@@ -3652,6 +3724,7 @@ function ModelPickerModal({
   height,
   searchQuery,
   filteredModels,
+  reasoningEffortByModel,
 }: {
   t: Theme;
   currentModel: string;
@@ -3660,6 +3733,7 @@ function ModelPickerModal({
   height: number;
   searchQuery: string;
   filteredModels: ModelInfo[];
+  reasoningEffortByModel: Record<string, ReasoningEffort>;
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null);
   useEffect(() => {
@@ -3668,7 +3742,9 @@ function ModelPickerModal({
   }, [selectedIndex, filteredModels]);
 
   const itemCount = Math.max(filteredModels.length, 1);
-  const contentHeight = itemCount + 5;
+  const selectedModel = filteredModels[selectedIndex];
+  const selectedSupportsReasoning = !!selectedModel && getSupportedReasoningEfforts(selectedModel.id).length > 0;
+  const contentHeight = itemCount + 6;
   const maxH = Math.floor(height * 0.6);
   const panelHeight = Math.min(contentHeight, maxH);
   const top = bottomAlignedModalTop(height, panelHeight);
@@ -3705,6 +3781,9 @@ function ModelPickerModal({
           {filteredModels.map((m, idx) => {
             const selected = idx === selectedIndex;
             const current = m.id === currentModel;
+            const supportedReasoningEfforts = getSupportedReasoningEfforts(m.id);
+            const reasoningEffort =
+              getEffectiveReasoningEffort(m.id, reasoningEffortByModel[normalizeModelId(m.id)]) ?? "auto";
             return (
               <box
                 key={m.id}
@@ -3712,8 +3791,14 @@ function ModelPickerModal({
                 backgroundColor={selected ? t.selectedBg : undefined}
                 paddingLeft={2}
                 paddingRight={2}
+                width="100%"
               >
-                <text fg={current ? t.accent : selected ? t.selected : t.text}>{m.name}</text>
+                <box width="100%" flexDirection="row" justifyContent="space-between">
+                  <text fg={current ? t.accent : selected ? t.selected : t.text}>{m.name}</text>
+                  {supportedReasoningEfforts.length > 0 ? (
+                    <text fg={selected ? t.primary : t.textMuted}>{`[${reasoningEffort}]`}</text>
+                  ) : null}
+                </box>
               </box>
             );
           })}
@@ -3723,6 +3808,11 @@ function ModelPickerModal({
             </box>
           )}
         </scrollbox>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>
+            {selectedSupportsReasoning ? "left/right reasoning  enter select  esc close" : "enter select  esc close"}
+          </text>
+        </box>
       </box>
     </box>
   );

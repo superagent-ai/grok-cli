@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { DEFAULT_MODEL, getModelIds } from "../grok/models";
+import { DEFAULT_MODEL, getEffectiveReasoningEffort, getModelIds, normalizeModelId } from "../grok/models";
+import type { ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 
@@ -60,7 +61,7 @@ export function parseSubAgentsRawList(raw: unknown): CustomSubagentConfig[] {
 
     const entry = item as Record<string, unknown>;
     const name = typeof entry.name === "string" ? entry.name.trim() : "";
-    const model = typeof entry.model === "string" ? entry.model.trim() : "";
+    const model = typeof entry.model === "string" ? normalizeModelId(entry.model) : "";
     const instruction = typeof entry.instruction === "string" ? entry.instruction : "";
 
     if (!name || isReservedSubagentName(name) || !validModels.has(model)) {
@@ -84,6 +85,7 @@ export function loadValidSubAgents(): CustomSubagentConfig[] {
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
+  reasoningEffortByModel?: Record<string, ReasoningEffort>;
   telegram?: TelegramSettings;
   mcp?: McpSettings;
   subAgents?: CustomSubagentConfig[];
@@ -126,7 +128,17 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
     ...current,
     ...partial,
     ...(partial.apiKey !== undefined ? { apiKey: partial.apiKey } : {}),
-    ...(partial.defaultModel !== undefined ? { defaultModel: partial.defaultModel } : {}),
+    ...(partial.defaultModel !== undefined ? { defaultModel: normalizeModelId(partial.defaultModel) } : {}),
+    ...(partial.reasoningEffortByModel !== undefined
+      ? {
+          reasoningEffortByModel: Object.fromEntries(
+            Object.entries(partial.reasoningEffortByModel).map(([modelId, effort]) => [
+              normalizeModelId(modelId),
+              effort,
+            ]),
+          ),
+        }
+      : {}),
     ...(partial.telegram !== undefined
       ? {
           telegram: {
@@ -148,7 +160,14 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
-    ...(partial.subAgents !== undefined ? { subAgents: partial.subAgents } : {}),
+    ...(partial.subAgents !== undefined
+      ? {
+          subAgents: partial.subAgents.map((agent) => ({
+            ...agent,
+            model: normalizeModelId(agent.model),
+          })),
+        }
+      : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -162,7 +181,11 @@ export function loadProjectSettings(): ProjectSettings {
 export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
   const projectPath = path.join(process.cwd(), ".grok", "settings.json");
   const current = loadProjectSettings();
-  writeJson(projectPath, { ...current, ...partial });
+  writeJson(projectPath, {
+    ...current,
+    ...partial,
+    ...(partial.model !== undefined ? { model: normalizeModelId(partial.model) } : {}),
+  });
 }
 
 export function getApiKey(): string | undefined {
@@ -174,11 +197,20 @@ export function getBaseURL(): string {
 }
 
 export function getCurrentModel(): string {
-  if (process.env.GROK_MODEL) return process.env.GROK_MODEL;
+  if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
   const project = loadProjectSettings();
-  if (project.model) return project.model;
+  if (project.model) return normalizeModelId(project.model);
   const user = loadUserSettings();
-  return user.defaultModel || DEFAULT_MODEL;
+  return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
+}
+
+export function getReasoningEffortForModel(modelId: string): ReasoningEffort | undefined {
+  const normalizedModelId = normalizeModelId(modelId);
+  const savedEfforts = loadUserSettings().reasoningEffortByModel ?? {};
+  const effort =
+    savedEfforts[normalizedModelId] ??
+    Object.entries(savedEfforts).find(([savedModelId]) => normalizeModelId(savedModelId) === normalizedModelId)?.[1];
+  return getEffectiveReasoningEffort(normalizedModelId, effort);
 }
 
 export function getTelegramBotToken(): string | undefined {

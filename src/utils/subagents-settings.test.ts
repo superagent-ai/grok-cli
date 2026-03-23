@@ -10,8 +10,18 @@ describe("parseSubAgentsRawList", () => {
 
   it("keeps valid entries with known model ids", () => {
     expect(
-      parseSubAgentsRawList([{ name: "docs", model: "grok-4-1-fast", instruction: "Focus on documentation." }]),
-    ).toEqual([{ name: "docs", model: "grok-4-1-fast", instruction: "Focus on documentation." }]);
+      parseSubAgentsRawList([
+        { name: "docs", model: "grok-4-1-fast-reasoning", instruction: "Focus on documentation." },
+      ]),
+    ).toEqual([{ name: "docs", model: "grok-4-1-fast-reasoning", instruction: "Focus on documentation." }]);
+  });
+
+  it("normalizes legacy aliases to canonical ids", () => {
+    expect(
+      parseSubAgentsRawList([
+        { name: "research", model: "x-ai/grok-4.20-multi-agent-beta", instruction: "Focus on research." },
+      ]),
+    ).toEqual([{ name: "research", model: "grok-4.20-multi-agent-0309", instruction: "Focus on research." }]);
   });
 
   it("skips unknown models", () => {
@@ -21,10 +31,10 @@ describe("parseSubAgentsRawList", () => {
   it("skips reserved and empty names", () => {
     expect(
       parseSubAgentsRawList([
-        { name: "general", model: "grok-4-1-fast", instruction: "x" },
-        { name: "Explore", model: "grok-4-1-fast", instruction: "x" },
-        { name: "", model: "grok-4-1-fast", instruction: "x" },
-        { name: "  ", model: "grok-4-1-fast", instruction: "x" },
+        { name: "general", model: "grok-4-1-fast-reasoning", instruction: "x" },
+        { name: "Explore", model: "grok-4-1-fast-reasoning", instruction: "x" },
+        { name: "", model: "grok-4-1-fast-reasoning", instruction: "x" },
+        { name: "  ", model: "grok-4-1-fast-reasoning", instruction: "x" },
       ]),
     ).toEqual([]);
   });
@@ -35,7 +45,7 @@ describe("parseSubAgentsRawList", () => {
         { name: "Docs", model: "grok-4-1-fast", instruction: "first" },
         { name: "docs", model: "grok-code-fast-1", instruction: "second" },
       ]),
-    ).toEqual([{ name: "Docs", model: "grok-4-1-fast", instruction: "first" }]);
+    ).toEqual([{ name: "Docs", model: "grok-4-1-fast-reasoning", instruction: "first" }]);
   });
 
   it("ignores non-object rows", () => {

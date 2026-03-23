@@ -86,7 +86,7 @@ grok fix the flaky test in src/foo.test.ts
 
 | Thing | What it means |
 |--------|----------------|
-| **Grok-native** | Defaults tuned for Grok; models like **`grok-code-fast-1`**, **`grok-4-1-fast`**, flagship and fast variants—run `grok models` for the full menu. |
+| **Grok-native** | Defaults tuned for Grok; models like **`grok-code-fast-1`**, **`grok-4-1-fast-reasoning`**, **`grok-4.20-multi-agent-0309`**, plus flagship and fast variants—run `grok models` for the full menu. |
 | **X + web search** | **`search_x`** and **`search_web`** tools—live posts and docs without pretending the internet stopped in 2023. |
 | **Sub-agents (default behavior)** | Foreground **`task`** delegation (e.g. explore vs general) plus background **`delegate`** for read-only deep dives—parallelize like you mean it. |
 | **Custom sub-agents** | Define named agents with **`subAgents`** in **`~/.grok/user-settings.json`** and manage them from the TUI with **`/agents`**. |

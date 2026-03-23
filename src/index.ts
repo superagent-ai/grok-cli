@@ -4,7 +4,7 @@ import * as dotenv from "dotenv";
 import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
-import { MODELS } from "./grok/models";
+import { MODELS, normalizeModelId } from "./grok/models";
 import {
   createHeadlessJsonlEmitter,
   type HeadlessOutputFormat,
@@ -118,7 +118,7 @@ async function runBackgroundDelegation(jobPath: string, options: Record<string, 
     }
 
     const baseURL = options.baseUrl || getBaseURL();
-    const model = options.model || delegation.model || getCurrentModel();
+    const model = normalizeModelId(options.model || delegation.model || getCurrentModel());
     const maxToolRounds =
       parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { persistSession: false });
@@ -150,11 +150,11 @@ async function runBackgroundDelegation(jobPath: string, options: Record<string, 
 function resolveConfig(options: Record<string, string | undefined>) {
   const apiKey = options.apiKey || getApiKey();
   const baseURL = options.baseUrl || getBaseURL();
-  const model = options.model || getCurrentModel();
+  const model = normalizeModelId(options.model || getCurrentModel());
   const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
 
   if (options.apiKey) saveUserSettings({ apiKey: options.apiKey });
-  if (options.model) saveUserSettings({ defaultModel: options.model });
+  if (options.model) saveUserSettings({ defaultModel: normalizeModelId(options.model) });
 
   return { apiKey, baseURL, model, maxToolRounds };
 }
@@ -240,11 +240,19 @@ program
   .action(() => {
     console.log("\nAvailable Grok Models:\n");
     for (const m of MODELS) {
-      const reasoning = m.reasoning ? " (reasoning)" : "";
-      console.log(`  \x1b[36m${m.id}\x1b[0m — ${m.name}${reasoning}`);
+      const tags = [
+        m.reasoning ? "reasoning" : "non-reasoning",
+        m.multiAgent ? "multi-agent" : null,
+        m.responsesOnly ? "responses-only" : null,
+      ].filter(Boolean);
+      const suffix = tags.length > 0 ? ` (${tags.join(", ")})` : "";
+      console.log(`  \x1b[36m${m.id}\x1b[0m — ${m.name}${suffix}`);
       console.log(
         `    ${m.description} | ${formatContext(m.contextWindow)} context | $${m.inputPrice}/$${m.outputPrice} per 1M tokens`,
       );
+      if ((m.aliases?.length ?? 0) > 0) {
+        console.log(`    aliases: ${(m.aliases ?? []).join(", ")}`);
+      }
     }
     console.log();
   });

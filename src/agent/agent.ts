@@ -1,6 +1,6 @@
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
-import { createProvider, generateTitle as genTitle, type XaiProvider } from "../grok/client";
-import { getModelInfo } from "../grok/models";
+import { createProvider, generateTitle as genTitle, resolveModelRuntime, type XaiProvider } from "../grok/client";
+import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { createTools } from "../grok/tools";
 import { buildMcpToolSet } from "../mcp/runtime";
 import {
@@ -45,6 +45,7 @@ import {
   shouldCompactContext,
 } from "./compaction";
 import { DelegationManager } from "./delegations";
+import { containsEncryptedReasoning, sanitizeModelMessages } from "./reasoning";
 
 const MAX_TOOL_ROUNDS = 400;
 
@@ -287,6 +288,22 @@ function buildSubagentPrompt(
   ].join("\n");
 }
 
+function applyModelConstraints(system: string, modelId: string): string {
+  const modelInfo = getModelInfo(modelId);
+  if (modelInfo?.supportsClientTools !== false) {
+    return system;
+  }
+
+  return [
+    system,
+    "",
+    "MODEL CONSTRAINTS:",
+    "- The selected model does not support client-side CLI tool calls in this environment.",
+    "- Do not call bash, read_file, write_file, edit_file, task, delegate, delegation, or MCP tools.",
+    "- Answer directly using only the conversation context already provided.",
+  ].join("\n");
+}
+
 export class Agent {
   private provider: XaiProvider | null = null;
   private apiKey: string | null = null;
@@ -319,7 +336,7 @@ export class Agent {
     }
     this.bash = new BashTool();
     this.delegations = new DelegationManager(() => this.bash.getCwd());
-    this.modelId = model || "grok-4-1-fast";
+    this.modelId = normalizeModelId(model || DEFAULT_MODEL);
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
@@ -341,9 +358,9 @@ export class Agent {
   }
 
   setModel(model: string): void {
-    this.modelId = model;
+    this.modelId = normalizeModelId(model);
     if (this.sessionStore && this.session) {
-      this.sessionStore.setModel(this.session.id, model);
+      this.sessionStore.setModel(this.session.id, this.modelId);
       this.session = this.sessionStore.getRequiredSession(this.session.id);
     }
   }
@@ -410,7 +427,7 @@ export class Agent {
     }
 
     const generated = await genTitle(provider, userMessage);
-    this.recordUsage(generated.usage, "title", "grok-3-mini-fast");
+    this.recordUsage(generated.usage, "title", generated.modelId);
     if (this.sessionStore && this.session && !this.session.title && generated.title) {
       this.sessionStore.setTitle(this.session.id, generated.title);
       this.session = this.sessionStore.getRequiredSession(this.session.id);
@@ -553,12 +570,17 @@ export class Agent {
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
     let closeMcp: (() => Promise<void>) | undefined;
-    const childModelId = isExplore ? "grok-4-1-fast" : custom ? custom.model : this.modelId;
+    const childModelId = normalizeModelId(isExplore ? DEFAULT_MODEL : custom ? custom.model : this.modelId);
+    const childRuntime = resolveModelRuntime(provider, childModelId);
+    const childSystem = applyModelConstraints(
+      buildSubagentPrompt(request, childBash.getCwd(), custom ?? null, subagents),
+      childRuntime.modelId,
+    );
 
     onActivity?.(initialDetail);
 
     try {
-      if (childMode === "agent") {
+      if (childMode === "agent" && childRuntime.modelInfo?.supportsClientTools !== false) {
         const mcpBundle = await buildMcpToolSet(loadMcpServers());
         closeMcp = mcpBundle.close;
         childTools = { ...childBaseTools, ...mcpBundle.tools };
@@ -569,17 +591,20 @@ export class Agent {
       }
 
       const result = streamText({
-        model: provider(childModelId),
-        system: buildSubagentPrompt(request, childBash.getCwd(), custom ?? null, subagents),
+        model: childRuntime.model,
+        system: childSystem,
         messages: [{ role: "user", content: request.prompt }],
-        tools: childTools,
+        tools: childRuntime.modelInfo?.supportsClientTools === false ? {} : childTools,
         stopWhen: stepCountIs(Math.min(this.maxToolRounds, isExplore ? 60 : 120)),
         maxRetries: 0,
         abortSignal: signal,
         temperature: isExplore ? 0.2 : 0.5,
-        maxOutputTokens: Math.min(this.maxTokens, 8_192),
+        ...(childRuntime.modelInfo?.supportsMaxOutputTokens === false
+          ? {}
+          : { maxOutputTokens: Math.min(this.maxTokens, 8_192) }),
+        ...(childRuntime.providerOptions ? { providerOptions: childRuntime.providerOptions } : {}),
         onFinish: ({ totalUsage }) => {
-          this.recordUsage(totalUsage, "task", childModelId);
+          this.recordUsage(totalUsage, "task", childRuntime.modelId);
         },
       });
 
@@ -789,14 +814,20 @@ export class Agent {
 
     const provider = this.requireProvider();
     const subagents = loadValidSubAgents();
-    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext, subagents);
-    const modelInfo = getModelInfo(this.modelId);
+    const system = applyModelConstraints(
+      buildSystemPrompt(this.bash.getCwd(), this.mode, this.planContext, subagents),
+      this.modelId,
+    );
+    const runtime = resolveModelRuntime(provider, this.modelId);
+    const modelInfo = runtime.modelInfo;
     this.planContext = null;
     let attemptedOverflowRecovery = false;
 
     try {
       while (true) {
         let assistantText = "";
+        let reasoningPreview = "";
+        let encryptedReasoningHidden = false;
         let streamOk = false;
         let closeMcp: (() => Promise<void>) | undefined;
         let stepNumber = -1;
@@ -824,8 +855,8 @@ export class Agent {
             listDelegations: () => this.listDelegations(),
             subagents,
           });
-          let tools: ToolSet = baseTools;
-          if (this.mode === "agent") {
+          let tools: ToolSet = runtime.modelInfo?.supportsClientTools === false ? {} : baseTools;
+          if (this.mode === "agent" && runtime.modelInfo?.supportsClientTools !== false) {
             const mcpBundle = await buildMcpToolSet(loadMcpServers());
             closeMcp = mcpBundle.close;
             tools = { ...baseTools, ...mcpBundle.tools };
@@ -835,7 +866,7 @@ export class Agent {
           }
 
           const result = streamText({
-            model: provider(this.modelId),
+            model: runtime.model,
             system,
             messages: this.messages,
             tools,
@@ -843,7 +874,8 @@ export class Agent {
             maxRetries: 0,
             abortSignal: signal,
             temperature: 0.7,
-            maxOutputTokens: this.maxTokens,
+            ...(runtime.modelInfo?.supportsMaxOutputTokens === false ? {} : { maxOutputTokens: this.maxTokens }),
+            ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
             experimental_onStepStart: (event: unknown) => {
               stepNumber = getStepNumber(event, stepNumber + 1);
               notifyObserver(observer?.onStepStart, {
@@ -862,7 +894,7 @@ export class Agent {
               });
             },
             onFinish: ({ totalUsage }) => {
-              this.recordUsage(totalUsage, "message");
+              this.recordUsage(totalUsage, "message", runtime.modelId);
             },
           });
 
@@ -879,6 +911,14 @@ export class Agent {
                 break;
 
               case "reasoning-delta":
+                reasoningPreview = `${reasoningPreview}${part.text}`.slice(-256);
+                if (containsEncryptedReasoning(reasoningPreview)) {
+                  if (!encryptedReasoningHidden) {
+                    encryptedReasoningHidden = true;
+                    yield { type: "reasoning", content: "[Encrypted reasoning hidden]" };
+                  }
+                  break;
+                }
                 yield { type: "reasoning", content: part.text };
                 break;
 
@@ -933,7 +973,7 @@ export class Agent {
           try {
             const response = await result.response;
             if (!signal.aborted) {
-              this.appendCompletedTurn(userModelMessage, response.messages);
+              this.appendCompletedTurn(userModelMessage, sanitizeModelMessages(response.messages));
               streamOk = true;
             }
           } catch (responseError: unknown) {
