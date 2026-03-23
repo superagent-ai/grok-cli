@@ -66,6 +66,18 @@ export interface BackgroundProcessInfo {
   command: string;
 }
 
+export interface MediaAsset {
+  kind: "image" | "video";
+  path: string;
+  url?: string;
+  mediaType?: string;
+  prompt?: string;
+  sourcePath?: string;
+  sourceUrl?: string;
+  durationSeconds?: number;
+  modelId?: string;
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
@@ -75,6 +87,7 @@ export interface ToolResult {
   task?: TaskRun;
   delegation?: DelegationRun;
   backgroundProcess?: BackgroundProcessInfo;
+  media?: MediaAsset[];
 }
 
 export interface ToolCall {

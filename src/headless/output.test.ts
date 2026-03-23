@@ -71,6 +71,22 @@ describe("headless output helpers", () => {
     });
   });
 
+  it("renders generated media paths in text mode tool results", () => {
+    const chunk: StreamChunk = {
+      type: "tool_result",
+      toolCall: toolCall("generate_image"),
+      toolResult: {
+        success: true,
+        output: "Generated 1 image.",
+        media: [{ kind: "image", path: "/tmp/generated.png", url: "https://example.com/generated.png" }],
+      },
+    };
+
+    expect(renderHeadlessChunk(chunk)).toEqual({
+      stderr: "\u001b[32m✓ generate_image\u001b[0m\n  /tmp/generated.png (https://example.com/generated.png)\n",
+    });
+  });
+
   it("emits semantic JSONL for a single step with text and tool (json emitter)", () => {
     const sessionId = "jsonl-test-session";
     const tc = toolCall("bash");
