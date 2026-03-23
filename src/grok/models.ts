@@ -110,6 +110,7 @@ export const MODELS: ModelInfo[] = [
     reasoning: false,
     description: "Budget-friendly compact model",
     aliases: ["grok-3-mini-fast"],
+    supportsReasoningEffort: true,
   },
 ];
 
@@ -149,9 +150,9 @@ export function isKnownModelId(modelId: string): boolean {
 
 export function getSupportedReasoningEfforts(modelId: string): ReasoningEffort[] {
   const modelInfo = getModelInfo(modelId);
-  if (!modelInfo?.reasoning) return [];
-  if (modelInfo.multiAgent) return ["low", "medium", "high", "xhigh"];
-  if (modelInfo.responsesOnly) return ["low", "medium", "high"];
+  if (!modelInfo?.supportsReasoningEffort) return [];
+  // Currently only grok-3-mini supports reasoning_effort per xAI docs
+  // It supports "low" and "high" efforts
   return ["low", "high"];
 }
 

@@ -123,6 +123,7 @@ export interface ModelInfo {
   supportsClientTools?: boolean;
   supportsMaxOutputTokens?: boolean;
   defaultReasoningEffort?: ReasoningEffort;
+  supportsReasoningEffort?: boolean;
 }
 
 export type AgentMode = "agent" | "plan" | "ask";
