@@ -10,6 +10,8 @@ The rest borrowed from each other. We borrowed from *all of them*, then wired it
 
 Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
 
+Community-built and unofficial. This project is not affiliated with or endorsed by xAI, and it is not the official Grok CLI.
+
 https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb
 
 ---
@@ -22,7 +24,7 @@ npm i -g grok-dev
 
 The CLI binary is **`grok`** (yes, the package name and the command differ—deal with it).
 
-**Prerequisites:** Node 18+ (for the global install), and a **Grok API key** from [x.ai](https://x.ai).
+**Prerequisites:** Node 18+ (for the global install), a **Grok API key** from [x.ai](https://x.ai), and a modern terminal emulator for the interactive OpenTUI experience. Headless `--prompt` mode does not depend on terminal UI support.
 
 ---
 
@@ -33,6 +35,17 @@ The CLI binary is **`grok`** (yes, the package name and the command differ—dea
 ```bash
 grok
 ```
+
+### Supported terminals
+
+For the most reliable interactive OpenTUI experience, use a modern terminal emulator. We currently document and recommend:
+
+- **WezTerm** (cross-platform)
+- **Alacritty** (cross-platform)
+- **Ghostty** (macOS and Linux)
+- **Kitty** (macOS and Linux)
+
+Other modern terminals may work, but these are the terminal apps we currently recommend and document for interactive use.
 
 **Pick a project directory:**
 
