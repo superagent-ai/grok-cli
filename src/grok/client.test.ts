@@ -1,6 +1,6 @@
+import { createXai } from "@ai-sdk/xai";
 import { describe, expect, it } from "vitest";
 import { resolveModelRuntime } from "./client";
-import { createXai } from "@ai-sdk/xai";
 
 describe("client", () => {
   const mockProvider = createXai({
