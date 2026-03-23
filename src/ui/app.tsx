@@ -3228,6 +3228,10 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
         return <ToolTextOutputView t={t} label={toolLabel(entry.toolCall!)} content={entry.content} />;
       }
 
+      if ((entry.toolResult?.media?.length ?? 0) > 0) {
+        return <MediaToolResultView t={t} label={toolLabel(entry.toolCall!)} toolResult={entry.toolResult!} />;
+      }
+
       if (name === "write_file" || name === "edit_file") {
         const filePath = diff?.filePath || tryParseArg(entry.toolCall, "path") || args;
         const label = name === "write_file" ? `Write ${filePath}` : `Edit ${filePath}`;
@@ -3644,6 +3648,35 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
       <box paddingLeft={5} marginTop={1} flexShrink={0}>
         <Markdown content={content} t={t} />
       </box>
+    </box>
+  );
+}
+
+function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string; toolResult: ToolResult }) {
+  const media = toolResult.media ?? [];
+
+  return (
+    <box gap={0}>
+      <InlineTool t={t} pending={false}>
+        {label}
+      </InlineTool>
+      {toolResult.output ? (
+        <box paddingLeft={5} marginTop={1} flexShrink={0}>
+          <Markdown content={toolResult.output} t={t} />
+        </box>
+      ) : null}
+      {media.length > 0 ? (
+        <box paddingLeft={5} marginTop={toolResult.output ? 1 : 0} flexDirection="column">
+          {media.map((asset, index) => (
+            <box key={`${asset.path}-${index}`} flexDirection="column">
+              <text fg={t.text}>{asset.path}</text>
+              {asset.url ? <text fg={t.textMuted}>{`url: ${asset.url}`}</text> : null}
+              {asset.sourcePath ? <text fg={t.textMuted}>{`source: ${asset.sourcePath}`}</text> : null}
+              {asset.sourceUrl ? <text fg={t.textMuted}>{`source_url: ${asset.sourceUrl}`}</text> : null}
+            </box>
+          ))}
+        </box>
+      ) : null}
     </box>
   );
 }
@@ -4110,6 +4143,7 @@ function toolArgs(tc?: ToolCall): string {
     if (tc.function.name === "bash") return a.command || "";
     if (tc.function.name === "read_file" || tc.function.name === "write_file" || tc.function.name === "edit_file")
       return a.path || "";
+    if (tc.function.name === "generate_image" || tc.function.name === "generate_video") return a.prompt || "";
     if (tc.function.name === "task") return a.description || "";
     if (tc.function.name === "delegate") return a.description || "";
     if (tc.function.name === "delegation_read") return a.id || "";
@@ -4144,6 +4178,8 @@ function toolLabel(tc: ToolCall): string {
   if (tc.function.name === "edit_file") return `Edit ${trunc(args, 60)}`;
   if (tc.function.name === "search_web") return `Web Search "${trunc(args, 60)}"`;
   if (tc.function.name === "search_x") return `X Search "${trunc(args, 60)}"`;
+  if (tc.function.name === "generate_image") return `Generate image "${trunc(args, 60)}"`;
+  if (tc.function.name === "generate_video") return `Generate video "${trunc(args, 60)}"`;
   if (tc.function.name === "task") return `Task ${trunc(args, 60)}`;
   if (tc.function.name === "delegate") return `Background ${trunc(args, 60)}`;
   if (tc.function.name === "delegation_read") return `Read delegation ${trunc(args, 60)}`;

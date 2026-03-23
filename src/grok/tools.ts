@@ -5,6 +5,16 @@ import { editFile, readFile, writeFile } from "../tools/file";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
+import {
+  type GenerateImageToolInput,
+  type GenerateVideoToolInput,
+  generateImageTool,
+  generateVideoTool,
+  IMAGE_ASPECT_RATIOS,
+  IMAGE_RESOLUTIONS,
+  VIDEO_ASPECT_RATIOS,
+  VIDEO_RESOLUTIONS,
+} from "./media";
 
 const RESPONSES_SEARCH_MODEL = "grok-4-1-fast-non-reasoning";
 
@@ -148,6 +158,68 @@ export function createTools(
       }),
       execute: async ({ query }, { abortSignal }) => {
         return runResponsesSearch(query, "x_search", abortSignal);
+      },
+    }),
+
+    generate_image: tool({
+      description:
+        "Generate a new image or edit an existing image using Grok Imagine. Use when the user asks to create, redesign, restyle, or modify an image. Optionally pass a local file path or public URL in source to edit an existing image. Saves the generated image files locally and returns their paths.",
+      inputSchema: z.object({
+        prompt: z.string().describe("Prompt describing the image to generate or the edit to apply"),
+        source: z
+          .string()
+          .optional()
+          .describe("Optional local image path or public image URL to use as the source for editing"),
+        aspect_ratio: z
+          .enum(IMAGE_ASPECT_RATIOS)
+          .optional()
+          .describe("Optional output aspect ratio. Use when the user requests a specific format."),
+        resolution: z.enum(IMAGE_RESOLUTIONS).optional().describe("Optional output resolution: 1k or 2k"),
+        n: z.number().int().min(1).max(10).optional().describe("Number of images to generate (default: 1)"),
+        output_path: z
+          .string()
+          .optional()
+          .describe("Optional file path for the generated image. For multiple images, numbered suffixes are added."),
+      }),
+      execute: async (input: GenerateImageToolInput, { abortSignal }) => {
+        return generateImageTool(provider, input, cwd(), abortSignal);
+      },
+    }),
+
+    generate_video: tool({
+      description:
+        "Generate a new short video or animate an existing image using Grok Imagine Video. Use when the user asks for a clip, animation, cinematic shot, or motion from a still image. Optionally pass a local image path or public image URL in source for image-to-video generation. Saves the generated video files locally and returns their paths.",
+      inputSchema: z.object({
+        prompt: z.string().describe("Prompt describing the video or motion to generate"),
+        source: z
+          .string()
+          .optional()
+          .describe("Optional local image path or public image URL to use as the starting frame"),
+        duration: z.number().int().min(1).max(15).optional().describe("Video duration in seconds (1-15)"),
+        aspect_ratio: z
+          .enum(VIDEO_ASPECT_RATIOS)
+          .optional()
+          .describe("Optional output aspect ratio for text-to-video or to override image-to-video framing"),
+        resolution: z.enum(VIDEO_RESOLUTIONS).optional().describe("Optional output resolution: 480p or 720p"),
+        output_path: z
+          .string()
+          .optional()
+          .describe("Optional file path for the generated video. For multiple videos, numbered suffixes are added."),
+        poll_interval_ms: z
+          .number()
+          .int()
+          .min(100)
+          .optional()
+          .describe("Optional polling interval in milliseconds while waiting for video generation"),
+        poll_timeout_ms: z
+          .number()
+          .int()
+          .min(1000)
+          .optional()
+          .describe("Optional timeout in milliseconds while waiting for video generation"),
+      }),
+      execute: async (input: GenerateVideoToolInput, { abortSignal }) => {
+        return generateVideoTool(provider, input, cwd(), abortSignal);
       },
     }),
   };

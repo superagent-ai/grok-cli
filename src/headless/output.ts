@@ -94,7 +94,13 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
       const icon = chunk.toolResult.success ? "✓" : "✗";
       const color = chunk.toolResult.success ? "\x1b[32m" : "\x1b[31m";
       const name = chunk.toolCall?.function.name || "tool";
-      return { stderr: `${color}${icon} ${name}\x1b[0m\n` };
+      const mediaLines =
+        chunk.toolResult.media?.map((asset) => {
+          const suffix = asset.url ? ` (${asset.url})` : "";
+          return `  ${asset.path}${suffix}`;
+        }) ?? [];
+      const stderr = [`${color}${icon} ${name}\x1b[0m`, ...mediaLines].join("\n");
+      return { stderr: `${stderr}\n` };
     }
 
     case "error":

@@ -2,6 +2,7 @@ import type { ModelMessage } from "ai";
 import { getCompactionSummaryText } from "../agent/compaction";
 import type { ChatEntry, ToolCall, ToolResult } from "../types/index";
 import { getDatabase, withTransaction } from "./db";
+import { extractToolResultFromOutput, getOutputKind, isOutputSuccess } from "./tool-results";
 import { buildEffectiveTranscript, type LoadedTranscriptState, type PersistedCompaction } from "./transcript-view";
 
 interface MessageRow {
@@ -354,57 +355,4 @@ function toFallbackToolCall(toolCallId: string, toolName: string): ToolCall {
       arguments: "{}",
     },
   };
-}
-
-function extractToolResultFromOutput(output: unknown): ToolResult | null {
-  if (!output || typeof output !== "object") return null;
-
-  if ("success" in output) {
-    const result = output as ToolResult;
-    return {
-      success: Boolean(result.success),
-      output: result.output,
-      error: result.error,
-      diff: result.diff,
-      plan: result.plan,
-      task: result.task,
-      delegation: result.delegation,
-      backgroundProcess: result.backgroundProcess,
-    };
-  }
-
-  if ("type" in output && output.type === "json" && "value" in output) {
-    return extractToolResultFromOutput((output as { value: unknown }).value);
-  }
-
-  if ("type" in output && output.type === "error-text" && "value" in output) {
-    return {
-      success: false,
-      error: String((output as { value: unknown }).value),
-    };
-  }
-
-  if ("type" in output && output.type === "text" && "value" in output) {
-    return {
-      success: true,
-      output: String((output as { value: unknown }).value),
-    };
-  }
-
-  return null;
-}
-
-function getOutputKind(output: unknown): string {
-  if (output && typeof output === "object" && "type" in output && typeof output.type === "string") {
-    return output.type;
-  }
-  return "json";
-}
-
-function isOutputSuccess(output: unknown): boolean {
-  if (!output || typeof output !== "object") return true;
-  if ("type" in output) {
-    return !String(output.type).startsWith("error");
-  }
-  return true;
 }

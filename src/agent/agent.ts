@@ -126,6 +126,8 @@ TOOLS:
 - delegation_list: List running and completed background delegations. Do not poll it repeatedly.
 - search_web: Search the web for current information, documentation, APIs, tutorials, etc.
 - search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
+- generate_image: Generate a new image or edit an existing image. It saves image files locally and returns their paths.
+- generate_video: Generate a new video or animate an existing image. It saves video files locally and returns their paths.
 - MCP tools: Enabled servers appear as tools named like mcp_<server>__<tool>.
 
 WORKFLOW:
@@ -155,6 +157,8 @@ EXAMPLES:
 - "research how auth works" -> delegate to explore first
 - "investigate why this test fails" -> delegate to explore first, then continue with findings
 - "refactor this module" -> delegate a focused part to general when helpful
+- "generate a logo" -> use generate_image
+- "animate this still image" -> use generate_video
 - Recurring specialized workflows -> use the matching custom sub-agent via task
 
 IMPORTANT:
@@ -1114,21 +1118,24 @@ function toToolResult(output: unknown): ToolResult {
     const r = output as {
       success: boolean;
       output?: string;
+      error?: string;
       diff?: ToolResult["diff"];
       plan?: Plan;
       task?: ToolResult["task"];
       delegation?: ToolResult["delegation"];
       backgroundProcess?: ToolResult["backgroundProcess"];
+      media?: ToolResult["media"];
     };
     return {
       success: r.success,
       output: r.output,
-      error: r.success ? undefined : r.output,
+      error: r.error ?? (r.success ? undefined : r.output),
       diff: r.diff,
       plan: r.plan,
       task: r.task,
       delegation: r.delegation,
       backgroundProcess: r.backgroundProcess,
+      media: r.media,
     };
   }
   return { success: true, output: String(output) };
@@ -1141,6 +1148,8 @@ function formatSubagentActivity(toolName: string, args?: unknown): string {
   if (toolName === "edit_file") return `Edit ${parsed.path || "file"}`;
   if (toolName === "search_web") return `Web search "${truncate(parsed.query || "", 50)}"`;
   if (toolName === "search_x") return `X search "${truncate(parsed.query || "", 50)}"`;
+  if (toolName === "generate_image") return `Generate image "${truncate(parsed.prompt || "", 50)}"`;
+  if (toolName === "generate_video") return `Generate video "${truncate(parsed.prompt || "", 50)}"`;
   if (toolName === "bash") return truncate(parsed.command || "Run command", 70);
   return truncate(`${toolName}`, 70);
 }
