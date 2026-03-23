@@ -29,14 +29,16 @@ export interface Plan {
   questions?: PlanQuestion[];
 }
 
+export type BuiltinSubagentId = "general" | "explore";
+
 export interface TaskRequest {
-  agent: "general" | "explore";
+  agent: BuiltinSubagentId | string;
   description: string;
   prompt: string;
 }
 
 export interface TaskRun {
-  agent: "general" | "explore";
+  agent: string;
   description: string;
   summary: string;
   activity?: string;
@@ -53,7 +55,7 @@ export interface DelegationRun {
 }
 
 export interface SubagentStatus {
-  agent: "general" | "explore";
+  agent: string;
   description: string;
   detail: string;
 }

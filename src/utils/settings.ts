@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { DEFAULT_MODEL } from "../grok/models";
+import { DEFAULT_MODEL, getModelIds } from "../grok/models";
 
 export type TelegramStreamingMode = "off" | "partial";
 
@@ -36,11 +36,57 @@ export interface McpSettings {
   servers?: McpServerConfig[];
 }
 
+export interface CustomSubagentConfig {
+  name: string;
+  model: string;
+  instruction: string;
+}
+
+const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore"]);
+
+export function isReservedSubagentName(name: string): boolean {
+  return RESERVED_SUBAGENT_NAMES.has(name.trim().toLowerCase());
+}
+
+export function parseSubAgentsRawList(raw: unknown): CustomSubagentConfig[] {
+  if (!Array.isArray(raw)) return [];
+
+  const validModels = new Set(getModelIds());
+  const seen = new Set<string>();
+  const agents: CustomSubagentConfig[] = [];
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+
+    const entry = item as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    const model = typeof entry.model === "string" ? entry.model.trim() : "";
+    const instruction = typeof entry.instruction === "string" ? entry.instruction : "";
+
+    if (!name || isReservedSubagentName(name) || !validModels.has(model)) {
+      continue;
+    }
+
+    const dedupeKey = name.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    agents.push({ name, model, instruction });
+  }
+
+  return agents;
+}
+
+export function loadValidSubAgents(): CustomSubagentConfig[] {
+  return parseSubAgentsRawList(loadUserSettings().subAgents);
+}
+
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
   telegram?: TelegramSettings;
   mcp?: McpSettings;
+  subAgents?: CustomSubagentConfig[];
 }
 
 export interface ProjectSettings {
@@ -102,6 +148,7 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
+    ...(partial.subAgents !== undefined ? { subAgents: partial.subAgents } : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);

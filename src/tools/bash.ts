@@ -3,10 +3,7 @@ import { createReadStream, createWriteStream } from "fs";
 import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
-import { promisify } from "util";
 import type { ToolResult } from "../types/index";
-
-const execAsync = promisify(exec);
 
 const MAX_TAIL_BYTES = 8_192;
 const MAX_BACKGROUND_PROCESSES = 8;
@@ -41,7 +38,7 @@ export class BashTool {
     return this.tmpDir;
   }
 
-  async execute(command: string, timeout = 30_000): Promise<ToolResult> {
+  async execute(command: string, timeout = 30_000, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
       if (command.startsWith("cd ")) {
         const dir = command
@@ -62,18 +59,74 @@ export class BashTool {
         }
       }
 
-      const { stdout, stderr } = await execAsync(command, {
-        cwd: this.cwd,
-        timeout,
-        maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, FORCE_COLOR: "0" },
-      });
+      if (abortSignal?.aborted) {
+        return { success: false, error: "[Cancelled]" };
+      }
 
-      const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
-      return {
-        success: true,
-        output: output.trim() || "Command executed successfully (no output)",
-      };
+      return await new Promise<ToolResult>((resolve) => {
+        let settled = false;
+        let aborted = false;
+        let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+
+        const finish = (result: ToolResult) => {
+          if (settled) return;
+          settled = true;
+          if (forceKillTimer) clearTimeout(forceKillTimer);
+          abortSignal?.removeEventListener("abort", onAbort);
+          resolve(result);
+        };
+
+        const child = exec(
+          command,
+          {
+            cwd: this.cwd,
+            timeout,
+            maxBuffer: 10 * 1024 * 1024,
+            env: { ...process.env, FORCE_COLOR: "0" },
+          },
+          (err, stdout, stderr) => {
+            if (aborted || abortSignal?.aborted) {
+              finish({ success: false, error: "[Cancelled]" });
+              return;
+            }
+
+            const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
+            if (err) {
+              if (output.trim()) {
+                finish({ success: false, error: output.trim() });
+                return;
+              }
+              finish({ success: false, error: `Command failed: ${err.message}` });
+              return;
+            }
+
+            finish({
+              success: true,
+              output: output.trim() || "Command executed successfully (no output)",
+            });
+          },
+        );
+
+        const onAbort = () => {
+          aborted = true;
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            finish({ success: false, error: "[Cancelled]" });
+            return;
+          }
+
+          forceKillTimer = setTimeout(() => {
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              /* already exited */
+            }
+          }, 1_000);
+        };
+
+        abortSignal?.addEventListener("abort", onAbort, { once: true });
+      });
     } catch (err: unknown) {
       if (err && typeof err === "object" && "stdout" in err) {
         const execErr = err as { stdout?: string; stderr?: string; message: string };
