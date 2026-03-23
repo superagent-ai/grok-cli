@@ -280,6 +280,8 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "mcp", label: "mcp", description: "Manage MCP servers" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
+  { id: "commit-push", label: "commit & push", description: "Commit and push" },
+  { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
   { id: "review", label: "review", description: "Review recent changes" },
   { id: "skills", label: "skills", description: "Manage skills" },
 ];
@@ -307,6 +309,76 @@ Code quality, naming, performance, and best-practice improvements. If none, say 
 
 ## Risk Assessment
 Rate the overall risk of these changes as **Low**, **Medium**, or **High** with a short justification.`;
+
+const COMMIT_PUSH_PROMPT = `Create a git commit for the current repository changes and push the current branch to its remote.
+
+Before committing, inspect the current branch. If it is not already a feature branch, create and switch to a new feature branch with a descriptive name based on the changes.
+
+Follow the repository's commit workflow and safety checks. Inspect the current changes, stage any relevant untracked files, create an appropriate commit message, and push the branch if a commit was created. If there is nothing to commit, say so and stop.`;
+
+const COMMIT_PR_PROMPT = `Create a git commit for the current repository changes and open a pull request for the current branch.
+
+Before committing, inspect the current branch. If it is not already a feature branch, create and switch to a new feature branch with a descriptive name based on the changes.
+
+Follow the repository's commit and pull request workflows. Inspect the current changes, stage any relevant untracked files, create an appropriate commit, push the branch if needed, then open a pull request with a concise summary and test plan. Return the pull request URL. If there is nothing to commit or open in a pull request, explain why and stop.`;
+
+const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
+  "/clear",
+  "/model",
+  "/models",
+  "/remote-control",
+  "/mcp",
+  "/mcps",
+  "/agents",
+  "/agent",
+  "/quit",
+  "/exit",
+  "/q",
+  "/review",
+  "/commit-push",
+  "/commit-pr",
+]);
+
+function parseCustomSubagentSlashCommand(
+  cmd: string,
+  subagents: CustomSubagentConfig[],
+): { agentName: string; prompt: string } | null {
+  const trimmed = cmd.trim();
+  if (!trimmed.startsWith("/")) return null;
+
+  const body = trimmed.slice(1).trim();
+  if (!body) return null;
+
+  const commandToken = body.split(/\s+/, 1)[0]?.toLowerCase();
+  if (commandToken && BUILTIN_TYPED_SLASH_COMMANDS.has(`/${commandToken}`)) {
+    return null;
+  }
+
+  const lowerBody = body.toLowerCase();
+  const sortedSubagents = [...subagents].sort((a, b) => b.name.length - a.name.length);
+  const match = sortedSubagents.find((item) => {
+    const lowerName = item.name.trim().toLowerCase();
+    return lowerBody === lowerName || lowerBody.startsWith(`${lowerName} `);
+  });
+  if (!match) return null;
+
+  return {
+    agentName: match.name,
+    prompt: body.slice(match.name.length).trim(),
+  };
+}
+
+function buildCustomSubagentSlashPrompt(agentName: string, prompt: string): string {
+  return `Use the custom sub-agent "${agentName}" for this task.
+
+Delegate the work with the \`task\` tool using:
+- \`agent\`: "${agentName}"
+- \`description\`: a short summary of the work
+- \`prompt\`: a detailed prompt based on the user's request
+
+User request:
+${prompt}`;
+}
 
 const CONNECT_CHANNELS: { id: string; label: string; description: string }[] = [
   { id: "telegram", label: "Telegram", description: "Chat with Grok from Telegram" },
@@ -1696,9 +1768,32 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         processMessage(REVIEW_PROMPT);
         return true;
       }
+      if (c === "/commit-push") {
+        processMessage(COMMIT_PUSH_PROMPT);
+        return true;
+      }
+      if (c === "/commit-pr") {
+        processMessage(COMMIT_PR_PROMPT);
+        return true;
+      }
+      const customSubagentCommand = parseCustomSubagentSlashCommand(cmd, subAgents);
+      if (customSubagentCommand) {
+        if (!customSubagentCommand.prompt) {
+          setMessages((prev) => [
+            ...prev,
+            buildAssistantEntry(
+              `Usage: /${customSubagentCommand.agentName} <task>\nExample: /${customSubagentCommand.agentName} review the latest changes`,
+            ),
+          ]);
+          return true;
+        }
+
+        processMessage(buildCustomSubagentSlashPrompt(customSubagentCommand.agentName, customSubagentCommand.prompt));
+        return true;
+      }
       return false;
     },
-    [handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession],
+    [handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession, subAgents],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -1749,6 +1844,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "review":
           processMessage(REVIEW_PROMPT);
+          break;
+        case "commit-push":
+          processMessage(COMMIT_PUSH_PROMPT);
+          break;
+        case "commit-pr":
+          processMessage(COMMIT_PR_PROMPT);
           break;
       }
     },
