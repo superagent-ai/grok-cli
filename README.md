@@ -202,7 +202,7 @@ bun run lint
 
 This repo includes a Harbor adapter for running `grok-cli` on Terminal Bench 2.
 See [`docs/terminal-bench-2.md`](docs/terminal-bench-2.md) for the full setup,
-Harbor commands, emitted artifacts, and leaderboard caveats.
+Harbor commands, emitted artifacts, troubleshooting steps, and leaderboard caveats.
 
 ---
 

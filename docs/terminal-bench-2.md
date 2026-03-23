@@ -41,6 +41,9 @@ When invoking Harbor from this repo, make sure Python can import the local adapt
 export PYTHONPATH="$PWD"
 ```
 
+Run Harbor from the repository root so `integrations.harbor.grok_cli_agent` resolves
+against this checkout instead of a stale copy elsewhere on `PYTHONPATH`.
+
 ## Validate The CLI First
 
 Build `grok-cli` locally and verify the benchmark-safe headless path before using Harbor:
@@ -120,6 +123,26 @@ documentation before doing a large benchmark run.
 
 The adapter intentionally runs `dist/index.js` with Bun rather than Node because the current
 repo still emits extensionless ESM imports in `dist/`, which are not yet Node-runnable.
+
+## Troubleshooting Setup Failures
+
+If Harbor fails before the task starts, verify the adapter is being imported from this repo:
+
+```bash
+pwd
+python -c "import integrations.harbor.grok_cli_agent as m; print(m.__file__)"
+```
+
+Common setup errors:
+
+- `Install agent template file not found`: the runner imported an older copy of the Harbor
+  adapter that still expects the sibling `.j2` file to be present. Run Harbor from the repo
+  root with `PYTHONPATH="$PWD"` and make sure the printed module path points at this checkout.
+- `grok-cli Harbor adapter could not prepare the source bundle ...`: the local checkout is
+  incomplete or Harbor is running from the wrong directory. The adapter expects `package.json`,
+  `bun.lock`, `tsconfig.json`, and `src/` under the repo root.
+- Repeated `AgentTimeoutError`: setup succeeded, but the agent timed out while solving a task.
+  Treat these as runtime benchmarking issues rather than Harbor packaging failures.
 
 For leaderboard-oriented runs:
 

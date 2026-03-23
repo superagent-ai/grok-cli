@@ -17,6 +17,44 @@ EVENT_LOG_NAME = "grok-headless.jsonl"
 SUMMARY_LOG_NAME = "grok-headless-summary.json"
 REMOTE_SOURCE_DIR = "/opt/grok-cli-src"
 REMOTE_EVENT_LOG_PATH = str(EnvironmentPaths.agent_dir / EVENT_LOG_NAME)
+INSTALL_TEMPLATE_NAME = "install-grok-cli.sh.j2"
+REQUIRED_SOURCE_PATHS = ("package.json", "bun.lock", "tsconfig.json", "src")
+EMBEDDED_INSTALL_TEMPLATE = """#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_basic_tools() {
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y ca-certificates curl unzip
+    return
+  fi
+
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache bash ca-certificates curl unzip
+    return
+  fi
+}
+
+ensure_bun() {
+  if command -v bun >/dev/null 2>&1; then
+    return
+  fi
+
+  ensure_basic_tools
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="${HOME}/.bun/bin:${PATH}"
+  ln -sf "${HOME}/.bun/bin/bun" /usr/local/bin/bun || true
+}
+
+mkdir -p /tmp/grok-home
+ensure_bun
+
+export PATH="${HOME}/.bun/bin:${PATH}"
+
+cd "{{ source_dir }}"
+bun install --frozen-lockfile
+bun run build
+"""
 
 
 class GrokCliInstalledAgent(BaseInstalledAgent):
@@ -27,6 +65,7 @@ class GrokCliInstalledAgent(BaseInstalledAgent):
     def __init__(self, logs_dir: Path, *args, max_tool_rounds: int | None = None, **kwargs):
         raw_max_tool_rounds = max_tool_rounds or os.environ.get("GROK_CLI_MAX_TOOL_ROUNDS", "400")
         self._max_tool_rounds = int(raw_max_tool_rounds)
+        self._generated_install_template_path: Path | None = None
         super().__init__(logs_dir, *args, **kwargs)
 
     @staticmethod
@@ -35,7 +74,15 @@ class GrokCliInstalledAgent(BaseInstalledAgent):
 
     @property
     def _install_agent_template_path(self) -> Path:
-        return Path(__file__).parent / "install-grok-cli.sh.j2"
+        packaged_template_path = Path(__file__).resolve().with_name(INSTALL_TEMPLATE_NAME)
+        if packaged_template_path.exists():
+            return packaged_template_path
+
+        repo_template_path = self._repo_root / "integrations" / "harbor" / INSTALL_TEMPLATE_NAME
+        if repo_template_path.exists():
+            return repo_template_path
+
+        return self._materialize_embedded_install_template()
 
     @property
     def _template_variables(self) -> dict[str, str]:
@@ -49,9 +96,49 @@ class GrokCliInstalledAgent(BaseInstalledAgent):
     def _repo_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
 
+    def _materialize_embedded_install_template(self) -> Path:
+        if self._generated_install_template_path and self._generated_install_template_path.exists():
+            return self._generated_install_template_path
+
+        template_dir = Path(tempfile.gettempdir()) / "grok-cli-harbor"
+        template_dir.mkdir(parents=True, exist_ok=True)
+
+        template_path = template_dir / INSTALL_TEMPLATE_NAME
+        template_path.write_text(EMBEDDED_INSTALL_TEMPLATE)
+        self._generated_install_template_path = template_path
+        return template_path
+
+    def _validate_source_bundle_inputs(self) -> None:
+        missing_paths: list[str] = []
+        invalid_paths: list[str] = []
+
+        for relative_path in REQUIRED_SOURCE_PATHS:
+            source = self._repo_root / relative_path
+            if not source.exists():
+                missing_paths.append(relative_path)
+                continue
+            if relative_path == "src" and not source.is_dir():
+                invalid_paths.append("src (expected directory)")
+
+        if not missing_paths and not invalid_paths:
+            return
+
+        details: list[str] = []
+        if missing_paths:
+            details.append(f"missing paths: {', '.join(missing_paths)}")
+        if invalid_paths:
+            details.append(f"invalid paths: {', '.join(invalid_paths)}")
+
+        detail_text = "; ".join(details)
+        raise FileNotFoundError(
+            "grok-cli Harbor adapter could not prepare the source bundle from "
+            f"{self._repo_root}: {detail_text}. Run Harbor from a full grok-cli checkout."
+        )
+
     def _prepare_source_bundle(self) -> Path:
+        self._validate_source_bundle_inputs()
         bundle_dir = Path(tempfile.mkdtemp(prefix="grok-cli-harbor-"))
-        for relative_path in ("package.json", "bun.lock", "tsconfig.json", "src"):
+        for relative_path in REQUIRED_SOURCE_PATHS:
             source = self._repo_root / relative_path
             target = bundle_dir / relative_path
             if source.is_dir():
@@ -118,6 +205,7 @@ class GrokCliInstalledAgent(BaseInstalledAgent):
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         summary = self._build_summary()
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
         (self.logs_dir / SUMMARY_LOG_NAME).write_text(json.dumps(summary, indent=2) + "\n")
 
         usage = summary.get("usage", {})
