@@ -5,6 +5,7 @@ import {
   isHeadlessOutputFormat,
   renderHeadlessChunk,
   renderHeadlessPrelude,
+  renderHeadlessRunFinishEvent,
 } from "./output";
 
 function toolCall(name: string): ToolCall {
@@ -181,5 +182,27 @@ describe("headless output helpers", () => {
       message: "boom",
     });
     expectSessionAndTimestamp(parsed, sessionId);
+  });
+
+  it("renders a final run_finish event for json mode", () => {
+    const parsed = JSON.parse(
+      renderHeadlessRunFinishEvent({
+        sessionId: "finish-session",
+        success: false,
+        exitCode: 1,
+        errorCount: 2,
+        lastStepNumber: 3,
+        timestamp: 999,
+      }).trim(),
+    );
+    expect(parsed).toEqual({
+      type: "run_finish",
+      sessionID: "finish-session",
+      timestamp: 999,
+      success: false,
+      exitCode: 1,
+      errorCount: 2,
+      lastStepNumber: 3,
+    });
   });
 });

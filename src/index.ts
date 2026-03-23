@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 import { InvalidArgumentError, program } from "commander";
 import * as dotenv from "dotenv";
+import * as fs from "fs";
+import * as path from "path";
 import packageJson from "../package.json";
-import { Agent } from "./agent/agent";
+import { Agent, type ProcessMessageObserver } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
 import { MODELS, normalizeModelId } from "./grok/models";
 import {
@@ -11,8 +13,9 @@ import {
   isHeadlessOutputFormat,
   renderHeadlessChunk,
   renderHeadlessPrelude,
+  renderHeadlessRunFinishEvent,
 } from "./headless/output";
-import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
+import { getApiKey, getBaseURL, getCurrentModel, getHeadlessOutputFilePath, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
 
@@ -81,30 +84,71 @@ async function runHeadless(
   maxToolRounds: number,
   format: HeadlessOutputFormat,
   session?: string,
-) {
+  outputFilePath?: string,
+): Promise<{ success: boolean; errorCount: number; lastStepNumber: number }> {
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
+  const outputFile = prepareHeadlessOutputFile(outputFilePath);
+  let errorCount = 0;
+  let lastStepNumber = 0;
+  const trackStep = (stepNumber: number) => {
+    lastStepNumber = Math.max(lastStepNumber, stepNumber);
+  };
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
-  if (prelude.stdout) process.stdout.write(prelude.stdout);
-  if (prelude.stderr) process.stderr.write(prelude.stderr);
+  writeHeadlessWrites(prelude, outputFile);
 
   if (format === "json") {
     const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
-    for await (const chunk of agent.processMessage(prompt, observer)) {
-      const writes = consumeChunk(chunk);
-      if (writes.stdout) process.stdout.write(writes.stdout);
-      if (writes.stderr) process.stderr.write(writes.stderr ?? "");
+    const trackingObserver: ProcessMessageObserver = {
+      onStepStart(info) {
+        trackStep(info.stepNumber);
+        observer.onStepStart?.(info);
+      },
+      onStepFinish(info) {
+        trackStep(info.stepNumber);
+        observer.onStepFinish?.(info);
+      },
+      onToolStart: observer.onToolStart,
+      onToolFinish: observer.onToolFinish,
+      onError(info) {
+        errorCount += 1;
+        observer.onError?.(info);
+      },
+    };
+    for await (const chunk of agent.processMessage(prompt, trackingObserver)) {
+      writeHeadlessWrites(consumeChunk(chunk), outputFile);
     }
-    const tail = flush();
-    if (tail.stdout) process.stdout.write(tail.stdout);
-    if (tail.stderr) process.stderr.write(tail.stderr ?? "");
-    return;
+    writeHeadlessWrites(flush(), outputFile);
+    const success = errorCount === 0;
+    writeHeadlessWrites(
+      {
+        stdout: renderHeadlessRunFinishEvent({
+          sessionId: agent.getSessionId() || undefined,
+          success,
+          exitCode: success ? 0 : 1,
+          errorCount,
+          lastStepNumber,
+        }),
+      },
+      outputFile,
+    );
+    return { success, errorCount, lastStepNumber };
   }
 
-  for await (const chunk of agent.processMessage(prompt)) {
-    const writes = renderHeadlessChunk(chunk);
-    if (writes.stdout) process.stdout.write(writes.stdout);
-    if (writes.stderr) process.stderr.write(writes.stderr);
+  const trackingObserver: ProcessMessageObserver = {
+    onStepStart(info) {
+      trackStep(info.stepNumber);
+    },
+    onStepFinish(info) {
+      trackStep(info.stepNumber);
+    },
+    onError() {
+      errorCount += 1;
+    },
+  };
+  for await (const chunk of agent.processMessage(prompt, trackingObserver)) {
+    writeHeadlessWrites(renderHeadlessChunk(chunk), outputFile);
   }
+  return { success: errorCount === 0, errorCount, lastStepNumber };
 }
 
 async function runBackgroundDelegation(jobPath: string, options: Record<string, string | undefined>) {
@@ -178,6 +222,29 @@ function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
   throw new InvalidArgumentError(`Invalid headless format "${value}". Expected "text" or "json".`);
 }
 
+function prepareHeadlessOutputFile(outputFilePath?: string): string | undefined {
+  if (!outputFilePath) {
+    return undefined;
+  }
+
+  const resolvedPath = path.resolve(outputFilePath);
+  fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
+  fs.writeFileSync(resolvedPath, "");
+  return resolvedPath;
+}
+
+function writeHeadlessWrites(writes: { stdout?: string; stderr?: string }, outputFilePath?: string): void {
+  if (writes.stdout) {
+    process.stdout.write(writes.stdout);
+    if (outputFilePath) {
+      fs.appendFileSync(outputFilePath, writes.stdout);
+    }
+  }
+  if (writes.stderr) {
+    process.stderr.write(writes.stderr);
+  }
+}
+
 program
   .name("grok")
   .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
@@ -189,10 +256,17 @@ program
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
   .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
+  .option("--output-file <path>", "Write headless stdout to a file")
+  .option("--benchmark", "Enable benchmark-safe behavior for headless runs")
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .action(async (message: string[], options) => {
+    if (options.benchmark) {
+      process.env.GROK_BENCHMARK = "1";
+      process.env.GROK_DISABLE_SEARCH_TOOLS = "1";
+    }
+
     if (options.directory) {
       try {
         process.chdir(options.directory);
@@ -209,9 +283,15 @@ program
     }
 
     const config = resolveConfig(options);
+    const outputFilePath = options.outputFile || getHeadlessOutputFilePath();
+
+    if (outputFilePath && !options.prompt) {
+      console.error("Error: --output-file can only be used together with --prompt");
+      process.exit(1);
+    }
 
     if (options.prompt) {
-      await runHeadless(
+      const result = await runHeadless(
         options.prompt,
         requireApiKey(config.apiKey),
         config.baseURL,
@@ -219,7 +299,11 @@ program
         config.maxToolRounds,
         options.format,
         options.session,
+        outputFilePath,
       );
+      if (!result.success) {
+        process.exitCode = 1;
+      }
       return;
     }
 

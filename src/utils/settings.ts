@@ -219,6 +219,24 @@ export function getTelegramBotToken(): string | undefined {
   return loadUserSettings().telegram?.botToken?.trim();
 }
 
+function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+export function isBenchmarkMode(): boolean {
+  return isTruthyEnv(process.env.GROK_BENCHMARK);
+}
+
+export function areSearchToolsEnabled(): boolean {
+  return !isTruthyEnv(process.env.GROK_DISABLE_SEARCH_TOOLS);
+}
+
+export function getHeadlessOutputFilePath(): string | undefined {
+  const value = process.env.GROK_HEADLESS_OUTPUT_FILE?.trim();
+  return value ? value : undefined;
+}
+
 export function resolveTelegramStreamSettings(t: TelegramSettings | undefined): {
   streaming: TelegramStreamingMode;
   typingIndicator: boolean;

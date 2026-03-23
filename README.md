@@ -47,6 +47,7 @@ grok --prompt "run the test suite and summarize failures"
 grok -p "show me package.json" --directory /path/to/project
 grok --prompt "refactor X" --max-tool-rounds 30
 grok --prompt "summarize the repo state" --format json
+grok --prompt "analyze this task" --benchmark --format json --output-file /tmp/grok.jsonl
 ```
 
 **Continue a saved session:**
@@ -67,6 +68,11 @@ grok --prompt "summarize the repo state" --format json
 `--format json` emits a newline-delimited JSON event stream instead of the
 default human-readable text output. Events are semantic, step-level records such
 as `step_start`, `text`, `tool_use`, `step_finish`, and `error`.
+
+`--benchmark` enables benchmark-safe headless behavior by disabling optional
+search tools and returning a non-zero exit code when the run ends with a fatal
+error. `--output-file` mirrors the headless stdout stream to a file, which is
+useful for eval harnesses.
 
 **List Grok models and pricing hints:**
 
@@ -181,7 +187,7 @@ From a clone:
 bun install
 bun run build
 bun run start
-# or: node dist/index.js
+# or: bun dist/index.js
 ```
 
 Other useful commands:
@@ -191,6 +197,12 @@ bun run dev      # run from source (Bun)
 bun run typecheck
 bun run lint
 ```
+
+## Terminal Bench 2
+
+This repo includes a Harbor adapter for running `grok-cli` on Terminal Bench 2.
+See [`docs/terminal-bench-2.md`](docs/terminal-bench-2.md) for the full setup,
+Harbor commands, emitted artifacts, and leaderboard caveats.
 
 ---
 

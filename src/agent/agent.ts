@@ -31,7 +31,12 @@ import type {
   WorkspaceInfo,
 } from "../types/index";
 import { loadCustomInstructions } from "../utils/instructions";
-import { type CustomSubagentConfig, loadMcpServers, loadValidSubAgents } from "../utils/settings";
+import {
+  areSearchToolsEnabled,
+  type CustomSubagentConfig,
+  loadMcpServers,
+  loadValidSubAgents,
+} from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import {
   type CompactionSettings,
@@ -227,6 +232,9 @@ function buildSystemPrompt(
   planContext?: string | null,
   subagents?: CustomSubagentConfig[],
 ): string {
+  const searchToolsSection = areSearchToolsEnabled()
+    ? ""
+    : "\n\nRUNTIME CONSTRAINTS:\n- `search_web` and `search_x` are disabled for this run.\n- Do not rely on internet search tools; use local tools only.\n";
   const custom = loadCustomInstructions(cwd);
   const customSection = custom
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
@@ -240,7 +248,7 @@ function buildSystemPrompt(
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${customSection}${skillsSection}${subagentsSection}${planSection}
+  return `${MODE_PROMPTS[mode]}${searchToolsSection}${customSection}${skillsSection}${subagentsSection}${planSection}
 
 Current working directory: ${cwd}`;
 }

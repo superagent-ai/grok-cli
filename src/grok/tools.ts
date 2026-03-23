@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { BashTool } from "../tools/bash";
 import { editFile, readFile, writeFile } from "../tools/file";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
-import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
+import { areSearchToolsEnabled, type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
 
 const RESPONSES_SEARCH_MODEL = "grok-4-1-fast-non-reasoning";
@@ -23,6 +23,7 @@ export function createTools(
   options: CreateToolsOptions = {},
 ) {
   const cwd = () => bash.getCwd();
+  const searchToolsEnabled = areSearchToolsEnabled();
 
   const runResponsesSearch = async (
     query: string,
@@ -52,7 +53,7 @@ export function createTools(
     }
   };
 
-  const base = {
+  const base: ToolSet = {
     bash: tool({
       description:
         "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.",
@@ -128,8 +129,10 @@ export function createTools(
         return readFile(path, cwd(), start_line, end_line);
       },
     }),
+  };
 
-    search_web: tool({
+  if (searchToolsEnabled) {
+    base.search_web = tool({
       description:
         "Search the web for current information, documentation, APIs, tutorials, news, or any real-time data. Returns summarized results with sources.",
       inputSchema: z.object({
@@ -138,9 +141,9 @@ export function createTools(
       execute: async ({ query }, { abortSignal }) => {
         return runResponsesSearch(query, "web_search", abortSignal);
       },
-    }),
+    });
 
-    search_x: tool({
+    base.search_x = tool({
       description:
         "Search X (Twitter) for real-time posts, discussions, opinions, and trends. Returns relevant posts with authors and engagement data.",
       inputSchema: z.object({
@@ -149,8 +152,8 @@ export function createTools(
       execute: async ({ query }, { abortSignal }) => {
         return runResponsesSearch(query, "x_search", abortSignal);
       },
-    }),
-  };
+    });
+  }
 
   const tools: ToolSet = { ...base };
 

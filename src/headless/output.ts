@@ -54,6 +54,15 @@ export type HeadlessJsonEvent =
       sessionID?: string;
       message: string;
       timestamp: number;
+    }
+  | {
+      type: "run_finish";
+      sessionID?: string;
+      timestamp: number;
+      success: boolean;
+      exitCode: number;
+      errorCount: number;
+      lastStepNumber: number;
     };
 
 export function isHeadlessOutputFormat(value: string): value is HeadlessOutputFormat {
@@ -113,6 +122,25 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
 
 function jsonLine(event: HeadlessJsonEvent): string {
   return `${JSON.stringify(event)}\n`;
+}
+
+export function renderHeadlessRunFinishEvent(input: {
+  sessionId?: string;
+  success: boolean;
+  exitCode: number;
+  errorCount: number;
+  lastStepNumber: number;
+  timestamp?: number;
+}): string {
+  return jsonLine({
+    type: "run_finish",
+    ...(input.sessionId ? { sessionID: input.sessionId } : {}),
+    timestamp: input.timestamp ?? Date.now(),
+    success: input.success,
+    exitCode: input.exitCode,
+    errorCount: input.errorCount,
+    lastStepNumber: input.lastStepNumber,
+  });
 }
 
 /**
