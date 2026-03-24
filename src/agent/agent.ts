@@ -333,6 +333,7 @@ export class Agent {
   private maxTokens: number;
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
+  private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
 
   constructor(
     apiKey: string | undefined,
@@ -392,6 +393,10 @@ export class Agent {
 
   setPlanContext(ctx: string | null): void {
     this.planContext = ctx;
+  }
+
+  setSendTelegramFile(fn: ((filePath: string) => Promise<ToolResult>) | null): void {
+    this.sendTelegramFile = fn;
   }
 
   hasApiKey(): boolean {
@@ -874,6 +879,7 @@ export class Agent {
             readDelegation: (id) => this.readDelegation(id),
             listDelegations: () => this.listDelegations(),
             subagents,
+            sendTelegramFile: this.sendTelegramFile ?? undefined,
           });
           let tools: ToolSet = runtime.modelInfo?.supportsClientTools === false ? {} : baseTools;
           if (this.mode === "agent" && runtime.modelInfo?.supportsClientTools !== false) {

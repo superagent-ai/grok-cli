@@ -5,6 +5,7 @@ import { loadUserSettings, resolveTelegramStreamSettings } from "../utils/settin
 import { splitTelegramMessage, TELEGRAM_MAX_MESSAGE } from "./limits";
 import { registerPairingCode } from "./pairing";
 import { runTelegramPartialReply } from "./preview-stream";
+import { sendFileToTelegram } from "./send-file";
 import type { TurnCoordinator } from "./turn-coordinator";
 import { startTypingRefresh } from "./typing-refresh";
 
@@ -56,11 +57,17 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
       return;
     }
 
+    const agent = opts.getTelegramAgent(userId);
     await opts.coordinator.run(async () => {
+      agent.setSendTelegramFile((filePath) =>
+        sendFileToTelegram(
+          { api: bot.api, chatId: ctx.chat.id, messageThreadId: ctx.message.message_thread_id },
+          filePath,
+        ),
+      );
       try {
         const turnKey = `telegram:${ctx.chat.id}:${ctx.message.message_id}`;
         opts.onUserMessage?.({ turnKey, userId, content: text });
-        const agent = opts.getTelegramAgent(userId);
         const stream = resolveTelegramStreamSettings(loadUserSettings().telegram);
 
         if (stream.streaming === "off") {
@@ -157,6 +164,8 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
         } catch {
           /* user blocked bot or chat forbids messages */
         }
+      } finally {
+        agent.setSendTelegramFile(null);
       }
     });
   });
