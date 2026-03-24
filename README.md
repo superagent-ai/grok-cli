@@ -240,14 +240,6 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
 | `autoDownloadModel` | `true` | Download the model into `~/.grok/models/stt/whisper.cpp` on first use. |
 | `language` | `en` | Whisper language code passed to the CLI. |
 
-#### Test it
-
-1. Restart the CLI after changing settings: `bun run build && node dist/index.js`
-2. Send a **3–5 second voice note** with a clear spoken sentence (e.g. "list the files in the current directory").
-3. The bot should reply as if you had typed that sentence.
-
-Very short or silent voice notes may produce an empty transcript — the agent will tell you the audio was blank.
-
 Treat the bot token like a password.
 
 ---
