@@ -2,6 +2,7 @@ import { Bot } from "grammy";
 import type { Agent } from "../agent/agent";
 import type { ToolCall, ToolResult } from "../types/index";
 import { loadUserSettings, resolveTelegramStreamSettings } from "../utils/settings";
+import { getTelegramAudioSource, transcribeTelegramAudioMessage } from "./audio-input";
 import { splitTelegramMessage, TELEGRAM_MAX_MESSAGE } from "./limits";
 import { registerPairingCode } from "./pairing";
 import { runTelegramPartialReply } from "./preview-stream";
@@ -32,34 +33,56 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
   const bot = new Bot(opts.token);
   let running = false;
 
-  bot.command("start", async (ctx) => {
-    await ctx.reply("Send /pair to link this chat to Grok CLI, then approve the code in the terminal.");
-  });
+  const buildTurnKey = (ctx: { chat: { id: number }; message: { message_id: number } }) =>
+    `telegram:${ctx.chat.id}:${ctx.message.message_id}`;
 
-  bot.command("pair", async (ctx) => {
+  const ensureApprovedUser = async (ctx: { from?: { id?: number }; reply: (text: string) => Promise<unknown> }) => {
     const userId = ctx.from?.id;
-    if (userId === undefined) return;
-    const code = registerPairingCode(userId);
-    await ctx.reply(`Your pairing code: ${code}\nEnter this code in Grok CLI (/remote-control → Telegram) to approve.`);
-  });
-
-  bot.on("message:text", async (ctx) => {
-    const text = ctx.message.text;
-    if (text.startsWith("/")) return;
-
-    const userId = ctx.from?.id;
-    if (userId === undefined) return;
+    if (userId === undefined) return null;
 
     const approved = opts.getApprovedUserIds();
     if (!approved.includes(userId)) {
       await ctx.reply("Not paired yet. Send /pair to get a code, then approve in Grok CLI.");
-      return;
+      return null;
     }
 
+    return userId;
+  };
+
+  const replyTurnError = async (
+    ctx: { reply: (text: string) => Promise<unknown>; chat: { id: number }; message: { message_id: number } },
+    userId: number,
+    message: string,
+  ) => {
+    const clipped = message.slice(0, TELEGRAM_MAX_MESSAGE);
+    opts.onAssistantMessage?.({
+      turnKey: buildTurnKey(ctx),
+      userId,
+      content: `Error: ${clipped}`,
+      done: true,
+    });
+    try {
+      await ctx.reply(`Error: ${clipped}`);
+    } catch {
+      /* user blocked bot or chat forbids messages */
+    }
+  };
+
+  const runAgentTurn = async (
+    ctx: {
+      chat: { id: number };
+      from?: { id?: number };
+      message: { message_id: number; message_thread_id?: number };
+      reply: (text: string) => Promise<unknown>;
+    },
+    userId: number,
+    userContent: string,
+    promptText: string,
+  ) => {
     await opts.coordinator.run(async () => {
       try {
-        const turnKey = `telegram:${ctx.chat.id}:${ctx.message.message_id}`;
-        opts.onUserMessage?.({ turnKey, userId, content: text });
+        const turnKey = buildTurnKey(ctx);
+        opts.onUserMessage?.({ turnKey, userId, content: userContent });
         const agent = opts.getTelegramAgent(userId);
         const stream = resolveTelegramStreamSettings(loadUserSettings().telegram);
 
@@ -72,7 +95,7 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
           );
           let acc = "";
           try {
-            for await (const chunk of agent.processMessage(text)) {
+            for await (const chunk of agent.processMessage(promptText)) {
               switch (chunk.type) {
                 case "content":
                   if (chunk.content) {
@@ -99,13 +122,7 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
             }
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            opts.onAssistantMessage?.({
-              turnKey,
-              userId,
-              content: `Error: ${msg.slice(0, TELEGRAM_MAX_MESSAGE)}`,
-              done: true,
-            });
-            await ctx.reply(`Error: ${msg.slice(0, TELEGRAM_MAX_MESSAGE)}`);
+            await replyTurnError(ctx, userId, msg);
             return;
           } finally {
             stopTyping();
@@ -123,7 +140,7 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
           chatId: ctx.chat.id,
           messageThreadId: ctx.message.message_thread_id,
           typingIndicator: stream.typingIndicator,
-          stream: agent.processMessage(text),
+          stream: agent.processMessage(promptText),
           onAssistantMessage: (event) => {
             opts.onAssistantMessage?.({
               turnKey,
@@ -146,19 +163,74 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
         });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        opts.onAssistantMessage?.({
-          turnKey: `telegram:${ctx.chat.id}:${ctx.message.message_id}`,
-          userId,
-          content: `Error: ${msg.slice(0, TELEGRAM_MAX_MESSAGE)}`,
-          done: true,
-        });
-        try {
-          await ctx.reply(`Error: ${msg.slice(0, TELEGRAM_MAX_MESSAGE)}`);
-        } catch {
-          /* user blocked bot or chat forbids messages */
-        }
+        await replyTurnError(ctx, userId, msg);
       }
     });
+  };
+
+  bot.command("start", async (ctx) => {
+    await ctx.reply("Send /pair to link this chat to Grok CLI, then approve the code in the terminal.");
+  });
+
+  bot.command("pair", async (ctx) => {
+    const userId = ctx.from?.id;
+    if (userId === undefined) return;
+    const code = registerPairingCode(userId);
+    await ctx.reply(`Your pairing code: ${code}\nEnter this code in Grok CLI (/remote-control → Telegram) to approve.`);
+  });
+
+  bot.on("message:text", async (ctx) => {
+    const text = ctx.message.text;
+    if (text.startsWith("/")) return;
+
+    const userId = await ensureApprovedUser(ctx);
+    if (userId === null) return;
+
+    await runAgentTurn(ctx, userId, text, text);
+  });
+
+  bot.on("message:voice", async (ctx) => {
+    const userId = await ensureApprovedUser(ctx);
+    if (userId === null) return;
+
+    const source = getTelegramAudioSource(ctx.message);
+    if (!source) return;
+
+    try {
+      await bot.api.sendChatAction(ctx.chat.id, "typing");
+      const transcription = await transcribeTelegramAudioMessage({
+        api: bot.api,
+        token: opts.token,
+        source,
+        telegramSettings: loadUserSettings().telegram,
+      });
+      await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await replyTurnError(ctx, userId, `Audio transcription failed: ${msg}`);
+    }
+  });
+
+  bot.on("message:audio", async (ctx) => {
+    const userId = await ensureApprovedUser(ctx);
+    if (userId === null) return;
+
+    const source = getTelegramAudioSource(ctx.message);
+    if (!source) return;
+
+    try {
+      await bot.api.sendChatAction(ctx.chat.id, "typing");
+      const transcription = await transcribeTelegramAudioMessage({
+        api: bot.api,
+        token: opts.token,
+        source,
+        telegramSettings: loadUserSettings().telegram,
+      });
+      await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await replyTurnError(ctx, userId, `Audio transcription failed: ${msg}`);
+    }
   });
 
   bot.catch((err) => {

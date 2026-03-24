@@ -183,6 +183,71 @@ Optional: **`GROK_BASE_URL`** (default `https://api.x.ai/v1`), **`GROK_MODEL`**,
 3. Start **`grok`**, open **`/remote-control`** → **Telegram** if needed, then in Telegram DM your bot: **`/pair`**, enter the **6-character code** in the terminal when asked.
 4. First user must be approved once; after that, it’s remembered. **Keep the CLI process running** while you use the bot (long polling lives in that process).
 
+### Voice & audio messages
+
+Send a voice note or audio attachment in Telegram and Grok will transcribe it locally with **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)** before passing the text to the agent. No cloud STT service is involved — everything runs on your machine.
+
+#### Prerequisites
+
+| Dependency | Why | Install (macOS) |
+|---|---|---|
+| **whisper-cli** | Runs the actual speech-to-text inference | `brew install whisper-cpp` |
+| **ffmpeg** | Converts Telegram voice notes (OGG/Opus) to WAV for whisper.cpp | `brew install ffmpeg` |
+
+After installing, verify both are available:
+
+```bash
+whisper-cli -h
+ffmpeg -version
+```
+
+#### Download a Whisper model
+
+Grok CLI auto-downloads the configured model on first use, but you can pre-download it:
+
+```bash
+mkdir -p ~/.grok/models/stt/whisper.cpp
+curl -L https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin \
+  -o ~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin
+```
+
+Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB), `small.en` (466 MB).
+
+#### Configure in `~/.grok/user-settings.json`
+
+```json
+{
+  "telegram": {
+    "botToken": "YOUR_BOT_TOKEN",
+    "audioInput": {
+      "enabled": true,
+      "binaryPath": "/opt/homebrew/bin/whisper-cli",
+      "model": "tiny.en",
+      "modelPath": "~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin",
+      "autoDownloadModel": true,
+      "language": "en"
+    }
+  }
+}
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Set to `false` to ignore voice/audio messages entirely. |
+| `binaryPath` | `whisper-cli` | Absolute path or command name for the whisper.cpp CLI binary. |
+| `model` | `tiny.en` | Model alias used for auto-download resolution. |
+| `modelPath` | _(auto-resolved)_ | Explicit path to a `.bin` model file. Overrides `model` + auto-download. |
+| `autoDownloadModel` | `true` | Download the model into `~/.grok/models/stt/whisper.cpp` on first use. |
+| `language` | `en` | Whisper language code passed to the CLI. |
+
+#### Test it
+
+1. Restart the CLI after changing settings: `bun run build && node dist/index.js`
+2. Send a **3–5 second voice note** with a clear spoken sentence (e.g. "list the files in the current directory").
+3. The bot should reply as if you had typed that sentence.
+
+Very short or silent voice notes may produce an empty transcript — the agent will tell you the audio was blank.
+
 Treat the bot token like a password.
 
 ---
