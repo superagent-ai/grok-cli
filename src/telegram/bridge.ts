@@ -168,6 +168,38 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
     });
   };
 
+  const handleAudioMessage = async (ctx: {
+    chat: { id: number };
+    from?: { id?: number };
+    message: {
+      message_id: number;
+      message_thread_id?: number;
+      voice?: { file_id: string; mime_type?: string };
+      audio?: { file_id: string; file_name?: string; mime_type?: string };
+    };
+    reply: (text: string) => Promise<unknown>;
+  }) => {
+    const userId = await ensureApprovedUser(ctx);
+    if (userId === null) return;
+
+    const source = getTelegramAudioSource(ctx.message);
+    if (!source) return;
+
+    try {
+      await bot.api.sendChatAction(ctx.chat.id, "typing");
+      const transcription = await transcribeTelegramAudioMessage({
+        api: bot.api,
+        token: opts.token,
+        source,
+        telegramSettings: loadUserSettings().telegram,
+      });
+      await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await replyTurnError(ctx, userId, `Audio transcription failed: ${msg}`);
+    }
+  };
+
   bot.command("start", async (ctx) => {
     await ctx.reply("Send /pair to link this chat to Grok CLI, then approve the code in the terminal.");
   });
@@ -190,47 +222,11 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
   });
 
   bot.on("message:voice", async (ctx) => {
-    const userId = await ensureApprovedUser(ctx);
-    if (userId === null) return;
-
-    const source = getTelegramAudioSource(ctx.message);
-    if (!source) return;
-
-    try {
-      await bot.api.sendChatAction(ctx.chat.id, "typing");
-      const transcription = await transcribeTelegramAudioMessage({
-        api: bot.api,
-        token: opts.token,
-        source,
-        telegramSettings: loadUserSettings().telegram,
-      });
-      await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await replyTurnError(ctx, userId, `Audio transcription failed: ${msg}`);
-    }
+    await handleAudioMessage(ctx);
   });
 
   bot.on("message:audio", async (ctx) => {
-    const userId = await ensureApprovedUser(ctx);
-    if (userId === null) return;
-
-    const source = getTelegramAudioSource(ctx.message);
-    if (!source) return;
-
-    try {
-      await bot.api.sendChatAction(ctx.chat.id, "typing");
-      const transcription = await transcribeTelegramAudioMessage({
-        api: bot.api,
-        token: opts.token,
-        source,
-        telegramSettings: loadUserSettings().telegram,
-      });
-      await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await replyTurnError(ctx, userId, `Audio transcription failed: ${msg}`);
-    }
+    await handleAudioMessage(ctx);
   });
 
   bot.catch((err) => {
