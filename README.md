@@ -240,6 +240,12 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
 | `autoDownloadModel` | `true` | Download the model into `~/.grok/models/stt/whisper.cpp` on first use. |
 | `language` | `en` | Whisper language code passed to the CLI. |
 
+Optional headless flow when you do not want the TUI open:
+
+```bash
+grok telegram-bridge
+```
+
 Treat the bot token like a password.
 
 ---
