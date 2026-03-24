@@ -6,6 +6,7 @@ import { getTelegramAudioSource, transcribeTelegramAudioMessage } from "./audio-
 import { splitTelegramMessage, TELEGRAM_MAX_MESSAGE } from "./limits";
 import { registerPairingCode } from "./pairing";
 import { runTelegramPartialReply } from "./preview-stream";
+import { sendFileToTelegram } from "./send-file";
 import type { TurnCoordinator } from "./turn-coordinator";
 import { startTypingRefresh } from "./typing-refresh";
 
@@ -79,11 +80,17 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
     userContent: string,
     promptText: string,
   ) => {
+    const agent = opts.getTelegramAgent(userId);
     await opts.coordinator.run(async () => {
+      agent.setSendTelegramFile((filePath) =>
+        sendFileToTelegram(
+          { api: bot.api, chatId: ctx.chat.id, messageThreadId: ctx.message.message_thread_id },
+          filePath,
+        ),
+      );
       try {
         const turnKey = buildTurnKey(ctx);
         opts.onUserMessage?.({ turnKey, userId, content: userContent });
-        const agent = opts.getTelegramAgent(userId);
         const stream = resolveTelegramStreamSettings(loadUserSettings().telegram);
 
         if (stream.streaming === "off") {
@@ -164,6 +171,8 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         await replyTurnError(ctx, userId, msg);
+      } finally {
+        agent.setSendTelegramFile(null);
       }
     });
   };

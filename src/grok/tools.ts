@@ -24,6 +24,7 @@ interface CreateToolsOptions {
   readDelegation?: (id: string) => Promise<ToolResult>;
   listDelegations?: () => Promise<ToolResult>;
   subagents?: CustomSubagentConfig[];
+  sendTelegramFile?: (filePath: string) => Promise<ToolResult>;
 }
 
 export function createTools(
@@ -225,6 +226,21 @@ export function createTools(
   };
 
   const tools: ToolSet = { ...base };
+
+  if (options.sendTelegramFile) {
+    const sendFile = options.sendTelegramFile;
+    tools.telegram_send_file = tool({
+      description:
+        "Send a local file to the current Telegram chat as an attachment. Use this to deliver generated images, videos, documents, or any other file to the user in Telegram. The file is uploaded directly — the user receives it as a Telegram media message or document.",
+      inputSchema: z.object({
+        path: z.string().describe("Absolute or cwd-relative path to the local file to send"),
+      }),
+      execute: async ({ path: filePath }) => {
+        const resolved = filePath.startsWith("/") ? filePath : `${cwd()}/${filePath}`;
+        return sendFile(resolved);
+      },
+    });
+  }
 
   if (options.runTask) {
     const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
