@@ -17,6 +17,12 @@ import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./util
 
 dotenv.config();
 
+const exitCleanlyOnSigterm = () => {
+  process.exit(0);
+};
+
+process.on("SIGTERM", exitCleanlyOnSigterm);
+
 process.on("uncaughtException", (err) => {
   console.error("Fatal:", err.message);
   process.exit(1);
@@ -251,14 +257,19 @@ program
     changeDirectoryOrExit(options.directory);
     const config = resolveConfig(options);
 
-    await runTelegramHeadlessBridge({
-      apiKey: requireApiKey(config.apiKey),
-      baseURL: config.baseURL,
-      model: config.model,
-      maxToolRounds: config.maxToolRounds,
-      logFile: options.logFile,
-      pairCodeFile: options.pairCodeFile,
-    });
+    process.off("SIGTERM", exitCleanlyOnSigterm);
+    try {
+      await runTelegramHeadlessBridge({
+        apiKey: requireApiKey(config.apiKey),
+        baseURL: config.baseURL,
+        model: config.model,
+        maxToolRounds: config.maxToolRounds,
+        logFile: options.logFile,
+        pairCodeFile: options.pairCodeFile,
+      });
+    } finally {
+      process.on("SIGTERM", exitCleanlyOnSigterm);
+    }
   });
 
 program

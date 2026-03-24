@@ -104,8 +104,8 @@ function buildTelegramAgentFactory(startupConfig: TelegramHeadlessStartupConfig)
   };
 }
 
-async function fetchBotIdentity(token: string): Promise<{ username?: string; id: number }> {
-  const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+async function fetchBotIdentity(token: string, signal?: AbortSignal): Promise<{ username?: string; id: number }> {
+  const response = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal });
   const data = (await response.json()) as {
     ok?: boolean;
     description?: string;
@@ -170,62 +170,104 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
   });
 
   let lastPairInput = "";
-  const pairWatcher = setInterval(() => {
-    try {
-      const code = fs.readFileSync(paths.pairCodeFile, "utf8").trim().toUpperCase();
-      if (!code || code === lastPairInput) {
-        return;
-      }
+  let pairWatcher: ReturnType<typeof setInterval> | undefined;
+  let bridgeStarted = false;
+  let stopping = false;
+  let resolveShutdown: (() => void) | undefined;
+  const shutdownComplete = new Promise<void>((resolve) => {
+    resolveShutdown = resolve;
+  });
+  const startupAbortController = new AbortController();
 
-      lastPairInput = code;
-      const result = approvePairingCode(code);
-      if (result.ok) {
-        saveApprovedUser(result.userId);
-        fs.writeFileSync(paths.pairCodeFile, "", "utf8");
-        appendLog(paths.logFile, `pair_approved user=${result.userId} code=${code.slice(0, 2)}****`);
-        return;
-      }
-
-      appendLog(paths.logFile, `pair_rejected: ${result.error}`);
-    } catch (error) {
-      appendLog(paths.logFile, `pair_watcher_error: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, 1000);
-
-  const bot = await fetchBotIdentity(token);
-  appendLog(paths.logFile, `bot_ready username=@${bot.username ?? "unknown"} id=${bot.id}`);
-  appendLog(paths.logFile, `approved_users=${(loadUserSettings().telegram?.approvedUserIds ?? []).length}`);
-  appendLog(paths.logFile, "telegram_bridge_starting");
-  bridge.start();
-  appendLog(paths.logFile, "telegram_bridge_started");
-
-  await new Promise<void>((resolve) => {
-    let stopping = false;
-
-    const stop = async (signal: string) => {
-      if (stopping) {
-        return;
-      }
-
-      stopping = true;
+  const stopPairWatcher = () => {
+    if (pairWatcher) {
       clearInterval(pairWatcher);
-      process.off("SIGINT", onSigInt);
-      process.off("SIGTERM", onSigTerm);
-      appendLog(paths.logFile, `shutdown: ${signal}`);
+      pairWatcher = undefined;
+    }
+  };
+
+  const stop = async (signal: string) => {
+    if (stopping) {
+      return;
+    }
+
+    stopping = true;
+    startupAbortController.abort();
+    stopPairWatcher();
+    process.off("SIGINT", onSigInt);
+    process.off("SIGTERM", onSigTerm);
+    appendLog(paths.logFile, `shutdown: ${signal}`);
+    if (bridgeStarted) {
       await bridge.stop().catch((error: unknown) => {
         appendLog(paths.logFile, `shutdown_error: ${error instanceof Error ? error.message : String(error)}`);
       });
-      resolve();
-    };
+    }
+    resolveShutdown?.();
+  };
 
-    const onSigInt = () => {
-      void stop("SIGINT");
-    };
-    const onSigTerm = () => {
-      void stop("SIGTERM");
-    };
+  const onSigInt = () => {
+    void stop("SIGINT");
+  };
+  const onSigTerm = () => {
+    void stop("SIGTERM");
+  };
 
-    process.on("SIGINT", onSigInt);
-    process.on("SIGTERM", onSigTerm);
-  });
+  process.on("SIGINT", onSigInt);
+  process.on("SIGTERM", onSigTerm);
+
+  try {
+    const bot = await fetchBotIdentity(token, startupAbortController.signal);
+    if (stopping) {
+      await shutdownComplete;
+      return;
+    }
+
+    appendLog(paths.logFile, `bot_ready username=@${bot.username ?? "unknown"} id=${bot.id}`);
+    appendLog(paths.logFile, `approved_users=${(loadUserSettings().telegram?.approvedUserIds ?? []).length}`);
+    appendLog(paths.logFile, "telegram_bridge_starting");
+    bridge.start();
+    bridgeStarted = true;
+    appendLog(paths.logFile, "telegram_bridge_started");
+
+    pairWatcher = setInterval(() => {
+      try {
+        const code = fs.readFileSync(paths.pairCodeFile, "utf8").trim().toUpperCase();
+        if (!code || code === lastPairInput) {
+          return;
+        }
+
+        lastPairInput = code;
+        const result = approvePairingCode(code);
+        if (result.ok) {
+          saveApprovedUser(result.userId);
+          fs.writeFileSync(paths.pairCodeFile, "", "utf8");
+          appendLog(paths.logFile, `pair_approved user=${result.userId} code=${code.slice(0, 2)}****`);
+          return;
+        }
+
+        appendLog(paths.logFile, `pair_rejected: ${result.error}`);
+      } catch (error) {
+        appendLog(paths.logFile, `pair_watcher_error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }, 1000);
+
+    await shutdownComplete;
+  } catch (error) {
+    if (!stopping) {
+      stopPairWatcher();
+      process.off("SIGINT", onSigInt);
+      process.off("SIGTERM", onSigTerm);
+      if (bridgeStarted) {
+        await bridge.stop().catch((stopError: unknown) => {
+          appendLog(
+            paths.logFile,
+            `shutdown_error: ${stopError instanceof Error ? stopError.message : String(stopError)}`,
+          );
+        });
+      }
+      throw error;
+    }
+
+    await shutdownComplete;
+  }
 }
