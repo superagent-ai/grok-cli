@@ -33,6 +33,7 @@ describe("parseSubAgentsRawList", () => {
       parseSubAgentsRawList([
         { name: "general", model: "grok-4-1-fast-reasoning", instruction: "x" },
         { name: "Explore", model: "grok-4-1-fast-reasoning", instruction: "x" },
+        { name: "vision", model: "grok-4-1-fast-reasoning", instruction: "x" },
         { name: "", model: "grok-4-1-fast-reasoning", instruction: "x" },
         { name: "  ", model: "grok-4-1-fast-reasoning", instruction: "x" },
       ]),

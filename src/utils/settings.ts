@@ -43,7 +43,7 @@ export interface CustomSubagentConfig {
   instruction: string;
 }
 
-const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore"]);
+const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore", "vision"]);
 
 export function isReservedSubagentName(name: string): boolean {
   return RESERVED_SUBAGENT_NAMES.has(name.trim().toLowerCase());

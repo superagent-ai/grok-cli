@@ -46,8 +46,10 @@ import {
 } from "./compaction";
 import { DelegationManager } from "./delegations";
 import { containsEncryptedReasoning, sanitizeModelMessages } from "./reasoning";
+import { buildVisionUserMessages } from "./vision-input";
 
 const MAX_TOOL_ROUNDS = 400;
+const VISION_MODEL = "grok-4-1-fast-reasoning";
 
 interface AgentOptions {
   persistSession?: boolean;
@@ -256,12 +258,15 @@ function buildSubagentPrompt(
   subagents?: CustomSubagentConfig[],
 ): string {
   const isExplore = request.agent === "explore";
+  const isVision = request.agent === "vision";
   const mode: AgentMode = isExplore ? "ask" : "agent";
   const role = custom
     ? `You are the custom sub-agent "${custom.name}". You can investigate, edit files, and run commands unless the delegated task says otherwise.`
     : request.agent === "explore"
       ? "You are the Explore sub-agent. You are read-only and focus on fast codebase research."
-      : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
+      : isVision
+        ? "You are the Vision sub-agent."
+        : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
 
   const rules = isExplore
     ? [
@@ -269,11 +274,13 @@ function buildSubagentPrompt(
         "Prefer `read_file` and search commands over broad shell exploration.",
         "Return concise findings for the parent agent.",
       ]
-    : [
-        "Work only on the delegated task below.",
-        "Use tools directly instead of narrating your intent.",
-        "Return a concise summary for the parent agent with key outcomes and any open risks.",
-      ];
+    : isVision
+      ? ["Validate the image."]
+      : [
+          "Work only on the delegated task below.",
+          "Use tools directly instead of narrating your intent.",
+          "Return a concise summary for the parent agent with key outcomes and any open risks.",
+        ];
 
   const instructionLines = custom?.instruction.trim() ? ["", "SUB-AGENT INSTRUCTIONS:", custom.instruction.trim()] : [];
 
@@ -550,11 +557,12 @@ export class Agent {
     const agentKey = String(request.agent);
     const isExplore = agentKey === "explore";
     const isGeneral = agentKey === "general";
+    const isVision = agentKey === "vision";
     const subagents = loadValidSubAgents();
-    const custom = !isExplore && !isGeneral ? findCustomSubagent(agentKey, subagents) : undefined;
+    const custom = !isExplore && !isGeneral && !isVision ? findCustomSubagent(agentKey, subagents) : undefined;
 
-    if (!isExplore && !isGeneral && !custom) {
-      const message = `Unknown sub-agent "${agentKey}". Use general, explore, or a configured name from ~/.grok/user-settings.json.`;
+    if (!isExplore && !isGeneral && !isVision && !custom) {
+      const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, or a configured name from ~/.grok/user-settings.json.`;
       return {
         success: false,
         output: message,
@@ -574,8 +582,12 @@ export class Agent {
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
     let closeMcp: (() => Promise<void>) | undefined;
-    const childModelId = normalizeModelId(isExplore ? DEFAULT_MODEL : custom ? custom.model : this.modelId);
-    const childRuntime = resolveModelRuntime(provider, childModelId);
+    const childModelId = normalizeModelId(
+      isVision ? VISION_MODEL : isExplore ? DEFAULT_MODEL : custom ? custom.model : this.modelId,
+    );
+    const childRuntime = isVision
+      ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
+      : resolveModelRuntime(provider, childModelId);
     const childSystem = applyModelConstraints(
       buildSubagentPrompt(request, childBash.getCwd(), custom ?? null, subagents),
       childRuntime.modelId,
@@ -594,10 +606,14 @@ export class Agent {
         }
       }
 
+      const childMessages = isVision
+        ? await buildVisionUserMessages(request.prompt, childBash.getCwd(), signal)
+        : [{ role: "user" as const, content: request.prompt }];
+
       const result = streamText({
         model: childRuntime.model,
         system: childSystem,
-        messages: [{ role: "user", content: request.prompt }],
+        messages: childMessages,
         tools: childRuntime.modelInfo?.supportsClientTools === false ? {} : childTools,
         stopWhen: stepCountIs(Math.min(this.maxToolRounds, isExplore ? 60 : 120)),
         maxRetries: 0,

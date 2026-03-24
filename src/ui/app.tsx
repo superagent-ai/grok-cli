@@ -3444,6 +3444,7 @@ function InlineTool({ t, pending: _pending, children }: { t: Theme; pending: boo
 function formatSubagentName(agent: string): string {
   if (agent === "general") return "General";
   if (agent === "explore") return "Explore";
+  if (agent === "vision") return "Vision";
   return agent || "Sub-agent";
 }
 
