@@ -103,5 +103,6 @@ temp/
 
 # Cursor config (tracked — do not ignore)
 # .cursor/
+.cursor/hooks/state/
 .agents
 skills-lock.json

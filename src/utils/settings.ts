@@ -5,6 +5,27 @@ import { DEFAULT_MODEL, getEffectiveReasoningEffort, getModelIds, normalizeModel
 import type { ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
+export type TelegramAudioInputEngine = "whisper.cpp";
+
+export const DEFAULT_TELEGRAM_AUDIO_INPUT_BINARY = "whisper-cli";
+export const DEFAULT_TELEGRAM_AUDIO_INPUT_MODEL = "tiny.en";
+
+export interface TelegramAudioInputSettings {
+  /** Enable Telegram voice/audio transcription before sending text to the agent. Default: true. */
+  enabled?: boolean;
+  /** Reserved for future providers. The current built-in engine is whisper.cpp. */
+  engine?: TelegramAudioInputEngine;
+  /** Path or command name for the whisper.cpp CLI. Default: whisper-cli on PATH. */
+  binaryPath?: string;
+  /** Whisper.cpp model alias used for cache/download resolution. Default: tiny.en. */
+  model?: string;
+  /** Optional override for an exact ggml model path on disk. */
+  modelPath?: string;
+  /** Automatically download missing models into ~/.grok/models/stt. Default: true. */
+  autoDownloadModel?: boolean;
+  /** Whisper language code passed to the CLI. Default: en. */
+  language?: string;
+}
 
 export interface TelegramSettings {
   botToken?: string;
@@ -16,6 +37,7 @@ export interface TelegramSettings {
   typingIndicator?: boolean;
   /** Reserved: Bot API `sendMessageDraft` for private DMs (not implemented yet). */
   nativeDrafts?: boolean;
+  audioInput?: TelegramAudioInputSettings;
 }
 
 export type McpRemoteTransport = "http" | "sse";
@@ -144,6 +166,10 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           telegram: {
             ...current.telegram,
             ...partial.telegram,
+            audioInput: {
+              ...current.telegram?.audioInput,
+              ...partial.telegram?.audioInput,
+            },
             sessionsByUserId: {
               ...current.telegram?.sessionsByUserId,
               ...partial.telegram?.sessionsByUserId,
@@ -228,6 +254,26 @@ export function resolveTelegramStreamSettings(t: TelegramSettings | undefined): 
     streaming: t?.streaming === "off" ? "off" : "partial",
     typingIndicator: t?.typingIndicator !== false,
     nativeDrafts: t?.nativeDrafts === true,
+  };
+}
+
+export function resolveTelegramAudioInputSettings(t: TelegramSettings | undefined): {
+  enabled: boolean;
+  engine: TelegramAudioInputEngine;
+  binaryPath: string;
+  model: string;
+  modelPath: string | undefined;
+  autoDownloadModel: boolean;
+  language: string;
+} {
+  return {
+    enabled: t?.audioInput?.enabled !== false,
+    engine: "whisper.cpp",
+    binaryPath: t?.audioInput?.binaryPath?.trim() || DEFAULT_TELEGRAM_AUDIO_INPUT_BINARY,
+    model: t?.audioInput?.model?.trim() || DEFAULT_TELEGRAM_AUDIO_INPUT_MODEL,
+    modelPath: t?.audioInput?.modelPath?.trim() || undefined,
+    autoDownloadModel: t?.audioInput?.autoDownloadModel !== false,
+    language: t?.audioInput?.language?.trim() || "en",
   };
 }
 
