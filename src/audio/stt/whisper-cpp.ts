@@ -204,7 +204,8 @@ async function downloadWhisperCppModel(model: string, destinationPath: string): 
     throw new Error(`Failed to download whisper.cpp model ${model}: ${response.status} ${response.statusText}`);
   }
 
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "grok-whisper-model-"));
+  // Keep the temp file on the target filesystem so the final rename stays atomic.
+  const tempDir = await mkdtemp(path.join(path.dirname(destinationPath), ".grok-whisper-model-"));
   const tempPath = path.join(tempDir, getWhisperCppModelFileName(model));
 
   try {
