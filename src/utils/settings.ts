@@ -8,6 +8,23 @@ export type TelegramStreamingMode = "off" | "partial";
 export type TelegramAudioInputEngine = "whisper.cpp";
 export type SandboxMode = "off" | "shuru";
 
+export interface SandboxSecretConfig {
+  name: string;
+  fromEnv: string;
+  hosts: string[];
+}
+
+export interface SandboxSettings {
+  allowNet?: boolean;
+  allowedHosts?: string[];
+  ports?: string[];
+  cpus?: number;
+  memory?: number;
+  diskSize?: number;
+  secrets?: SandboxSecretConfig[];
+  from?: string;
+}
+
 export const DEFAULT_TELEGRAM_AUDIO_INPUT_BINARY = "whisper-cli";
 export const DEFAULT_TELEGRAM_AUDIO_INPUT_MODEL = "tiny.en";
 
@@ -109,6 +126,7 @@ export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
   sandboxMode?: SandboxMode;
+  sandbox?: SandboxSettings;
   reasoningEffortByModel?: Record<string, ReasoningEffort>;
   telegram?: TelegramSettings;
   mcp?: McpSettings;
@@ -118,6 +136,7 @@ export interface UserSettings {
 export interface ProjectSettings {
   model?: string;
   sandboxMode?: SandboxMode;
+  sandbox?: SandboxSettings;
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");
@@ -198,6 +217,9 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           })),
         }
       : {}),
+    ...(partial.sandbox !== undefined
+      ? { sandbox: normalizeSandboxSettings({ ...current.sandbox, ...partial.sandbox }) }
+      : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -216,6 +238,9 @@ export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
     ...partial,
     ...(partial.model !== undefined ? { model: normalizeModelId(partial.model) } : {}),
     ...(partial.sandboxMode !== undefined ? { sandboxMode: normalizeSandboxMode(partial.sandboxMode) } : {}),
+    ...(partial.sandbox !== undefined
+      ? { sandbox: normalizeSandboxSettings({ ...current.sandbox, ...partial.sandbox }) }
+      : {}),
   });
 }
 
@@ -239,12 +264,77 @@ export function normalizeSandboxMode(value: unknown): SandboxMode {
   return value === "shuru" ? "shuru" : "off";
 }
 
+function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function normalizeSecretConfig(raw: unknown): SandboxSecretConfig | null {
+  if (!isNonNullObject(raw)) return null;
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  const fromEnv = typeof raw.fromEnv === "string" ? raw.fromEnv.trim() : "";
+  const hosts = Array.isArray(raw.hosts)
+    ? raw.hosts.filter((h): h is string => typeof h === "string" && h.trim() !== "")
+    : [];
+  if (!name || !fromEnv) return null;
+  return { name, fromEnv, hosts };
+}
+
+export function normalizeSandboxSettings(raw: unknown): SandboxSettings {
+  if (!isNonNullObject(raw)) return {};
+  const result: SandboxSettings = {};
+
+  if (typeof raw.allowNet === "boolean") result.allowNet = raw.allowNet;
+  if (Array.isArray(raw.allowedHosts)) {
+    const hosts = raw.allowedHosts.filter((h): h is string => typeof h === "string" && h.trim() !== "");
+    if (hosts.length > 0) result.allowedHosts = hosts;
+  }
+  if (Array.isArray(raw.ports)) {
+    const ports = raw.ports.filter((p): p is string => typeof p === "string" && /^\d+:\d+$/.test(p.trim()));
+    if (ports.length > 0) result.ports = ports;
+  }
+  if (typeof raw.cpus === "number" && raw.cpus > 0) result.cpus = raw.cpus;
+  if (typeof raw.memory === "number" && raw.memory > 0) result.memory = raw.memory;
+  if (typeof raw.diskSize === "number" && raw.diskSize > 0) result.diskSize = raw.diskSize;
+  if (Array.isArray(raw.secrets)) {
+    const secrets = raw.secrets.map(normalizeSecretConfig).filter((s): s is SandboxSecretConfig => s !== null);
+    if (secrets.length > 0) result.secrets = secrets;
+  }
+  if (typeof raw.from === "string" && raw.from.trim()) result.from = raw.from.trim();
+
+  return result;
+}
+
+export function mergeSandboxSettings(
+  base: SandboxSettings | undefined,
+  override: SandboxSettings | undefined,
+): SandboxSettings {
+  if (!base && !override) return {};
+  if (!base) return { ...override };
+  if (!override) return { ...base };
+  return {
+    allowNet: override.allowNet ?? base.allowNet,
+    allowedHosts: override.allowedHosts ?? base.allowedHosts,
+    ports: override.ports ?? base.ports,
+    cpus: override.cpus ?? base.cpus,
+    memory: override.memory ?? base.memory,
+    diskSize: override.diskSize ?? base.diskSize,
+    secrets: override.secrets ?? base.secrets,
+    from: override.from ?? base.from,
+  };
+}
+
 export function getCurrentSandboxMode(): SandboxMode {
   const project = loadProjectSettings();
   if (project.sandboxMode) return normalizeSandboxMode(project.sandboxMode);
   const user = loadUserSettings();
   if (user.sandboxMode) return normalizeSandboxMode(user.sandboxMode);
   return "off";
+}
+
+export function getCurrentSandboxSettings(): SandboxSettings {
+  const user = loadUserSettings();
+  const project = loadProjectSettings();
+  return mergeSandboxSettings(user.sandbox, project.sandbox);
 }
 
 export function getReasoningEffortForModel(modelId: string): ReasoningEffort | undefined {

@@ -44,6 +44,29 @@ describe("schedule daemon tools", () => {
     expect(bashTool.description).toContain("do not persist back to the host");
   });
 
+  it("reflects network enabled in sandbox tool description", () => {
+    const tools = createTools(
+      new BashTool("/tmp", { sandboxMode: "shuru", sandboxSettings: { allowNet: true } }),
+      {} as never,
+      "agent",
+    );
+    const bashTool = tools.bash as { description?: string };
+    expect(bashTool.description).toContain("network access is enabled");
+  });
+
+  it("reflects restricted hosts in sandbox tool description", () => {
+    const tools = createTools(
+      new BashTool("/tmp", {
+        sandboxMode: "shuru",
+        sandboxSettings: { allowNet: true, allowedHosts: ["api.openai.com"] },
+      }),
+      {} as never,
+      "agent",
+    );
+    const bashTool = tools.bash as { description?: string };
+    expect(bashTool.description).toContain("network is restricted to: api.openai.com");
+  });
+
   it("reports daemon status", async () => {
     const { tools } = createScheduleToolSet({
       getDaemonStatus: async () => ({ running: true, pid: 4321 }),

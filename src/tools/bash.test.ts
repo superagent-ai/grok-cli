@@ -33,6 +33,63 @@ describe("wrapCommandForShuru", () => {
     const result = wrapCommandForShuru("/repo", "echo 'hello world'");
     expect(result).toContain("'\\''hello world'\\''");
   });
+
+  it("includes --allow-net when allowNet is true", () => {
+    const result = wrapCommandForShuru("/repo", "curl example.com", { allowNet: true });
+    expect(result).toContain("--allow-net");
+    expect(result).toContain("--mount '/repo:/workspace'");
+  });
+
+  it("includes --allow-host flags for each allowed host", () => {
+    const result = wrapCommandForShuru("/repo", "curl api.openai.com", {
+      allowNet: true,
+      allowedHosts: ["api.openai.com", "registry.npmjs.org"],
+    });
+    expect(result).toContain("--allow-net");
+    expect(result).toContain("--allow-host api.openai.com");
+    expect(result).toContain("--allow-host registry.npmjs.org");
+  });
+
+  it("includes port forwards", () => {
+    const result = wrapCommandForShuru("/repo", "python -m http.server", { ports: ["8080:8000", "8443:443"] });
+    expect(result).toContain("-p 8080:8000");
+    expect(result).toContain("-p 8443:443");
+  });
+
+  it("includes resource limits", () => {
+    const result = wrapCommandForShuru("/repo", "make -j4", { cpus: 4, memory: 4096, diskSize: 8192 });
+    expect(result).toContain("--cpus 4");
+    expect(result).toContain("--memory 4096");
+    expect(result).toContain("--disk-size 8192");
+  });
+
+  it("includes --from checkpoint flag", () => {
+    const result = wrapCommandForShuru("/repo", "python script.py", { from: "py-env" });
+    expect(result).toContain("--from py-env");
+  });
+
+  it("includes --secret flags", () => {
+    const result = wrapCommandForShuru("/repo", "curl https://api.openai.com", {
+      allowNet: true,
+      secrets: [{ name: "API_KEY", fromEnv: "OPENAI_API_KEY", hosts: ["api.openai.com"] }],
+    });
+    expect(result).toContain("--secret API_KEY=OPENAI_API_KEY@api.openai.com");
+  });
+
+  it("combines multiple settings correctly", () => {
+    const result = wrapCommandForShuru("/repo", "echo hi", {
+      allowNet: true,
+      allowedHosts: ["example.com"],
+      cpus: 2,
+      from: "base",
+    });
+    expect(result).toMatch(/^shuru run --cpus 2 --allow-net --allow-host example\.com --from base --mount/);
+  });
+
+  it("uses default empty settings when none provided", () => {
+    const result = wrapCommandForShuru("/repo", "echo hi", {});
+    expect(result).toBe("shuru run --mount '/repo:/workspace' -- sh -lc 'cd /workspace && echo hi'");
+  });
 });
 
 describe("getSandboxMutationBlockReason", () => {
@@ -124,5 +181,44 @@ describe("BashTool sandbox state", () => {
     expect(off.getToolDescription()).not.toContain("Shuru");
     expect(on.getToolDescription()).toContain("Shuru sandbox");
     expect(on.getToolDescription()).toContain("do not persist back to the host");
+  });
+
+  it("stores and returns sandbox settings", () => {
+    const bash = new BashTool("/repo", {
+      sandboxMode: "shuru",
+      sandboxSettings: { allowNet: true, cpus: 4 },
+    });
+
+    expect(bash.getSandboxSettings()).toEqual({ allowNet: true, cpus: 4 });
+  });
+
+  it("can update sandbox settings at runtime", () => {
+    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
+
+    expect(bash.getSandboxSettings()).toEqual({});
+
+    bash.setSandboxSettings({ allowNet: true, allowedHosts: ["api.openai.com"] });
+
+    expect(bash.getSandboxSettings()).toEqual({ allowNet: true, allowedHosts: ["api.openai.com"] });
+  });
+
+  it("includes network status in tool description when allowNet is set", () => {
+    const netOn = new BashTool("/repo", {
+      sandboxMode: "shuru",
+      sandboxSettings: { allowNet: true },
+    });
+    expect(netOn.getToolDescription()).toContain("network access is enabled");
+
+    const netRestricted = new BashTool("/repo", {
+      sandboxMode: "shuru",
+      sandboxSettings: { allowNet: true, allowedHosts: ["api.openai.com"] },
+    });
+    expect(netRestricted.getToolDescription()).toContain("network is restricted to: api.openai.com");
+
+    const netOff = new BashTool("/repo", {
+      sandboxMode: "shuru",
+      sandboxSettings: { allowNet: false },
+    });
+    expect(netOff.getToolDescription()).toContain("network is disabled");
   });
 });

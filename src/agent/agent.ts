@@ -32,7 +32,13 @@ import type {
   WorkspaceInfo,
 } from "../types/index";
 import { loadCustomInstructions } from "../utils/instructions";
-import { type CustomSubagentConfig, loadMcpServers, loadValidSubAgents, type SandboxMode } from "../utils/settings";
+import {
+  type CustomSubagentConfig,
+  loadMcpServers,
+  loadValidSubAgents,
+  type SandboxMode,
+  type SandboxSettings,
+} from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import {
   type CompactionSettings,
@@ -56,6 +62,7 @@ interface AgentOptions {
   persistSession?: boolean;
   session?: string;
   sandboxMode?: SandboxMode;
+  sandboxSettings?: SandboxSettings;
 }
 
 type ProcessMessageFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
@@ -247,6 +254,7 @@ function buildSystemPrompt(
   sandboxMode: SandboxMode,
   planContext?: string | null,
   subagents?: CustomSubagentConfig[],
+  sandboxSettings?: SandboxSettings,
 ): string {
   const custom = loadCustomInstructions(cwd);
   const customSection = custom
@@ -256,7 +264,7 @@ function buildSystemPrompt(
   const skillsText = formatSkillsForPrompt(discoverSkills(cwd));
   const skillsSection = skillsText ? `\n\n${skillsText}\n` : "";
   const subagentsSection = formatCustomSubagentsPromptSection(subagents ?? loadValidSubAgents());
-  const sandboxSection = formatSandboxPromptSection(sandboxMode);
+  const sandboxSection = formatSandboxPromptSection(sandboxMode, sandboxSettings);
 
   const planSection = planContext
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
@@ -273,6 +281,7 @@ function buildSubagentPrompt(
   custom: CustomSubagentConfig | null,
   sandboxMode: SandboxMode,
   subagents?: CustomSubagentConfig[],
+  sandboxSettings?: SandboxSettings,
 ): string {
   const isExplore = request.agent === "explore";
   const isVision = request.agent === "vision";
@@ -312,22 +321,42 @@ function buildSubagentPrompt(
     "",
     `Delegated task: ${request.description}`,
     "",
-    buildSystemPrompt(cwd, mode, sandboxMode, undefined, subagents),
+    buildSystemPrompt(cwd, mode, sandboxMode, undefined, subagents, sandboxSettings),
   ].join("\n");
 }
 
-function formatSandboxPromptSection(sandboxMode: SandboxMode): string {
+function formatSandboxPromptSection(sandboxMode: SandboxMode, settings?: SandboxSettings): string {
   if (sandboxMode === "off") return "";
-  return [
+
+  const s = settings ?? {};
+  let networkLine: string;
+  if (s.allowNet) {
+    networkLine = s.allowedHosts?.length
+      ? `- Network access is restricted to: ${s.allowedHosts.join(", ")}.`
+      : "- Network access is enabled.";
+  } else {
+    networkLine = "- Network is disabled.";
+  }
+
+  const lines = [
     "",
     "SANDBOX MODE:",
     "- Bash commands run inside a Shuru sandbox.",
-    "- Network is disabled by default unless the current workspace config allows it.",
+    networkLine,
     "- The current workspace is mounted inside the sandbox at `/workspace`.",
     "- Shell-side workspace file changes do not persist back to the host in this version.",
     "- Use `read_file`, `edit_file`, and `write_file` for durable source edits.",
     "- If a task needs a host-persistent shell mutation, explain that sandbox mode blocks that workflow and ask whether to disable sandbox mode.",
-  ].join("\n");
+  ];
+
+  if (s.ports?.length) {
+    lines.push(`- Port forwards: ${s.ports.join(", ")}.`);
+  }
+  if (s.from) {
+    lines.push(`- Starting from checkpoint: ${s.from}.`);
+  }
+
+  return lines.join("\n");
 }
 
 function applyModelConstraints(system: string, modelId: string): string {
@@ -378,7 +407,10 @@ export class Agent {
     if (apiKey) {
       this.setApiKey(apiKey, baseURL);
     }
-    this.bash = new BashTool(process.cwd(), { sandboxMode: options.sandboxMode ?? "off" });
+    this.bash = new BashTool(process.cwd(), {
+      sandboxMode: options.sandboxMode ?? "off",
+      sandboxSettings: options.sandboxSettings,
+    });
     this.delegations = new DelegationManager(() => this.bash.getCwd());
     this.modelId = normalizeModelId(model || DEFAULT_MODEL);
     this.schedules = new ScheduleManager(
@@ -423,6 +455,14 @@ export class Agent {
 
   setSandboxMode(mode: SandboxMode): void {
     this.bash.setSandboxMode(mode);
+  }
+
+  getSandboxSettings(): SandboxSettings {
+    return this.bash.getSandboxSettings();
+  }
+
+  setSandboxSettings(settings: SandboxSettings): void {
+    this.bash.setSandboxSettings(settings);
   }
 
   setMode(mode: AgentMode): void {
@@ -480,7 +520,14 @@ export class Agent {
     ratioUsed: number;
     ratioRemaining: number;
   } {
-    const system = buildSystemPrompt(this.bash.getCwd(), this.mode, this.bash.getSandboxMode(), this.planContext);
+    const system = buildSystemPrompt(
+      this.bash.getCwd(),
+      this.mode,
+      this.bash.getSandboxMode(),
+      this.planContext,
+      undefined,
+      this.bash.getSandboxSettings(),
+    );
     const usedTokens = Math.min(contextWindow, estimateConversationTokens(system, this.messages, inFlightText));
     const remainingTokens = Math.max(0, contextWindow - usedTokens);
 
@@ -637,7 +684,10 @@ export class Agent {
     }
 
     const childMode: AgentMode = isExplore ? "ask" : "agent";
-    const childBash = new BashTool(this.bash.getCwd(), { sandboxMode: this.bash.getSandboxMode() });
+    const childBash = new BashTool(this.bash.getCwd(), {
+      sandboxMode: this.bash.getSandboxMode(),
+      sandboxSettings: this.bash.getSandboxSettings(),
+    });
     const childBaseTools = createTools(childBash, provider, childMode);
     const initialDetail = isExplore ? "Scanning the codebase" : "Planning delegated work";
     let assistantText = "";
@@ -651,7 +701,14 @@ export class Agent {
       ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
       : resolveModelRuntime(provider, childModelId);
     const childSystem = applyModelConstraints(
-      buildSubagentPrompt(request, childBash.getCwd(), custom ?? null, childBash.getSandboxMode(), subagents),
+      buildSubagentPrompt(
+        request,
+        childBash.getCwd(),
+        custom ?? null,
+        childBash.getSandboxMode(),
+        subagents,
+        childBash.getSandboxSettings(),
+      ),
       childRuntime.modelId,
     );
 
@@ -770,6 +827,7 @@ export class Agent {
       return await this.delegations.start(request, {
         model: this.modelId,
         sandboxMode: this.bash.getSandboxMode(),
+        sandboxSettings: this.bash.getSandboxSettings(),
         maxToolRounds: this.maxToolRounds,
         maxTokens: this.maxTokens,
       });
@@ -898,7 +956,14 @@ export class Agent {
     const provider = this.requireProvider();
     const subagents = loadValidSubAgents();
     const system = applyModelConstraints(
-      buildSystemPrompt(this.bash.getCwd(), this.mode, this.bash.getSandboxMode(), this.planContext, subagents),
+      buildSystemPrompt(
+        this.bash.getCwd(),
+        this.mode,
+        this.bash.getSandboxMode(),
+        this.planContext,
+        subagents,
+        this.bash.getSandboxSettings(),
+      ),
       this.modelId,
     );
     const runtime = resolveModelRuntime(provider, this.modelId);
