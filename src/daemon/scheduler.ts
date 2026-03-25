@@ -80,17 +80,22 @@ export class SchedulerDaemon {
           continue;
         }
 
-        const pid = await startDetachedHeadlessRun({
-          instruction: schedule.instruction,
-          directory: schedule.directory,
-          model: schedule.model,
-          maxToolRounds: schedule.maxToolRounds,
-          logPath: getScheduleRunLogPath(schedule.id),
-        });
+        try {
+          const pid = await startDetachedHeadlessRun({
+            instruction: schedule.instruction,
+            directory: schedule.directory,
+            model: schedule.model,
+            maxToolRounds: schedule.maxToolRounds,
+            logPath: getScheduleRunLogPath(schedule.id),
+          });
 
-        await this.schedules.touchLastRunAt(schedule.id, now);
-        const pidText = pid ? ` (pid ${pid})` : "";
-        console.error(`Fired schedule ${schedule.id}${pidText}.`);
+          await this.schedules.touchLastRunAt(schedule.id, now);
+          const pidText = pid ? ` (pid ${pid})` : "";
+          console.error(`Fired schedule ${schedule.id}${pidText}.`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`Schedule ${schedule.id} failed: ${msg}`);
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

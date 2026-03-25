@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { createWriteStream, promises as fs } from "fs";
+import { closeSync, promises as fs, openSync } from "fs";
 import os from "os";
 import path from "path";
 import { getCurrentModel } from "../utils/settings";
@@ -246,11 +246,25 @@ export async function ensureSchedulesDir(): Promise<string> {
 }
 
 export function getScheduleRecordPath(id: string): string {
-  return path.join(SCHEDULES_DIR, `${id}.json`);
+  const resolved = path.join(SCHEDULES_DIR, `${id}.json`);
+  assertInsideSchedulesDir(resolved);
+  return resolved;
 }
 
 export function getScheduleLogDir(id: string): string {
-  return path.join(SCHEDULES_DIR, id);
+  const resolved = path.join(SCHEDULES_DIR, id);
+  assertInsideSchedulesDir(resolved);
+  return resolved;
+}
+
+function assertInsideSchedulesDir(resolved: string): void {
+  const normalized = path.resolve(resolved);
+  if (
+    !normalized.startsWith(`${path.resolve(SCHEDULES_DIR)}${path.sep}`) &&
+    normalized !== path.resolve(SCHEDULES_DIR)
+  ) {
+    throw new Error("Invalid schedule id: path traversal detected.");
+  }
 }
 
 export function getScheduleRunLogPath(id: string): string {
@@ -378,26 +392,19 @@ export async function writeStoredSchedule(schedule: StoredSchedule): Promise<voi
 
 export async function startDetachedHeadlessRun(options: HeadlessRunOptions): Promise<number | null> {
   await fs.mkdir(path.dirname(options.logPath), { recursive: true });
-  const logStream = createWriteStream(options.logPath, { flags: "a" });
-  const child = spawn(process.execPath, [...resolveCliArgs(), ...buildHeadlessCliArgs(options)], {
-    cwd: options.directory,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, FORCE_COLOR: "0", ...options.env },
-  });
-
-  child.stdout?.pipe(logStream);
-  child.stderr?.pipe(logStream);
-
-  child.on("exit", () => {
-    logStream.end();
-  });
-  child.on("error", () => {
-    logStream.end();
-  });
-
-  child.unref();
-  return child.pid ?? null;
+  const logFd = openSync(options.logPath, "a");
+  try {
+    const child = spawn(process.execPath, [...resolveCliArgs(), ...buildHeadlessCliArgs(options)], {
+      cwd: options.directory,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      env: { ...process.env, FORCE_COLOR: "0", ...options.env },
+    });
+    child.unref();
+    return child.pid ?? null;
+  } finally {
+    closeSync(logFd);
+  }
 }
 
 export function buildHeadlessCliArgs(options: Omit<HeadlessRunOptions, "logPath" | "env">): string[] {
@@ -446,12 +453,16 @@ function sleep(ms: number): Promise<void> {
 }
 
 export function toScheduleId(name: string): string {
-  return name
+  const id = name
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+  if (!id || id === "." || id === ".." || id.includes("/") || id.includes("\\")) {
+    return "";
+  }
+  return id;
 }
 
 export function isValidCron(expr: string): boolean {
@@ -499,8 +510,17 @@ function matchesCronField(field: string, value: number, min: number, max: number
   return field.split(",").some((part) => {
     const parsed = parseCronPart(part.trim(), min, max, dayOfWeek);
     if (!parsed) return false;
-    if (normalizedValue < parsed.start || normalizedValue > parsed.end) return false;
-    return (normalizedValue - parsed.start) % parsed.step === 0;
+    if (parsed.start <= parsed.end) {
+      if (normalizedValue < parsed.start || normalizedValue > parsed.end) return false;
+      return (normalizedValue - parsed.start) % parsed.step === 0;
+    }
+    if (normalizedValue >= parsed.start) {
+      return (normalizedValue - parsed.start) % parsed.step === 0;
+    }
+    if (normalizedValue <= parsed.end) {
+      return (normalizedValue - parsed.start + max - min + 1) % parsed.step === 0;
+    }
+    return false;
   });
 }
 
@@ -521,10 +541,17 @@ function parseCronPart(part: string, min: number, max: number, dayOfWeek: boolea
   if (base.includes("-")) {
     const [rawStart, rawEnd] = base.split("-");
     if (!rawStart || !rawEnd) return null;
-    const start = parseCronNumber(rawStart, min, max, dayOfWeek);
-    const end = parseCronNumber(rawEnd, min, max, dayOfWeek);
-    if (start === null || end === null || start > end) return null;
-    return { start, end, step };
+    const startRaw = Number.parseInt(rawStart, 10);
+    const endRaw = Number.parseInt(rawEnd, 10);
+    if (!Number.isInteger(startRaw) || !Number.isInteger(endRaw)) return null;
+    if (dayOfWeek) {
+      if (startRaw < 0 || startRaw > 7 || endRaw < 0 || endRaw > 7) return null;
+      if (startRaw > endRaw) return null;
+    } else {
+      if (startRaw < min || startRaw > max || endRaw < min || endRaw > max) return null;
+      if (startRaw > endRaw) return null;
+    }
+    return { start: normalizeCronValue(startRaw, dayOfWeek), end: normalizeCronValue(endRaw, dayOfWeek), step };
   }
 
   const value = parseCronNumber(base, min, max, dayOfWeek);
@@ -535,9 +562,12 @@ function parseCronPart(part: string, min: number, max: number, dayOfWeek: boolea
 function parseCronNumber(raw: string, min: number, max: number, dayOfWeek: boolean): number | null {
   const value = Number.parseInt(raw, 10);
   if (!Number.isInteger(value)) return null;
-  const normalized = normalizeCronValue(value, dayOfWeek);
-  if (normalized < min || normalized > max) return null;
-  return normalized;
+  if (dayOfWeek) {
+    if (value < 0 || value > 7) return null;
+  } else {
+    if (value < min || value > max) return null;
+  }
+  return normalizeCronValue(value, dayOfWeek);
 }
 
 function normalizeCronValue(value: number, dayOfWeek: boolean): number {

@@ -57,6 +57,13 @@ describe("schedule helpers", () => {
     expect(mod.isValidCron("0 9 * *")).toBe(false);
     expect(mod.isValidCron("61 9 * * *")).toBe(false);
     expect(mod.toScheduleId("Daily Security Scan!")).toBe("daily-security-scan");
+    expect(mod.toScheduleId("..")).toBe("");
+    expect(mod.toScheduleId(".")).toBe("");
+    expect(mod.toScheduleId("../../../etc")).toBe("etc");
+    expect(mod.toScheduleId("legit.name")).toBe("legit-name");
+
+    expect(() => mod.getScheduleLogDir("..")).toThrow("path traversal");
+    expect(() => mod.getScheduleLogDir("../..")).toThrow("path traversal");
 
     const matchingDate = new Date("2026-03-25T09:30:00");
     const nonMatchingDate = new Date("2026-03-29T09:30:00");
@@ -64,6 +71,14 @@ describe("schedule helpers", () => {
     expect(mod.cronMatchesDate("30 9 * * 1-5", matchingDate)).toBe(true);
     expect(mod.cronMatchesDate("30 9 * * 1-5", nonMatchingDate)).toBe(false);
     expect(mod.cronMatchesDate("*/10 * * * *", new Date("2026-03-25T09:40:00"))).toBe(true);
+
+    expect(mod.isValidCron("0 9 * * 5-7")).toBe(true);
+    const friday = new Date("2026-03-27T09:00:00");
+    const sunday = new Date("2026-03-29T09:00:00");
+    const monday = new Date("2026-03-30T09:00:00");
+    expect(mod.cronMatchesDate("0 9 * * 5-7", friday)).toBe(true);
+    expect(mod.cronMatchesDate("0 9 * * 5-7", sunday)).toBe(true);
+    expect(mod.cronMatchesDate("0 9 * * 5-7", monday)).toBe(false);
   });
 
   it("creates, lists, and removes recurring schedules under ~/.grok/schedules", async () => {
