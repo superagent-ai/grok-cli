@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import type { DelegationRun, DelegationStatus, TaskRequest, ToolResult } from "../types/index";
+import type { SandboxMode } from "../utils/settings";
 
 const ID_ADJECTIVES = ["brisk", "calm", "clever", "eager", "gentle", "keen", "lively", "nimble", "quiet", "steady"];
 
@@ -18,6 +19,7 @@ export interface StoredDelegation {
   prompt: string;
   cwd: string;
   model: string;
+  sandboxMode: SandboxMode;
   maxToolRounds: number;
   maxTokens: number;
   status: DelegationStatus;
@@ -38,6 +40,7 @@ export interface DelegationNotification {
 
 interface StartDelegationOptions {
   model: string;
+  sandboxMode: SandboxMode;
   maxToolRounds: number;
   maxTokens: number;
 }
@@ -74,6 +77,7 @@ export class DelegationManager {
       prompt: request.prompt,
       cwd,
       model: options.model,
+      sandboxMode: options.sandboxMode,
       maxToolRounds: options.maxToolRounds,
       maxTokens: options.maxTokens,
       status: "running",

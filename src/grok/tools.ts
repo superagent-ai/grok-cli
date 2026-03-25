@@ -67,8 +67,7 @@ export function createTools(
 
   const base = {
     bash: tool({
-      description:
-        "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.",
+      description: bash.getToolDescription(),
       inputSchema: z.object({
         command: z.string().describe("The bash command to execute"),
         timeout: z

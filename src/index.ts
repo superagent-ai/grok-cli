@@ -14,7 +14,14 @@ import {
 } from "./headless/output";
 import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
 import { startScheduleDaemon } from "./tools/schedule";
-import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
+import {
+  getApiKey,
+  getBaseURL,
+  getCurrentModel,
+  getCurrentSandboxMode,
+  type SandboxMode,
+  saveUserSettings,
+} from "./utils/settings";
 
 dotenv.config();
 
@@ -39,10 +46,11 @@ async function startInteractive(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  sandboxMode: SandboxMode,
   session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode });
   const { createCliRenderer } = await import("@opentui/core");
   const { createRoot } = await import("@opentui/react");
   const { createElement } = await import("react");
@@ -70,6 +78,7 @@ async function startInteractive(
         baseURL,
         model,
         maxToolRounds,
+        sandboxMode,
       },
       initialMessage,
       onExit,
@@ -83,10 +92,11 @@ async function runHeadless(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  sandboxMode: SandboxMode,
   format: HeadlessOutputFormat,
   session?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode });
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
@@ -125,21 +135,34 @@ function changeDirectoryOrExit(directory: string | undefined) {
   }
 }
 
-async function runBackgroundDelegation(jobPath: string, options: Record<string, string | undefined>) {
+type CliOptions = Record<string, string | boolean | undefined>;
+
+function stringOption(value: string | boolean | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function resolveCliSandboxMode(value: string | boolean | undefined): SandboxMode | undefined {
+  if (value === true) return "shuru";
+  if (value === false) return "off";
+  return undefined;
+}
+
+async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
   let output = "";
 
   try {
     const delegation = await loadDelegation(jobPath);
-    const apiKey = options.apiKey || getApiKey();
+    const apiKey = stringOption(options.apiKey) || getApiKey();
     if (!apiKey) {
       throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
     }
 
-    const baseURL = options.baseUrl || getBaseURL();
-    const model = normalizeModelId(options.model || delegation.model || getCurrentModel());
+    const baseURL = stringOption(options.baseUrl) || getBaseURL();
+    const model = normalizeModelId(stringOption(options.model) || delegation.model || getCurrentModel());
     const maxToolRounds =
-      parseInt(options.maxToolRounds || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
-    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { persistSession: false });
+      parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
+    const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
+    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { persistSession: false, sandboxMode });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
       description: delegation.description,
@@ -165,16 +188,17 @@ async function runBackgroundDelegation(jobPath: string, options: Record<string, 
   }
 }
 
-function resolveConfig(options: Record<string, string | undefined>) {
-  const apiKey = options.apiKey || getApiKey();
-  const baseURL = options.baseUrl || getBaseURL();
-  const model = normalizeModelId(options.model || getCurrentModel());
-  const maxToolRounds = parseInt(options.maxToolRounds || "400", 10) || 400;
+function resolveConfig(options: CliOptions) {
+  const apiKey = stringOption(options.apiKey) || getApiKey();
+  const baseURL = stringOption(options.baseUrl) || getBaseURL();
+  const model = normalizeModelId(stringOption(options.model) || getCurrentModel());
+  const maxToolRounds = parseInt(stringOption(options.maxToolRounds) || "400", 10) || 400;
+  const sandboxMode = resolveCliSandboxMode(options.sandbox) || getCurrentSandboxMode();
 
-  if (options.apiKey) saveUserSettings({ apiKey: options.apiKey });
-  if (options.model) saveUserSettings({ defaultModel: normalizeModelId(options.model) });
+  if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey });
+  if (typeof options.model === "string") saveUserSettings({ defaultModel: normalizeModelId(options.model) });
 
-  return { apiKey, baseURL, model, maxToolRounds };
+  return { apiKey, baseURL, model, maxToolRounds, sandboxMode };
 }
 
 function requireApiKey(apiKey: string | undefined): string {
@@ -207,6 +231,8 @@ program
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
   .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
+  .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
+  .option("--no-sandbox", "Run agent shell commands directly on the host")
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
@@ -227,6 +253,7 @@ program
         config.baseURL,
         config.model,
         config.maxToolRounds,
+        config.sandboxMode,
         options.format,
         options.session,
       );
@@ -239,6 +266,7 @@ program
       config.baseURL,
       config.model,
       config.maxToolRounds,
+      config.sandboxMode,
       options.session,
       initialMessage,
     );
@@ -251,6 +279,8 @@ program
   .option("-u, --base-url <url>", "API base URL")
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
+  .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
+  .option("--no-sandbox", "Run agent shell commands directly on the host")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .option("--log-file <path>", "Bridge log file", "telegram-remote-bridge.log")
   .option("--pair-code-file <path>", "Pairing code file", "telegram-pair-code.txt")
@@ -265,6 +295,7 @@ program
         baseURL: config.baseURL,
         model: config.model,
         maxToolRounds: config.maxToolRounds,
+        sandboxMode: config.sandboxMode,
         logFile: options.logFile,
         pairCodeFile: options.pairCodeFile,
       });

@@ -6,8 +6,10 @@ import {
   getApiKey,
   getBaseURL,
   getCurrentModel,
+  getCurrentSandboxMode,
   getTelegramBotToken,
   loadUserSettings,
+  type SandboxMode,
   saveApprovedTelegramUserId,
   saveUserSettings,
 } from "../utils/settings";
@@ -24,6 +26,7 @@ export interface TelegramHeadlessBridgeOptions {
   apiKey?: string;
   baseURL?: string;
   model?: string;
+  sandboxMode?: SandboxMode;
   maxToolRounds?: number;
   logFile?: string;
   pairCodeFile?: string;
@@ -33,6 +36,7 @@ interface TelegramHeadlessStartupConfig {
   apiKey: string;
   baseURL: string;
   model: string;
+  sandboxMode: SandboxMode;
   maxToolRounds: number;
 }
 
@@ -72,7 +76,7 @@ function buildTelegramAgentFactory(startupConfig: TelegramHeadlessStartupConfig)
       startupConfig.baseURL,
       startupConfig.model,
       startupConfig.maxToolRounds,
-      { session: sessionId },
+      { session: sessionId, sandboxMode: startupConfig.sandboxMode },
     );
 
     const nextSessionId = agent.getSessionId();
@@ -121,6 +125,7 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
     apiKey,
     baseURL: options.baseURL ?? getBaseURL(),
     model: options.model ?? getCurrentModel(),
+    sandboxMode: options.sandboxMode ?? getCurrentSandboxMode(),
     maxToolRounds: options.maxToolRounds ?? 400,
   };
   const pathOptions: TelegramHeadlessBridgePathOptions = {
