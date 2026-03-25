@@ -43,6 +43,7 @@ import {
   loadValidSubAgents,
   type McpRemoteTransport,
   type McpServerConfig,
+  saveApprovedTelegramUserId,
   saveMcpServers,
   saveProjectSettings,
   saveUserSettings,
@@ -1469,10 +1470,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setTelegramPairError(result.error);
       return;
     }
-    const u = loadUserSettings();
-    const ids = new Set(u.telegram?.approvedUserIds ?? []);
-    ids.add(result.userId);
-    saveUserSettings({ telegram: { ...u.telegram, approvedUserIds: [...ids] } });
+    saveApprovedTelegramUserId(result.userId);
     telegramPairInputRef.current?.clear();
     setShowTelegramPairModal(false);
     setTelegramPairError(null);

@@ -245,6 +245,18 @@ export function getTelegramBotToken(): string | undefined {
   return loadUserSettings().telegram?.botToken?.trim();
 }
 
+export function saveApprovedTelegramUserId(userId: number): void {
+  const settings = loadUserSettings();
+  const approvedUserIds = new Set(settings.telegram?.approvedUserIds ?? []);
+  approvedUserIds.add(userId);
+  saveUserSettings({
+    telegram: {
+      ...settings.telegram,
+      approvedUserIds: [...approvedUserIds],
+    },
+  });
+}
+
 export function resolveTelegramStreamSettings(t: TelegramSettings | undefined): {
   streaming: TelegramStreamingMode;
   typingIndicator: boolean;

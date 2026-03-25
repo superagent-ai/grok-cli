@@ -8,6 +8,7 @@ import {
   getCurrentModel,
   getTelegramBotToken,
   loadUserSettings,
+  saveApprovedTelegramUserId,
   saveUserSettings,
 } from "../utils/settings";
 import { createTelegramBridge } from "./bridge";
@@ -46,18 +47,6 @@ function appendLog(logFile: string, message: string): void {
 
 function truncate(text: string, limit = 160): string {
   return text.length <= limit ? text : `${text.slice(0, limit - 3)}...`;
-}
-
-function saveApprovedUser(userId: number): void {
-  const settings = loadUserSettings();
-  const ids = new Set(settings.telegram?.approvedUserIds ?? []);
-  ids.add(userId);
-  saveUserSettings({
-    telegram: {
-      ...settings.telegram,
-      approvedUserIds: [...ids],
-    },
-  });
 }
 
 function ensurePairCodeFile(pairCodeFile: string): void {
@@ -239,7 +228,7 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
         lastPairInput = code;
         const result = approvePairingCode(code);
         if (result.ok) {
-          saveApprovedUser(result.userId);
+          saveApprovedTelegramUserId(result.userId);
           fs.writeFileSync(paths.pairCodeFile, "", "utf8");
           appendLog(paths.logFile, `pair_approved user=${result.userId} code=${code.slice(0, 2)}****`);
           return;
