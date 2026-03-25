@@ -19,6 +19,7 @@ import { toMcpServerId, validateMcpServerConfig } from "../mcp/validate";
 import { createTelegramBridge, type TelegramBridgeHandle } from "../telegram/bridge";
 import { approvePairingCode } from "../telegram/pairing";
 import { createTurnCoordinator } from "../telegram/turn-coordinator";
+import type { ScheduleDaemonStatus, StoredSchedule } from "../tools/schedule";
 import type {
   AgentMode,
   ChatEntry,
@@ -66,6 +67,7 @@ import {
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
 import {
   buildAssistantEntry,
   buildToolResultEntry,
@@ -278,6 +280,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "help", label: "help", description: "Show available commands" },
   { id: "remote-control", label: "remote-control", description: "Remote control" },
   { id: "agents", label: "agents", description: "Manage custom sub-agents" },
+  { id: "schedule", label: "schedule", description: "View scheduled runs" },
   { id: "mcp", label: "mcp", description: "Manage MCP servers" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
@@ -332,6 +335,8 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/mcps",
   "/agents",
   "/agent",
+  "/schedule",
+  "/schedules",
   "/quit",
   "/exit",
   "/q",
@@ -524,6 +529,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const showAgentsEditorRef = useRef(false);
   const subagentNameRef = useRef<TextareaRenderable>(null);
   const subagentInstructionRef = useRef<TextareaRenderable>(null);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedules, setSchedules] = useState<StoredSchedule[]>([]);
+  const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
+  const [scheduleModalIndex, setScheduleModalIndex] = useState(0);
+  const showScheduleModalRef = useRef(false);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -574,6 +584,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const agentRows = useMemo(
     () => buildSubagentBrowseRows(subAgents, agentsSearchQuery),
     [subAgents, agentsSearchQuery],
+  );
+  const scheduleRows = useMemo(
+    () => buildScheduleBrowseRows(schedules, scheduleSearchQuery),
+    [schedules, scheduleSearchQuery],
   );
 
   const syncStoredMcpServers = useCallback((servers: McpServerConfig[]) => {
@@ -741,6 +755,70 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setShowAgentsEditor(false);
     setShowAgentsModal(true);
   }, []);
+
+  const openScheduleModal = useCallback(() => {
+    void agent
+      .listSchedules()
+      .then((latest) => {
+        setSchedules(latest);
+        setScheduleSearchQuery("");
+        setScheduleModalIndex(0);
+        setShowScheduleModal(true);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        setMessages((prev) => [...prev, buildAssistantEntry(`Failed to load schedules: ${message}`)]);
+      });
+  }, [agent]);
+
+  const showScheduleDetails = useCallback(
+    (schedule: StoredSchedule) => {
+      void agent
+        .getScheduleDaemonStatus()
+        .then((status) => {
+          setMessages((prev) => [...prev, buildAssistantEntry(formatScheduleDetails(schedule, status))]);
+          setShowScheduleModal(false);
+          setScheduleSearchQuery("");
+          setTimeout(() => {
+            try {
+              scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
+            } catch {
+              /* */
+            }
+          }, 10);
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setMessages((prev) => [...prev, buildAssistantEntry(`Failed to load schedule details: ${message}`)]);
+        });
+    },
+    [agent],
+  );
+
+  const removeSchedule = useCallback(
+    (schedule: StoredSchedule) => {
+      void agent
+        .removeSchedule(schedule.id)
+        .then(async (message) => {
+          const latest = await agent.listSchedules();
+          setSchedules(latest);
+          setScheduleModalIndex((index) => Math.max(0, Math.min(index, Math.max(0, latest.length - 1))));
+          setMessages((prev) => [...prev, buildAssistantEntry(message)]);
+          setTimeout(() => {
+            try {
+              scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
+            } catch {
+              /* */
+            }
+          }, 10);
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setMessages((prev) => [...prev, buildAssistantEntry(`Failed to remove schedule: ${message}`)]);
+        });
+    },
+    [agent],
+  );
 
   const openSubagentEditor = useCallback((agent: CustomSubagentConfig | null) => {
     setEditingSubagent(agent);
@@ -975,6 +1053,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     setMcpModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, mcpRows.length - 1))));
   }, [mcpRows.length]);
+
+  useEffect(() => {
+    setScheduleModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, scheduleRows.length - 1))));
+  }, [scheduleRows.length]);
 
   const scrollToBottom = useCallback(() => {
     try {
@@ -1422,6 +1504,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     showAgentsEditorRef.current = showAgentsEditor;
   }, [showAgentsEditor]);
+  useEffect(() => {
+    showScheduleModalRef.current = showScheduleModal;
+  }, [showScheduleModal]);
 
   useEffect(() => {
     return () => {
@@ -1758,6 +1843,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openAgentsModal();
         return true;
       }
+      if (c === "/schedule" || c === "/schedules") {
+        openScheduleModal();
+        return true;
+      }
       if (c === "/quit" || c === "/exit" || c === "/q") {
         handleExit();
         return true;
@@ -1791,7 +1880,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       return false;
     },
-    [handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession, subAgents],
+    [handleExit, openAgentsModal, openMcpModal, openScheduleModal, processMessage, resetToNewSession, subAgents],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -1840,6 +1929,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "agents":
           openAgentsModal();
           break;
+        case "schedule":
+          openScheduleModal();
+          break;
         case "review":
           processMessage(REVIEW_PROMPT);
           break;
@@ -1851,7 +1943,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
       }
     },
-    [agent, handleExit, openAgentsModal, openMcpModal, processMessage, resetToNewSession],
+    [agent, handleExit, openAgentsModal, openMcpModal, openScheduleModal, processMessage, resetToNewSession],
   );
 
   const blockPrompt =
@@ -1859,6 +1951,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showTelegramTokenModal ||
     showTelegramPairModal ||
     showMcpModal ||
+    showScheduleModal ||
     showAgentsModal ||
     showAgentsEditor;
 
@@ -2167,6 +2260,43 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (showScheduleModalRef.current) {
+        const row = scheduleRows[scheduleModalIndex];
+        if (isEscapeKey(key)) {
+          setShowScheduleModal(false);
+          setScheduleSearchQuery("");
+          return;
+        }
+        if (key.name === "up") {
+          setScheduleModalIndex((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setScheduleModalIndex((index) => Math.min(Math.max(0, scheduleRows.length - 1), index + 1));
+          return;
+        }
+        if (key.name === "return") {
+          if (row?.kind === "schedule") {
+            showScheduleDetails(row.schedule);
+          }
+          return;
+        }
+        if (key.name === "x" && key.ctrl && row?.kind === "schedule") {
+          removeSchedule(row.schedule);
+          return;
+        }
+        if (key.name === "backspace") {
+          setScheduleSearchQuery((query) => query.slice(0, -1));
+          setScheduleModalIndex(0);
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          setScheduleSearchQuery((query) => query + key.sequence);
+          setScheduleModalIndex(0);
+          return;
+        }
+        return;
+      }
       if (showAgentsModalRef.current && !showAgentsEditorRef.current) {
         const row = agentRows[agentsModalIndex];
         if (isEscapeKey(key)) {
@@ -2430,6 +2560,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openMcpEditor,
       replacePasteBlocks,
       openSubagentEditor,
+      removeSchedule,
+      scheduleModalIndex,
+      scheduleRows,
+      showScheduleDetails,
       submitTelegramPair,
       submitTelegramToken,
       submitMcpEditor,
@@ -2691,6 +2825,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           cwdRef={mcpCwdRef}
           envRef={mcpEnvRef}
           onSubmit={submitMcpEditor}
+        />
+      )}
+      {showScheduleModal && (
+        <ScheduleBrowserModal
+          t={t}
+          width={width}
+          height={height}
+          selectedIndex={scheduleModalIndex}
+          searchQuery={scheduleSearchQuery}
+          rows={scheduleRows}
         />
       )}
       {showAgentsModal && !showAgentsEditor && (
@@ -3608,6 +3752,26 @@ function BackgroundProcessLine({ t, id, pid, command }: { t: Theme; id: number; 
       </text>
     </box>
   );
+}
+
+function formatScheduleDetails(schedule: StoredSchedule, daemonStatus: ScheduleDaemonStatus): string {
+  const daemonText = daemonStatus.running
+    ? `running${daemonStatus.pid ? ` (pid ${daemonStatus.pid})` : ""}`
+    : "not running";
+  return [
+    `Schedule: ${schedule.name}`,
+    `ID: ${schedule.id}`,
+    `Type: ${schedule.cron ? "recurring" : "one-time"}`,
+    `Cron: ${schedule.cron ?? "runs once immediately"}`,
+    `Enabled: ${schedule.enabled ? "yes" : "no"}`,
+    `Model: ${schedule.model}`,
+    `Directory: ${schedule.directory}`,
+    `Last run: ${schedule.lastRunAt ?? "never"}`,
+    `Daemon: ${daemonText}`,
+    "",
+    "Instruction:",
+    schedule.instruction,
+  ].join("\n");
 }
 
 function ProcessLogsView({ t, content }: { t: Theme; content: string }) {

@@ -1,0 +1,83 @@
+import { describe, expect, it, vi } from "vitest";
+import { BashTool } from "../tools/bash";
+import { createTools } from "./tools";
+
+function createScheduleToolSet(overrides?: {
+  getDaemonStatus?: () => Promise<{ running: boolean; pid: number | null }>;
+  startDaemon?: () => Promise<{
+    status: { running: boolean; pid: number | null };
+    pid: number | null;
+    alreadyRunning: boolean;
+  }>;
+  stopDaemon?: () => Promise<{
+    status: { running: boolean; pid: number | null };
+    pid: number | null;
+    wasRunning: boolean;
+  }>;
+}) {
+  const scheduleManager = {
+    getDaemonStatus: overrides?.getDaemonStatus ?? vi.fn(async () => ({ running: false, pid: null })),
+    startDaemon:
+      overrides?.startDaemon ??
+      vi.fn(async () => ({ status: { running: true, pid: 1234 }, pid: 1234, alreadyRunning: false })),
+    stopDaemon:
+      overrides?.stopDaemon ??
+      vi.fn(async () => ({ status: { running: false, pid: null }, pid: 1234, wasRunning: true })),
+  };
+
+  const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
+    scheduleManager: scheduleManager as never,
+  });
+
+  return {
+    tools: tools as Record<string, { execute: (input: unknown, context?: unknown) => Promise<unknown> }>,
+    scheduleManager,
+  };
+}
+
+describe("schedule daemon tools", () => {
+  it("reports daemon status", async () => {
+    const { tools } = createScheduleToolSet({
+      getDaemonStatus: async () => ({ running: true, pid: 4321 }),
+    });
+
+    const result = (await tools.schedule_daemon_status.execute({}, {})) as { success: boolean; output: string };
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("Daemon status: running");
+    expect(result.output).toContain("4321");
+  });
+
+  it("formats daemon start output for a fresh start", async () => {
+    const { tools } = createScheduleToolSet({
+      startDaemon: async () => ({ status: { running: true, pid: 5555 }, pid: 5555, alreadyRunning: false }),
+    });
+
+    const result = (await tools.schedule_daemon_start.execute({}, {})) as { success: boolean; output: string };
+
+    expect(result.success).toBe(true);
+    expect(result.output).toBe("Schedule daemon started (pid 5555).");
+  });
+
+  it("formats daemon start output when already running", async () => {
+    const { tools } = createScheduleToolSet({
+      startDaemon: async () => ({ status: { running: true, pid: 7777 }, pid: 7777, alreadyRunning: true }),
+    });
+
+    const result = (await tools.schedule_daemon_start.execute({}, {})) as { success: boolean; output: string };
+
+    expect(result.success).toBe(true);
+    expect(result.output).toBe("Schedule daemon already running (pid 7777).");
+  });
+
+  it("formats daemon stop output", async () => {
+    const { tools } = createScheduleToolSet({
+      stopDaemon: async () => ({ status: { running: false, pid: null }, pid: 8888, wasRunning: true }),
+    });
+
+    const result = (await tools.schedule_daemon_stop.execute({}, {})) as { success: boolean; output: string };
+
+    expect(result.success).toBe(true);
+    expect(result.output).toBe("Schedule daemon stopped (pid 8888).");
+  });
+});

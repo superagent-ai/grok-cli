@@ -2,6 +2,7 @@ import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { BashTool } from "../tools/bash";
 import { editFile, readFile, writeFile } from "../tools/file";
+import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
@@ -23,6 +24,7 @@ interface CreateToolsOptions {
   runDelegation?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
   readDelegation?: (id: string) => Promise<ToolResult>;
   listDelegations?: () => Promise<ToolResult>;
+  scheduleManager?: ScheduleManager;
   subagents?: CustomSubagentConfig[];
   sendTelegramFile?: (filePath: string) => Promise<ToolResult>;
 }
@@ -337,6 +339,176 @@ export function createTools(
         },
       });
     }
+
+    if (options.scheduleManager) {
+      const schedules = options.scheduleManager;
+
+      tools.schedule_create = tool({
+        description:
+          "Create a recurring or one-time scheduled headless Grok run. Provide a name, the instruction to run, and a cron expression for recurring schedules. Omit cron for an immediate one-time run.",
+        inputSchema: z.object({
+          name: z.string().describe("Human-readable schedule name"),
+          instruction: z.string().describe("The prompt/instruction Grok should run headlessly"),
+          cron: z.string().optional().describe("Cron expression for recurring schedules, such as '0 9 * * 1-5'"),
+          model: z.string().optional().describe("Optional model override; defaults to the current selected model"),
+          directory: z.string().optional().describe("Optional working directory; defaults to the current directory"),
+          max_tool_rounds: z.number().int().positive().optional().describe("Optional max tool rounds override"),
+        }),
+        execute: async ({ name, instruction, cron, model, directory, max_tool_rounds }) => {
+          try {
+            const result = await schedules.create({
+              name,
+              instruction,
+              cron,
+              model,
+              directory,
+              maxToolRounds: max_tool_rounds,
+            });
+
+            const lines = [
+              `Schedule created: ${result.schedule.name}`,
+              `ID: ${result.schedule.id}`,
+              `Type: ${result.schedule.cron ? "recurring" : "one-time"}`,
+              `Model: ${result.schedule.model}`,
+              `Directory: ${result.schedule.directory}`,
+            ];
+            if (result.schedule.cron) {
+              lines.push(`Cron: ${result.schedule.cron}`);
+              lines.push(formatDaemonReminder(result.daemonStatus));
+            } else {
+              lines.push(`Run started in background${result.startedPid ? ` (pid ${result.startedPid})` : ""}.`);
+            }
+
+            return { success: true, output: lines.join("\n") };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to create schedule: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_list = tool({
+        description:
+          "List all saved schedules, including one-time and recurring runs, along with daemon status and last run time.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const [items, daemonStatus] = await Promise.all([schedules.list(), schedules.getDaemonStatus()]);
+            if (items.length === 0) {
+              return {
+                success: true,
+                output: `No schedules found.\n${formatDaemonReminder(daemonStatus)}`,
+              };
+            }
+
+            return {
+              success: true,
+              output: formatScheduleList(items, daemonStatus),
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to list schedules: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_remove = tool({
+        description: "Remove a saved schedule and its run logs by schedule id.",
+        inputSchema: z.object({
+          id: z.string().describe("Schedule id, such as 'daily-security-scan'"),
+        }),
+        execute: async ({ id }) => {
+          try {
+            const removed = await schedules.remove(id);
+            if (!removed) {
+              return { success: false, output: `Schedule "${id}" not found.` };
+            }
+            return {
+              success: true,
+              output: `Removed schedule "${removed.name}" (${removed.id}).`,
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to remove schedule: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_read_log = tool({
+        description: "Read recent log output from a saved schedule.",
+        inputSchema: z.object({
+          id: z.string().describe("Schedule id, such as 'daily-security-scan'"),
+          tail: z.number().int().positive().optional().describe("Number of log lines to return from the end"),
+        }),
+        execute: async ({ id, tail }) => {
+          try {
+            return {
+              success: true,
+              output: await schedules.readLog(id, tail ?? 50),
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to read schedule log: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_daemon_status = tool({
+        description: "Check whether the schedule daemon is currently running.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const status = await schedules.getDaemonStatus();
+            return {
+              success: true,
+              output: formatDaemonReminder(status),
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to get schedule daemon status: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_daemon_start = tool({
+        description:
+          "Start the schedule daemon in the background so recurring schedules can run even after the TUI closes.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const result = await schedules.startDaemon();
+            return {
+              success: true,
+              output: result.alreadyRunning
+                ? `Schedule daemon already running${result.status.pid ? ` (pid ${result.status.pid})` : ""}.`
+                : `Schedule daemon started${result.pid ? ` (pid ${result.pid})` : ""}.`,
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to start schedule daemon: ${msg}` };
+          }
+        },
+      });
+
+      tools.schedule_daemon_stop = tool({
+        description: "Stop the background schedule daemon.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          try {
+            const result = await schedules.stopDaemon();
+            return {
+              success: true,
+              output: result.wasRunning
+                ? `Schedule daemon stopped${result.pid ? ` (pid ${result.pid})` : ""}.`
+                : "Schedule daemon is not running.",
+            };
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { success: false, output: `Failed to stop schedule daemon: ${msg}` };
+          }
+        },
+      });
+    }
   }
 
   if (mode !== "plan") return tools;
@@ -389,4 +561,38 @@ export function createTools(
   });
 
   return tools;
+}
+
+function formatScheduleList(schedules: StoredSchedule[], daemonStatus: ScheduleDaemonStatus): string {
+  const lines = [
+    `Daemon: ${daemonStatus.running ? `running${daemonStatus.pid ? ` (pid ${daemonStatus.pid})` : ""}` : "not running"}`,
+  ];
+
+  for (const schedule of schedules) {
+    const scheduleType = schedule.cron ? "recurring" : "one-time";
+    lines.push("");
+    lines.push(`- ${schedule.name} (\`${schedule.id}\`)`);
+    lines.push(`  type: ${scheduleType}`);
+    if (schedule.cron) {
+      lines.push(`  cron: ${schedule.cron}`);
+      lines.push(`  enabled: ${schedule.enabled ? "yes" : "no"}`);
+    }
+    lines.push(`  model: ${schedule.model}`);
+    lines.push(`  directory: ${schedule.directory}`);
+    lines.push(`  last run: ${schedule.lastRunAt ?? "never"}`);
+  }
+
+  if (!daemonStatus.running) {
+    lines.push("");
+    lines.push("Start `grok daemon` to run recurring schedules.");
+  }
+
+  return lines.join("\n");
+}
+
+function formatDaemonReminder(status: ScheduleDaemonStatus): string {
+  if (status.running) {
+    return `Daemon status: running${status.pid ? ` (pid ${status.pid})` : ""}.`;
+  }
+  return "Daemon status: not running. Use `schedule_daemon_start` (or `grok daemon`) to run recurring schedules.";
 }
