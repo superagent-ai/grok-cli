@@ -412,7 +412,7 @@ function formatAge(start: Date): string {
   return `${hr}h${min % 60}m`;
 }
 
-function wrapCommandForShuru(cwd: string, command: string): string {
+export function wrapCommandForShuru(cwd: string, command: string): string {
   const mountArg = `${cwd}:/workspace`;
   const innerCommand = `cd /workspace && ${command}`;
   return `shuru run --mount ${shellQuote(mountArg)} -- sh -lc ${shellQuote(innerCommand)}`;
@@ -429,11 +429,11 @@ function getSandboxUnsupportedReason(): string | null {
   return null;
 }
 
-function getSandboxMutationBlockReason(command: string): string | null {
+export function getSandboxMutationBlockReason(command: string): string | null {
   const trimmed = command.trim();
   if (!trimmed) return null;
 
-  if (/\bgit\s+/.test(trimmed) && !/\bgit\s+(status|diff|log|show|rev-parse|branch|grep|ls-files)\b/.test(trimmed)) {
+  if (/\bgit\s+/.test(trimmed) && !/\bgit\s+(status|diff|log|show|rev-parse|grep|ls-files)\b/.test(trimmed)) {
     return [
       "Sandbox mode blocks git commands that mutate repository state because Shuru guest-side workspace changes do not persist back to the host.",
       "Disable sandbox mode to run persistent git mutations on the real workspace.",

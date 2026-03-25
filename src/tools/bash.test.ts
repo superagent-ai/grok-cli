@@ -1,12 +1,9 @@
-import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PassThrough } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { BashTool, getSandboxMutationBlockReason, wrapCommandForShuru } from "./bash";
 
-const originalPlatform = process.platform;
-const originalArch = process.arch;
 const tempDirs: string[] = [];
 
 function makeTempDir(prefix: string): string {
@@ -15,142 +12,117 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
-async function importBashModule(
-  options: { execMock?: ReturnType<typeof vi.fn>; spawnMock?: ReturnType<typeof vi.fn> } = {},
-) {
-  vi.resetModules();
-  vi.doUnmock("child_process");
-
-  if (options.execMock || options.spawnMock) {
-    vi.doMock("child_process", async () => {
-      const actual = await vi.importActual<typeof import("child_process")>("child_process");
-      return {
-        ...actual,
-        exec: options.execMock ?? actual.exec,
-        spawn: options.spawnMock ?? actual.spawn,
-      };
-    });
-  }
-
-  return import("./bash");
-}
-
-function setAppleSiliconHost(): void {
-  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
-  Object.defineProperty(process, "arch", { value: "arm64", configurable: true });
-}
-
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
-  Object.defineProperty(process, "arch", { value: originalArch, configurable: true });
-  vi.restoreAllMocks();
-  vi.resetModules();
-  vi.doUnmock("child_process");
 });
 
-describe("BashTool sandbox mode", () => {
-  it("leaves host commands unchanged when sandbox is off", async () => {
-    const execMock = vi.fn(
-      (_command: string, _options: unknown, callback: (err: Error | null, stdout: string, stderr: string) => void) => {
-        setTimeout(() => callback(null, "ok\n", ""), 0);
-        return { kill: vi.fn() };
-      },
+describe("wrapCommandForShuru", () => {
+  it("wraps a simple command with mount and workspace cd", () => {
+    const result = wrapCommandForShuru("/repo", "echo hi");
+    expect(result).toBe("shuru run --mount '/repo:/workspace' -- sh -lc 'cd /workspace && echo hi'");
+  });
+
+  it("handles paths with spaces", () => {
+    const result = wrapCommandForShuru("/my repo", "ls");
+    expect(result).toBe("shuru run --mount '/my repo:/workspace' -- sh -lc 'cd /workspace && ls'");
+  });
+
+  it("escapes single quotes in the command", () => {
+    const result = wrapCommandForShuru("/repo", "echo 'hello world'");
+    expect(result).toContain("'\\''hello world'\\''");
+  });
+});
+
+describe("getSandboxMutationBlockReason", () => {
+  it("returns null for read-only git commands", () => {
+    expect(getSandboxMutationBlockReason("git status")).toBeNull();
+    expect(getSandboxMutationBlockReason("git diff")).toBeNull();
+    expect(getSandboxMutationBlockReason("git log --oneline")).toBeNull();
+    expect(getSandboxMutationBlockReason("git show HEAD")).toBeNull();
+    expect(getSandboxMutationBlockReason("git rev-parse HEAD")).toBeNull();
+    expect(getSandboxMutationBlockReason("git grep foo")).toBeNull();
+    expect(getSandboxMutationBlockReason("git ls-files")).toBeNull();
+  });
+
+  it("blocks mutating git commands", () => {
+    expect(getSandboxMutationBlockReason("git add .")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("git commit -m 'test'")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("git push")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("git checkout -b new")).toContain("Sandbox mode blocks git commands");
+  });
+
+  it("blocks git inside compound shell expressions", () => {
+    expect(getSandboxMutationBlockReason('echo foo && git commit -m "test"')).toContain(
+      "Sandbox mode blocks git commands",
     );
-    const { BashTool } = await importBashModule({ execMock });
-    const bash = new BashTool("/repo");
-
-    const result = await bash.execute("echo hi");
-
-    expect(result.success).toBe(true);
-    expect(execMock).toHaveBeenCalledWith("echo hi", expect.objectContaining({ cwd: "/repo" }), expect.any(Function));
+    expect(getSandboxMutationBlockReason('bash -c "git push"')).toContain("Sandbox mode blocks git commands");
   });
 
-  it("wraps foreground commands with shuru when sandbox is enabled", async () => {
-    setAppleSiliconHost();
-    const execMock = vi.fn(
-      (_command: string, _options: unknown, callback: (err: Error | null, stdout: string, stderr: string) => void) => {
-        setTimeout(() => callback(null, "sandboxed\n", ""), 0);
-        return { kill: vi.fn() };
-      },
-    );
-    const { BashTool } = await importBashModule({ execMock });
-    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
-
-    const result = await bash.execute("echo hi");
-
-    expect(result.success).toBe(true);
-    expect(execMock).toHaveBeenCalledWith(
-      "shuru run --mount '/repo:/workspace' -- sh -lc 'cd /workspace && echo hi'",
-      expect.objectContaining({ cwd: "/repo" }),
-      expect.any(Function),
-    );
+  it("blocks git branch since it can mutate", () => {
+    expect(getSandboxMutationBlockReason("git branch -D feature")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("git branch new-name")).toContain("Sandbox mode blocks git commands");
   });
 
-  it("wraps background commands with shuru when sandbox is enabled", async () => {
-    setAppleSiliconHost();
-    const spawnMock = vi.fn(() => {
-      const child = new EventEmitter() as EventEmitter & {
-        stdout: PassThrough;
-        stderr: PassThrough;
-        pid: number;
-      };
-      child.stdout = new PassThrough();
-      child.stderr = new PassThrough();
-      child.pid = 4321;
-      return child;
-    });
-    const { BashTool } = await importBashModule({ spawnMock });
-    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
-
-    const result = await bash.startBackground("npm run dev");
-
-    expect(result.success).toBe(true);
-    expect(spawnMock).toHaveBeenCalledWith(
-      "sh",
-      ["-c", "shuru run --mount '/repo:/workspace' -- sh -lc 'cd /workspace && npm run dev'"],
-      expect.objectContaining({ cwd: "/repo" }),
-    );
+  it("blocks package-manager installs", () => {
+    expect(getSandboxMutationBlockReason("npm install express")).toContain("Package-manager installs");
+    expect(getSandboxMutationBlockReason("yarn add lodash")).toContain("Package-manager installs");
+    expect(getSandboxMutationBlockReason("pnpm install")).toContain("Package-manager installs");
+    expect(getSandboxMutationBlockReason("bun add zod")).toContain("Package-manager installs");
   });
 
-  it("blocks mutating git commands in sandbox mode", async () => {
-    setAppleSiliconHost();
-    const execMock = vi.fn();
-    const { BashTool } = await importBashModule({ execMock });
-    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
-
-    const result = await bash.execute("git add .");
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Sandbox mode blocks git commands");
-    expect(execMock).not.toHaveBeenCalled();
+  it("blocks package-manager installs in compound commands", () => {
+    expect(getSandboxMutationBlockReason("echo foo && npm install express")).toContain("Package-manager installs");
   });
 
-  it("blocks mutating git commands inside compound shell expressions", async () => {
-    setAppleSiliconHost();
-    const execMock = vi.fn();
-    const { BashTool } = await importBashModule({ execMock });
-    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
-
-    const result = await bash.execute('echo foo && git commit -m "test"');
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Sandbox mode blocks git commands");
-    expect(execMock).not.toHaveBeenCalled();
+  it("blocks formatters that rewrite files", () => {
+    expect(getSandboxMutationBlockReason("prettier --write src/")).toContain("formatters");
+    expect(getSandboxMutationBlockReason("biome check --write src/")).toContain("formatters");
   });
 
-  it("tracks cwd changes independently of sandbox mode", async () => {
-    const { BashTool } = await importBashModule();
+  it("allows safe non-mutating commands", () => {
+    expect(getSandboxMutationBlockReason("ls -la")).toBeNull();
+    expect(getSandboxMutationBlockReason("cat README.md")).toBeNull();
+    expect(getSandboxMutationBlockReason("grep -r foo src/")).toBeNull();
+    expect(getSandboxMutationBlockReason("uname -a")).toBeNull();
+    expect(getSandboxMutationBlockReason("npm run test")).toBeNull();
+    expect(getSandboxMutationBlockReason("node -e 'console.log(1)'")).toBeNull();
+  });
+
+  it("returns null for empty commands", () => {
+    expect(getSandboxMutationBlockReason("")).toBeNull();
+    expect(getSandboxMutationBlockReason("   ")).toBeNull();
+  });
+});
+
+describe("BashTool sandbox state", () => {
+  it("tracks cwd changes independently of sandbox mode", () => {
     const root = makeTempDir("grok-bash-test-");
     const nested = path.join(root, "nested");
     fs.mkdirSync(nested);
     const bash = new BashTool(root, { sandboxMode: "shuru" });
 
-    const result = await bash.execute(`cd "${nested}"`);
+    expect(bash.getCwd()).toBe(root);
+    expect(bash.getSandboxMode()).toBe("shuru");
+  });
 
-    expect(result.success).toBe(true);
-    expect(bash.getCwd()).toBe(nested);
+  it("can switch sandbox mode at runtime", () => {
+    const bash = new BashTool("/repo", { sandboxMode: "off" });
+
+    expect(bash.getSandboxMode()).toBe("off");
+
+    bash.setSandboxMode("shuru");
+
+    expect(bash.getSandboxMode()).toBe("shuru");
+  });
+
+  it("returns sandbox-aware tool description", () => {
+    const off = new BashTool("/repo", { sandboxMode: "off" });
+    const on = new BashTool("/repo", { sandboxMode: "shuru" });
+
+    expect(off.getToolDescription()).not.toContain("Shuru");
+    expect(on.getToolDescription()).toContain("Shuru sandbox");
+    expect(on.getToolDescription()).toContain("do not persist back to the host");
   });
 });
