@@ -45,6 +45,7 @@ import {
   type McpRemoteTransport,
   type McpServerConfig,
   type SandboxMode,
+  type SandboxSettings,
   saveApprovedTelegramUserId,
   saveMcpServers,
   saveProjectSettings,
@@ -348,10 +349,104 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/commit-pr",
 ]);
 
-const SANDBOX_OPTIONS: Array<{ id: SandboxMode; label: string; description: string }> = [
-  { id: "off", label: "Off", description: "Run shell commands directly on the host" },
-  { id: "shuru", label: "Shuru", description: "Run shell commands inside a Shuru sandbox" },
+interface SandboxRow {
+  key: string;
+  label: string;
+  type: "toggle" | "text";
+  placeholder?: string;
+  getDisplay: (mode: SandboxMode, s: SandboxSettings) => string;
+  getOptions?: () => string[];
+  apply: (mode: SandboxMode, s: SandboxSettings, value: string) => { mode?: SandboxMode; settings?: SandboxSettings };
+}
+
+const SANDBOX_ROWS: SandboxRow[] = [
+  {
+    key: "mode",
+    label: "Mode",
+    type: "toggle",
+    getDisplay: (mode) => (mode === "shuru" ? "Shuru" : "Off"),
+    getOptions: () => ["Off", "Shuru"],
+    apply: (_mode, _s, value) => ({ mode: value === "Shuru" ? "shuru" : "off" }),
+  },
+  {
+    key: "allowNet",
+    label: "Network",
+    type: "toggle",
+    getDisplay: (_m, s) => (s.allowNet ? "On" : "Off"),
+    getOptions: () => ["Off", "On"],
+    apply: (_m, _s, value) => ({ settings: { allowNet: value === "On" } }),
+  },
+  {
+    key: "allowedHosts",
+    label: "Allowed hosts",
+    type: "text",
+    placeholder: "api.openai.com, registry.npmjs.org",
+    getDisplay: (_m, s) => s.allowedHosts?.join(", ") || "(unrestricted)",
+    apply: (_m, _s, value) => ({
+      settings: {
+        allowedHosts: value
+          ? value
+              .split(",")
+              .map((h) => h.trim())
+              .filter(Boolean)
+          : undefined,
+      },
+    }),
+  },
+  {
+    key: "ports",
+    label: "Port forwards",
+    type: "text",
+    placeholder: "8080:80, 8443:443",
+    getDisplay: (_m, s) => s.ports?.join(", ") || "(none)",
+    apply: (_m, _s, value) => ({
+      settings: {
+        ports: value
+          ? value
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean)
+          : undefined,
+      },
+    }),
+  },
+  {
+    key: "cpus",
+    label: "CPUs",
+    type: "text",
+    placeholder: "e.g. 4",
+    getDisplay: (_m, s) => (s.cpus ? String(s.cpus) : "(default)"),
+    apply: (_m, _s, value) => ({ settings: { cpus: value ? parseInt(value, 10) || undefined : undefined } }),
+  },
+  {
+    key: "memory",
+    label: "Memory (MB)",
+    type: "text",
+    placeholder: "e.g. 4096",
+    getDisplay: (_m, s) => (s.memory ? String(s.memory) : "(default)"),
+    apply: (_m, _s, value) => ({ settings: { memory: value ? parseInt(value, 10) || undefined : undefined } }),
+  },
+  {
+    key: "diskSize",
+    label: "Disk size (MB)",
+    type: "text",
+    placeholder: "e.g. 8192",
+    getDisplay: (_m, s) => (s.diskSize ? String(s.diskSize) : "(default)"),
+    apply: (_m, _s, value) => ({ settings: { diskSize: value ? parseInt(value, 10) || undefined : undefined } }),
+  },
+  {
+    key: "from",
+    label: "Checkpoint",
+    type: "text",
+    placeholder: "checkpoint name",
+    getDisplay: (_m, s) => s.from || "(none)",
+    apply: (_m, _s, value) => ({ settings: { from: value || undefined } }),
+  },
 ];
+
+function getSandboxVisibleRows(mode: SandboxMode): SandboxRow[] {
+  return mode === "shuru" ? SANDBOX_ROWS : SANDBOX_ROWS.slice(0, 1);
+}
 
 function parseCustomSubagentSlashCommand(
   cmd: string,
@@ -406,6 +501,7 @@ export interface AppStartupConfig {
   baseURL: string;
   model: string;
   sandboxMode: SandboxMode;
+  sandboxSettings: SandboxSettings;
   maxToolRounds: number;
 }
 
@@ -444,7 +540,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [showSandboxPicker, setShowSandboxPicker] = useState(false);
-  const [sandboxPickerIndex, setSandboxPickerIndex] = useState(0);
+  const [sandboxSettings, setSandboxSettingsState] = useState<SandboxSettings>(() => agent.getSandboxSettings());
+  const [sandboxSettingsFocusIndex, setSandboxSettingsFocusIndex] = useState(0);
+  const [sandboxSettingsEditing, setSandboxSettingsEditing] = useState<string | null>(null);
+  const [sandboxSettingsEditBuffer, setSandboxSettingsEditBuffer] = useState("");
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
@@ -584,7 +683,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
-  const currentSandboxIndex = SANDBOX_OPTIONS.findIndex((option) => option.id === sandboxMode);
   const filteredSlashItems = slashSearchQuery
     ? SLASH_MENU_ITEMS.filter(
         (item) =>
@@ -621,10 +719,25 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [agent],
   );
 
+  const applySandboxSettings = useCallback(
+    (next: SandboxSettings) => {
+      agent.setSandboxSettings(next);
+      for (const telegramAgent of telegramAgentsRef.current.values()) {
+        telegramAgent.setSandboxSettings(next);
+      }
+      setSandboxSettingsState(next);
+      saveProjectSettings({ sandbox: next });
+      saveUserSettings({ sandbox: next });
+    },
+    [agent],
+  );
+
   const openSandboxPicker = useCallback(() => {
-    setSandboxPickerIndex(Math.max(0, currentSandboxIndex));
+    setSandboxSettingsFocusIndex(0);
+    setSandboxSettingsEditing(null);
+    setSandboxSettingsEditBuffer("");
     setShowSandboxPicker(true);
-  }, [currentSandboxIndex]);
+  }, []);
 
   const setReasoningEfforts = useCallback((next: Record<string, ReasoningEffort>) => {
     setReasoningEffortByModel(next);
@@ -1307,6 +1420,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       const a = new Agent(apiKey, startupConfig.baseURL, startupConfig.model, startupConfig.maxToolRounds, {
         session: sid,
         sandboxMode,
+        sandboxSettings,
       });
       if (!sid && a.getSessionId()) {
         saveUserSettings({
@@ -1323,7 +1437,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       map.set(userId, a);
       return a;
     },
-    [sandboxMode, startupConfig, wireTelegramAgentUi],
+    [sandboxMode, sandboxSettings, startupConfig, wireTelegramAgentUi],
   );
 
   const appendTelegramUserMessage = useCallback(
@@ -2526,24 +2640,82 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showSandboxPicker) {
+        const visibleRows = getSandboxVisibleRows(sandboxMode);
+
+        if (sandboxSettingsEditing) {
+          if (isEscapeKey(key)) {
+            setSandboxSettingsEditing(null);
+            setSandboxSettingsEditBuffer("");
+            return;
+          }
+          if (key.name === "return") {
+            const row = visibleRows.find((r) => r.key === sandboxSettingsEditing);
+            if (row) {
+              const result = row.apply(sandboxMode, sandboxSettings, sandboxSettingsEditBuffer.trim());
+              if (result.mode !== undefined) applySandboxMode(result.mode);
+              if (result.settings) applySandboxSettings({ ...sandboxSettings, ...result.settings });
+            }
+            setSandboxSettingsEditing(null);
+            setSandboxSettingsEditBuffer("");
+            return;
+          }
+          if (key.name === "backspace") {
+            setSandboxSettingsEditBuffer((b) => b.slice(0, -1));
+            return;
+          }
+          if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+            setSandboxSettingsEditBuffer((b) => b + key.sequence);
+            return;
+          }
+          return;
+        }
+
         if (isEscapeKey(key)) {
           setShowSandboxPicker(false);
           return;
         }
         if (key.name === "up") {
-          setSandboxPickerIndex((i) => Math.max(0, i - 1));
+          setSandboxSettingsFocusIndex((i) => Math.max(0, i - 1));
           return;
         }
         if (key.name === "down") {
-          setSandboxPickerIndex((i) => Math.min(SANDBOX_OPTIONS.length - 1, i + 1));
+          setSandboxSettingsFocusIndex((i) => Math.min(visibleRows.length - 1, i + 1));
           return;
         }
-        if (key.name === "return") {
-          const selected = SANDBOX_OPTIONS[sandboxPickerIndex];
-          if (selected) {
-            applySandboxMode(selected.id);
+
+        const focusedRow = visibleRows[sandboxSettingsFocusIndex];
+        if (!focusedRow) return;
+
+        if (focusedRow.type === "toggle" && (key.name === "left" || key.name === "right")) {
+          const options = focusedRow.getOptions!();
+          const current = focusedRow.getDisplay(sandboxMode, sandboxSettings);
+          const idx = options.indexOf(current);
+          const next =
+            key.name === "right" ? options[Math.min(options.length - 1, idx + 1)] : options[Math.max(0, idx - 1)];
+          if (next && next !== current) {
+            const result = focusedRow.apply(sandboxMode, sandboxSettings, next);
+            if (result.mode !== undefined) applySandboxMode(result.mode);
+            if (result.settings) applySandboxSettings({ ...sandboxSettings, ...result.settings });
           }
-          setShowSandboxPicker(false);
+          return;
+        }
+
+        if (key.name === "return") {
+          if (focusedRow.type === "toggle") {
+            const options = focusedRow.getOptions!();
+            const current = focusedRow.getDisplay(sandboxMode, sandboxSettings);
+            const idx = options.indexOf(current);
+            const next = options[(idx + 1) % options.length];
+            const result = focusedRow.apply(sandboxMode, sandboxSettings, next);
+            if (result.mode !== undefined) applySandboxMode(result.mode);
+            if (result.settings) applySandboxSettings({ ...sandboxSettings, ...result.settings });
+          } else {
+            setSandboxSettingsEditing(focusedRow.key);
+            const current = sandboxSettings[focusedRow.key as keyof SandboxSettings];
+            setSandboxSettingsEditBuffer(
+              Array.isArray(current) ? current.join(", ") : current != null ? String(current) : "",
+            );
+          }
           return;
         }
         return;
@@ -2654,7 +2826,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       pqs,
       removeEditingSubagent,
       applySandboxMode,
-      sandboxPickerIndex,
+      applySandboxSettings,
+      sandboxSettings,
+      sandboxSettingsEditing,
+      sandboxSettingsEditBuffer,
+      sandboxSettingsFocusIndex,
+      sandboxMode,
       showModelPicker,
       showPlanPanel,
       showSandboxPicker,
@@ -2972,7 +3149,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         <SandboxPickerModal
           t={t}
           currentMode={sandboxMode}
-          selectedIndex={sandboxPickerIndex}
+          settings={sandboxSettings}
+          focusIndex={sandboxSettingsFocusIndex}
+          editing={sandboxSettingsEditing}
+          editBuffer={sandboxSettingsEditBuffer}
           width={width}
           height={height}
         />
@@ -4400,19 +4580,27 @@ function ModelPickerModal({
 function SandboxPickerModal({
   t,
   currentMode,
-  selectedIndex,
+  settings,
+  focusIndex,
+  editing,
+  editBuffer,
   width,
   height,
 }: {
   t: Theme;
   currentMode: SandboxMode;
-  selectedIndex: number;
+  settings: SandboxSettings;
+  focusIndex: number;
+  editing: string | null;
+  editBuffer: string;
   width: number;
   height: number;
 }) {
-  const panelHeight = Math.min(SANDBOX_OPTIONS.length + 5, Math.floor(height * 0.4));
+  const visibleRows = getSandboxVisibleRows(currentMode);
+  const panelHeight = Math.min(visibleRows.length + 6, Math.floor(height * 0.6));
   const top = bottomAlignedModalTop(height, panelHeight);
   const overlayBg = "#000000cc" as string;
+
   return (
     <box
       position="absolute"
@@ -4434,32 +4622,50 @@ function SandboxPickerModal({
       >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}>
-            <b>{"Select sandbox mode"}</b>
+            <b>{"Sandbox settings"}</b>
           </text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
         <scrollbox flexGrow={1} minHeight={0}>
-          {SANDBOX_OPTIONS.map((option, idx) => {
-            const selected = idx === selectedIndex;
-            const current = option.id === currentMode;
+          {visibleRows.map((row, idx) => {
+            const focused = idx === focusIndex;
+            const isEditing = editing === row.key;
+            const display = row.getDisplay(currentMode, settings);
             return (
               <box
-                key={option.id}
-                backgroundColor={selected ? t.selectedBg : undefined}
+                key={row.key}
+                backgroundColor={focused ? t.selectedBg : undefined}
                 paddingLeft={2}
                 paddingRight={2}
                 width="100%"
               >
                 <box width="100%" flexDirection="row" justifyContent="space-between">
-                  <text fg={current ? t.accent : selected ? t.selected : t.text}>{option.label}</text>
-                  <text fg={selected ? t.primary : t.textMuted}>{option.description}</text>
+                  <text fg={focused ? t.selected : t.text}>{row.label}</text>
+                  {isEditing ? (
+                    <text fg={t.accent}>
+                      {editBuffer || row.placeholder || ""}
+                      {"_"}
+                    </text>
+                  ) : row.type === "toggle" ? (
+                    <text fg={focused ? t.primary : t.textMuted}>
+                      {"< "}
+                      {display}
+                      {" >"}
+                    </text>
+                  ) : (
+                    <text fg={focused ? t.primary : t.textMuted}>{display}</text>
+                  )}
                 </box>
               </box>
             );
           })}
         </scrollbox>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <text fg={t.textMuted}>{"enter select  esc close"}</text>
+          <text fg={t.textMuted}>
+            {editing
+              ? "type value  enter confirm  esc cancel"
+              : "arrows navigate  left/right toggle  enter edit  esc close"}
+          </text>
         </box>
       </box>
     </box>

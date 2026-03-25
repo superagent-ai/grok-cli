@@ -91,4 +91,52 @@ describe("DelegationManager sandbox propagation", () => {
     expect(record.sandboxMode).toBe("shuru");
     expect(record.pid).toBe(2468);
   });
+
+  it("persists sandbox settings in background delegation records", async () => {
+    const home = makeTempDir("grok-delegation-home-");
+    const cwd = makeTempDir("grok-delegation-cwd-");
+    const spawnMock = vi.fn(() => ({
+      pid: 3579,
+      unref: vi.fn(),
+    }));
+    const mod = await importDelegationsModule({ home, spawnMock });
+    const manager = new mod.DelegationManager(() => cwd);
+
+    const sandboxSettings = {
+      allowNet: true,
+      allowedHosts: ["api.openai.com"],
+      cpus: 4,
+      memory: 4096,
+    };
+
+    await manager.start(
+      {
+        agent: "explore",
+        description: "Inspect",
+        prompt: "Look around",
+      },
+      {
+        model: "grok-test-model",
+        sandboxMode: "shuru",
+        sandboxSettings,
+        maxToolRounds: 25,
+        maxTokens: 2048,
+      },
+    );
+
+    const cliArgs = (spawnMock.mock.calls[0] as unknown[])?.[1] as string[];
+    const jobPath = cliArgs[cliArgs.indexOf("--background-task-file") + 1] as string;
+    const record = JSON.parse(fs.readFileSync(jobPath, "utf8")) as {
+      sandboxMode: string;
+      sandboxSettings?: {
+        allowNet: boolean;
+        allowedHosts: string[];
+        cpus: number;
+        memory: number;
+      };
+    };
+
+    expect(record.sandboxMode).toBe("shuru");
+    expect(record.sandboxSettings).toEqual(sandboxSettings);
+  });
 });

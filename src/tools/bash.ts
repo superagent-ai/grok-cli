@@ -4,7 +4,7 @@ import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import type { ToolResult } from "../types/index";
-import type { SandboxMode } from "../utils/settings";
+import type { SandboxMode, SandboxSettings } from "../utils/settings";
 
 const MAX_TAIL_BYTES = 8_192;
 const MAX_BACKGROUND_PROCESSES = 8;
@@ -23,6 +23,7 @@ export interface BackgroundProcess {
 
 interface BashToolOptions {
   sandboxMode?: SandboxMode;
+  sandboxSettings?: SandboxSettings;
 }
 
 let nextBgId = 1;
@@ -32,10 +33,12 @@ export class BashTool {
   private bgProcesses = new Map<number, BackgroundProcess>();
   private tmpDir: string | null = null;
   private sandboxMode: SandboxMode;
+  private sandboxSettings: SandboxSettings;
 
   constructor(initialCwd = process.cwd(), options: BashToolOptions = {}) {
     this.cwd = initialCwd;
     this.sandboxMode = options.sandboxMode ?? "off";
+    this.sandboxSettings = options.sandboxSettings ?? {};
   }
 
   private async ensureTmpDir(): Promise<string> {
@@ -362,9 +365,23 @@ export class BashTool {
     this.sandboxMode = mode;
   }
 
+  getSandboxSettings(): SandboxSettings {
+    return this.sandboxSettings;
+  }
+
+  setSandboxSettings(settings: SandboxSettings): void {
+    this.sandboxSettings = settings;
+  }
+
   getToolDescription(): string {
     if (this.sandboxMode === "shuru") {
-      return "Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, network is disabled by default unless configured, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits. Set background=true for long-running processes like dev servers or watchers.";
+      const s = this.sandboxSettings;
+      const netStatus = s.allowNet
+        ? s.allowedHosts?.length
+          ? `network is restricted to: ${s.allowedHosts.join(", ")}`
+          : "network access is enabled"
+        : "network is disabled";
+      return `Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, ${netStatus}, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits. Set background=true for long-running processes like dev servers or watchers.`;
     }
     return "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.";
   }
@@ -381,7 +398,7 @@ export class BashTool {
     if (blockedReason) {
       return { ok: false, error: blockedReason };
     }
-    return { ok: true, command: wrapCommandForShuru(this.cwd, command) };
+    return { ok: true, command: wrapCommandForShuru(this.cwd, command, this.sandboxSettings) };
   }
 
   private formatSandboxRuntimeError(output: string, fallbackMessage: string): string | null {
@@ -412,10 +429,30 @@ function formatAge(start: Date): string {
   return `${hr}h${min % 60}m`;
 }
 
-export function wrapCommandForShuru(cwd: string, command: string): string {
+export function wrapCommandForShuru(cwd: string, command: string, settings: SandboxSettings = {}): string {
+  const parts: string[] = ["shuru", "run"];
+
+  if (settings.cpus) parts.push("--cpus", String(settings.cpus));
+  if (settings.memory) parts.push("--memory", String(settings.memory));
+  if (settings.diskSize) parts.push("--disk-size", String(settings.diskSize));
+  if (settings.allowNet) parts.push("--allow-net");
+  if (settings.allowedHosts) {
+    for (const host of settings.allowedHosts) parts.push("--allow-host", host);
+  }
+  if (settings.ports) {
+    for (const port of settings.ports) parts.push("-p", port);
+  }
+  if (settings.secrets) {
+    for (const s of settings.secrets) {
+      parts.push("--secret", `${s.name}=${s.fromEnv}@${s.hosts.join(",")}`);
+    }
+  }
+  if (settings.from) parts.push("--from", settings.from);
+
   const mountArg = `${cwd}:/workspace`;
-  const innerCommand = `cd /workspace && ${command}`;
-  return `shuru run --mount ${shellQuote(mountArg)} -- sh -lc ${shellQuote(innerCommand)}`;
+  parts.push("--mount", shellQuote(mountArg));
+  parts.push("--", "sh", "-lc", shellQuote(`cd /workspace && ${command}`));
+  return parts.join(" ");
 }
 
 function shellQuote(value: string): string {

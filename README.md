@@ -282,6 +282,26 @@ Project file: **`.grok/settings.json`** — e.g. the current model for this proj
 
 ---
 
+## Sandbox
+
+Grok CLI can run shell commands inside a [Shuru](https://github.com/superhq-ai/shuru) microVM sandbox so the agent can't touch your host filesystem or network.
+
+**Requires macOS 14+ on Apple Silicon.**
+
+Enable it with `--sandbox` on the CLI, or toggle it from the TUI with `/sandbox`.
+
+When sandbox mode is active you can configure:
+
+- **Network** — off by default; enable with `--allow-net`, restrict with `--allow-host`
+- **Port forwards** — `--port 8080:80`
+- **Resource limits** — CPUs, memory, disk size (via settings or `/sandbox` panel)
+- **Checkpoints** — start from a saved environment snapshot
+- **Secrets** — inject API keys without exposing them inside the VM
+
+All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/settings.json` (project).
+
+---
+
 ## Development
 
 From a clone:

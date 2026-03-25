@@ -19,7 +19,10 @@ import {
   getBaseURL,
   getCurrentModel,
   getCurrentSandboxMode,
+  getCurrentSandboxSettings,
+  mergeSandboxSettings,
   type SandboxMode,
+  type SandboxSettings,
   saveUserSettings,
 } from "./utils/settings";
 
@@ -47,10 +50,11 @@ async function startInteractive(
   model: string,
   maxToolRounds: number,
   sandboxMode: SandboxMode,
+  sandboxSettings: SandboxSettings,
   session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
   const { createCliRenderer } = await import("@opentui/core");
   const { createRoot } = await import("@opentui/react");
   const { createElement } = await import("react");
@@ -79,6 +83,7 @@ async function startInteractive(
         model,
         maxToolRounds,
         sandboxMode,
+        sandboxSettings,
       },
       initialMessage,
       onExit,
@@ -93,10 +98,11 @@ async function runHeadless(
   model: string,
   maxToolRounds: number,
   sandboxMode: SandboxMode,
+  sandboxSettings: SandboxSettings,
   format: HeadlessOutputFormat,
   session?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
@@ -141,6 +147,10 @@ function stringOption(value: string | boolean | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function collect(value: string, prev: string[]): string[] {
+  return [...prev, value];
+}
+
 function resolveCliSandboxMode(value: string | boolean | undefined): SandboxMode | undefined {
   if (value === true) return "shuru";
   if (value === false) return "off";
@@ -162,7 +172,12 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
     const maxToolRounds =
       parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
-    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { persistSession: false, sandboxMode });
+    const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), delegation.sandboxSettings);
+    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
+      persistSession: false,
+      sandboxMode,
+      sandboxSettings,
+    });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
       description: delegation.description,
@@ -195,10 +210,23 @@ function resolveConfig(options: CliOptions) {
   const maxToolRounds = parseInt(stringOption(options.maxToolRounds) || "400", 10) || 400;
   const sandboxMode = resolveCliSandboxMode(options.sandbox) || getCurrentSandboxMode();
 
+  const cliOverrides: SandboxSettings = {};
+  if (options.allowNet === true) cliOverrides.allowNet = true;
+  const allowHostValue = options.allowHost;
+  if (Array.isArray(allowHostValue) && allowHostValue.length > 0) {
+    cliOverrides.allowedHosts = allowHostValue as string[];
+    if (!cliOverrides.allowNet) cliOverrides.allowNet = true;
+  }
+  const portValue = options.port;
+  if (Array.isArray(portValue) && portValue.length > 0) {
+    cliOverrides.ports = portValue as string[];
+  }
+  const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), cliOverrides);
+
   if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey });
   if (typeof options.model === "string") saveUserSettings({ defaultModel: normalizeModelId(options.model) });
 
-  return { apiKey, baseURL, model, maxToolRounds, sandboxMode };
+  return { apiKey, baseURL, model, maxToolRounds, sandboxMode, sandboxSettings };
 }
 
 function requireApiKey(apiKey: string | undefined): string {
@@ -233,6 +261,9 @@ program
   .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
   .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
   .option("--no-sandbox", "Run agent shell commands directly on the host")
+  .option("--allow-net", "Enable network access inside the Shuru sandbox")
+  .option("--allow-host <pattern>", "Restrict sandbox network to specific hosts (repeatable)", collect, [])
+  .option("--port <mapping>", "Forward a host port to sandbox guest (HOST:GUEST, repeatable)", collect, [])
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
@@ -254,6 +285,7 @@ program
         config.model,
         config.maxToolRounds,
         config.sandboxMode,
+        config.sandboxSettings,
         options.format,
         options.session,
       );
@@ -267,6 +299,7 @@ program
       config.model,
       config.maxToolRounds,
       config.sandboxMode,
+      config.sandboxSettings,
       options.session,
       initialMessage,
     );
@@ -296,6 +329,7 @@ program
         model: config.model,
         maxToolRounds: config.maxToolRounds,
         sandboxMode: config.sandboxMode,
+        sandboxSettings: config.sandboxSettings,
         logFile: options.logFile,
         pairCodeFile: options.pairCodeFile,
       });
