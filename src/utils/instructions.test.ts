@@ -17,6 +17,7 @@ async function importLoadCustomInstructions(mockedHome?: string) {
   vi.doUnmock("os");
 
   if (mockedHome) {
+    process.env.HOME = mockedHome;
     vi.doMock("os", async () => {
       const actual = await vi.importActual<typeof import("os")>("os");
       return {
@@ -30,8 +31,11 @@ async function importLoadCustomInstructions(mockedHome?: string) {
   return mod.loadCustomInstructions;
 }
 
+const originalHome = process.env.HOME;
+
 describe("loadCustomInstructions", () => {
   afterEach(() => {
+    process.env.HOME = originalHome;
     vi.restoreAllMocks();
     vi.resetModules();
     vi.doUnmock("os");

@@ -55,6 +55,7 @@ describe("whisper.cpp helpers", () => {
   });
 
   it("fails clearly when auto download is disabled and the model is missing", async () => {
+    process.env.HOME = tempDir;
     await expect(
       resolveWhisperCppModelPath({
         model: "tiny.en",
