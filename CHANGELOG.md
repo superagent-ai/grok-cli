@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Built-in `telegram-bridge` command for headless Telegram bridge entrypoint with shared approval persistence (#211)
+
+## [1.0.0-rc6] - 2026-03-24
+
+### Added
+- Telegram file attachments — `telegram_send_file` tool for uploading media to Telegram chats (#212)
+- Telegram voice/audio transcription via local whisper.cpp with auto model download and ffmpeg conversion (#210)
+- Built-in Vision sub-agent for image validation through xAI Responses API (#209)
+- Grok media tools (#207)
+- Changelog (#206)
+
 ### Changed
+- Updated app UI (#206)
 - Clarify terminal support and unofficial status (#204)
 
 ### Fixed
