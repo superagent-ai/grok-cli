@@ -433,7 +433,7 @@ function getSandboxMutationBlockReason(command: string): string | null {
   const trimmed = command.trim();
   if (!trimmed) return null;
 
-  if (/^git\s+/.test(trimmed) && !/^git\s+(status|diff|log|show|rev-parse|branch|grep|ls-files)\b/.test(trimmed)) {
+  if (/\bgit\s+/.test(trimmed) && !/\bgit\s+(status|diff|log|show|rev-parse|branch|grep|ls-files)\b/.test(trimmed)) {
     return [
       "Sandbox mode blocks git commands that mutate repository state because Shuru guest-side workspace changes do not persist back to the host.",
       "Disable sandbox mode to run persistent git mutations on the real workspace.",

@@ -128,6 +128,19 @@ describe("BashTool sandbox mode", () => {
     expect(execMock).not.toHaveBeenCalled();
   });
 
+  it("blocks mutating git commands inside compound shell expressions", async () => {
+    setAppleSiliconHost();
+    const execMock = vi.fn();
+    const { BashTool } = await importBashModule({ execMock });
+    const bash = new BashTool("/repo", { sandboxMode: "shuru" });
+
+    const result = await bash.execute('echo foo && git commit -m "test"');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Sandbox mode blocks git commands");
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
   it("tracks cwd changes independently of sandbox mode", async () => {
     const { BashTool } = await importBashModule();
     const root = makeTempDir("grok-bash-test-");
