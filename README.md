@@ -81,6 +81,26 @@ grok --prompt "summarize the repo state" --format json
 default human-readable text output. Events are semantic, step-level records such
 as `step_start`, `text`, `tool_use`, `step_finish`, and `error`.
 
+### Scheduling
+
+Schedules let Grok run a headless prompt on a recurring schedule or once. Ask
+for it in natural language, for example:
+
+```text
+Create a schedule named daily-changelog-update that runs every weekday at 9am
+and updates CHANGELOG.md from the latest merged commits.
+```
+
+Recurring schedules require the background daemon:
+
+```bash
+grok daemon --background
+```
+
+Use `/schedule` in the TUI to browse saved schedules. One-time schedules start
+immediately in the background; recurring schedules keep running as long as the
+daemon is active.
+
 **List Grok models and pricing hints:**
 
 ```bash

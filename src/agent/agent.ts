@@ -16,6 +16,7 @@ import {
   SessionStore,
 } from "../storage/index";
 import { BashTool } from "../tools/bash";
+import { type ScheduleDaemonStatus, ScheduleManager, type StoredSchedule } from "../tools/schedule";
 import type {
   AgentMode,
   ChatEntry,
@@ -126,6 +127,13 @@ TOOLS:
 - delegate: Launch a read-only background agent for longer research while you continue working.
 - delegation_read: Retrieve a completed background delegation result by ID.
 - delegation_list: List running and completed background delegations. Do not poll it repeatedly.
+- schedule_create: Create a recurring or one-time scheduled headless run.
+- schedule_list: List saved schedules and their status.
+- schedule_remove: Remove a saved schedule.
+- schedule_read_log: Read recent log output from a schedule.
+- schedule_daemon_status: Check whether the schedule daemon is running.
+- schedule_daemon_start: Start the schedule daemon in the background.
+- schedule_daemon_stop: Stop the schedule daemon.
 - search_web: Search the web for current information, documentation, APIs, tutorials, etc.
 - search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
 - generate_image: Generate a new image or edit an existing image. It saves image files locally and returns their paths.
@@ -162,11 +170,16 @@ EXAMPLES:
 - "generate a logo" -> use generate_image
 - "animate this still image" -> use generate_video
 - Recurring specialized workflows -> use the matching custom sub-agent via task
+- "every weekday at 9am run this check" -> use schedule_create with a cron expression
+- "run this once automatically" -> use schedule_create with the right timing
+- "make sure scheduled jobs keep running" -> use schedule_daemon_status and schedule_daemon_start
 
 IMPORTANT:
 - Prefer edit_file for surgical changes to existing files — it shows a clean diff.
 - Use write_file only for new files or when most of the file is changing.
 - Use read_file instead of cat/head/tail for reading files.
+- When the user asks for an automated recurring or one-time run, use the schedule tools instead of only describing the setup.
+- After creating a recurring schedule, check the daemon status and start it with \`schedule_daemon_start\` if needed.
 
 Be direct. Execute, don't just describe. Show results, not plans.`,
 
@@ -321,6 +334,7 @@ export class Agent {
   private baseURL: string | null = null;
   private bash: BashTool;
   private delegations: DelegationManager;
+  private schedules: ScheduleManager;
   private sessionStore: SessionStore | null = null;
   private workspace: WorkspaceInfo | null = null;
   private session: SessionInfo | null = null;
@@ -349,6 +363,10 @@ export class Agent {
     this.bash = new BashTool();
     this.delegations = new DelegationManager(() => this.bash.getCwd());
     this.modelId = normalizeModelId(model || DEFAULT_MODEL);
+    this.schedules = new ScheduleManager(
+      () => this.bash.getCwd(),
+      () => this.modelId,
+    );
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
@@ -411,6 +429,19 @@ export class Agent {
 
   getCwd(): string {
     return this.bash.getCwd();
+  }
+
+  async listSchedules(): Promise<StoredSchedule[]> {
+    return this.schedules.list();
+  }
+
+  async removeSchedule(id: string): Promise<string> {
+    const removed = await this.schedules.remove(id);
+    return removed ? `Removed schedule "${removed.name}".` : `Schedule "${id}" not found.`;
+  }
+
+  async getScheduleDaemonStatus(): Promise<ScheduleDaemonStatus> {
+    return this.schedules.getDaemonStatus();
   }
 
   getContextStats(
@@ -878,6 +909,7 @@ export class Agent {
               this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
             readDelegation: (id) => this.readDelegation(id),
             listDelegations: () => this.listDelegations(),
+            scheduleManager: this.schedules,
             subagents,
             sendTelegramFile: this.sendTelegramFile ?? undefined,
           });

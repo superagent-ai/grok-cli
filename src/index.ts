@@ -13,6 +13,7 @@ import {
   renderHeadlessPrelude,
 } from "./headless/output";
 import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
+import { startScheduleDaemon } from "./tools/schedule";
 import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
@@ -293,6 +294,27 @@ program
       }
     }
     console.log();
+  });
+
+program
+  .command("daemon")
+  .description("Start the schedule daemon to run scheduled tasks")
+  .option("--background", "Detach and run in the background")
+  .action(async (options) => {
+    if (options.background) {
+      const result = await startScheduleDaemon(process.cwd());
+      console.log(
+        result.alreadyRunning
+          ? `Schedule daemon already running (pid: ${result.status.pid ?? "unknown"}).`
+          : `Schedule daemon started in the background (pid: ${result.pid ?? "unknown"}).`,
+      );
+      return;
+    }
+
+    process.off("SIGTERM", exitCleanlyOnSigterm);
+    const { SchedulerDaemon } = await import("./daemon/scheduler");
+    const daemon = new SchedulerDaemon();
+    await daemon.start();
   });
 
 program.parse();
