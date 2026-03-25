@@ -6,6 +6,7 @@ import type { ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type TelegramAudioInputEngine = "whisper.cpp";
+export type SandboxMode = "off" | "shuru";
 
 export const DEFAULT_TELEGRAM_AUDIO_INPUT_BINARY = "whisper-cli";
 export const DEFAULT_TELEGRAM_AUDIO_INPUT_MODEL = "tiny.en";
@@ -107,6 +108,7 @@ export function loadValidSubAgents(): CustomSubagentConfig[] {
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
+  sandboxMode?: SandboxMode;
   reasoningEffortByModel?: Record<string, ReasoningEffort>;
   telegram?: TelegramSettings;
   mcp?: McpSettings;
@@ -115,6 +117,7 @@ export interface UserSettings {
 
 export interface ProjectSettings {
   model?: string;
+  sandboxMode?: SandboxMode;
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");
@@ -151,6 +154,7 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
     ...partial,
     ...(partial.apiKey !== undefined ? { apiKey: partial.apiKey } : {}),
     ...(partial.defaultModel !== undefined ? { defaultModel: normalizeModelId(partial.defaultModel) } : {}),
+    ...(partial.sandboxMode !== undefined ? { sandboxMode: normalizeSandboxMode(partial.sandboxMode) } : {}),
     ...(partial.reasoningEffortByModel !== undefined
       ? {
           reasoningEffortByModel: Object.fromEntries(
@@ -211,6 +215,7 @@ export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
     ...current,
     ...partial,
     ...(partial.model !== undefined ? { model: normalizeModelId(partial.model) } : {}),
+    ...(partial.sandboxMode !== undefined ? { sandboxMode: normalizeSandboxMode(partial.sandboxMode) } : {}),
   });
 }
 
@@ -228,6 +233,18 @@ export function getCurrentModel(): string {
   if (project.model) return normalizeModelId(project.model);
   const user = loadUserSettings();
   return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
+}
+
+export function normalizeSandboxMode(value: unknown): SandboxMode {
+  return value === "shuru" ? "shuru" : "off";
+}
+
+export function getCurrentSandboxMode(): SandboxMode {
+  const project = loadProjectSettings();
+  if (project.sandboxMode) return normalizeSandboxMode(project.sandboxMode);
+  const user = loadUserSettings();
+  if (user.sandboxMode) return normalizeSandboxMode(user.sandboxMode);
+  return "off";
 }
 
 export function getReasoningEffortForModel(modelId: string): ReasoningEffort | undefined {

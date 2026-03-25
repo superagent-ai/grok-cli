@@ -36,6 +36,14 @@ function createScheduleToolSet(overrides?: {
 }
 
 describe("schedule daemon tools", () => {
+  it("describes bash sandbox constraints when shuru mode is enabled", () => {
+    const tools = createTools(new BashTool("/tmp", { sandboxMode: "shuru" }), {} as never, "agent");
+    const bashTool = tools.bash as { description?: string };
+
+    expect(bashTool.description).toContain("Shuru sandbox");
+    expect(bashTool.description).toContain("do not persist back to the host");
+  });
+
   it("reports daemon status", async () => {
     const { tools } = createScheduleToolSet({
       getDaemonStatus: async () => ({ running: true, pid: 4321 }),

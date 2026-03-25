@@ -4,6 +4,7 @@ import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import type { ToolResult } from "../types/index";
+import type { SandboxMode } from "../utils/settings";
 
 const MAX_TAIL_BYTES = 8_192;
 const MAX_BACKGROUND_PROCESSES = 8;
@@ -20,15 +21,21 @@ export interface BackgroundProcess {
   exitCode: number | null;
 }
 
+interface BashToolOptions {
+  sandboxMode?: SandboxMode;
+}
+
 let nextBgId = 1;
 
 export class BashTool {
   private cwd: string;
   private bgProcesses = new Map<number, BackgroundProcess>();
   private tmpDir: string | null = null;
+  private sandboxMode: SandboxMode;
 
-  constructor(initialCwd = process.cwd()) {
+  constructor(initialCwd = process.cwd(), options: BashToolOptions = {}) {
     this.cwd = initialCwd;
+    this.sandboxMode = options.sandboxMode ?? "off";
   }
 
   private async ensureTmpDir(): Promise<string> {
@@ -63,6 +70,11 @@ export class BashTool {
         return { success: false, error: "[Cancelled]" };
       }
 
+      const prepared = this.prepareCommand(command);
+      if (!prepared.ok) {
+        return { success: false, error: prepared.error };
+      }
+
       return await new Promise<ToolResult>((resolve) => {
         let settled = false;
         let aborted = false;
@@ -77,7 +89,7 @@ export class BashTool {
         };
 
         const child = exec(
-          command,
+          prepared.command,
           {
             cwd: this.cwd,
             timeout,
@@ -92,6 +104,11 @@ export class BashTool {
 
             const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
             if (err) {
+              const sandboxError = this.formatSandboxRuntimeError(output, err.message);
+              if (sandboxError) {
+                finish({ success: false, error: sandboxError });
+                return;
+              }
               if (output.trim()) {
                 finish({ success: false, error: output.trim() });
                 return;
@@ -150,12 +167,16 @@ export class BashTool {
     }
 
     try {
+      const prepared = this.prepareCommand(command);
+      if (!prepared.ok) {
+        return { success: false, output: prepared.error };
+      }
       const tmpDir = await this.ensureTmpDir();
       const id = nextBgId++;
       const logPath = path.join(tmpDir, `bg-${id}.log`);
       const logStream = createWriteStream(logPath, { flags: "a" });
 
-      const child = spawn("sh", ["-c", command], {
+      const child = spawn("sh", ["-c", prepared.command], {
         cwd: this.cwd,
         detached: false,
         stdio: ["ignore", "pipe", "pipe"],
@@ -332,6 +353,49 @@ export class BashTool {
   getCwd(): string {
     return this.cwd;
   }
+
+  getSandboxMode(): SandboxMode {
+    return this.sandboxMode;
+  }
+
+  setSandboxMode(mode: SandboxMode): void {
+    this.sandboxMode = mode;
+  }
+
+  getToolDescription(): string {
+    if (this.sandboxMode === "shuru") {
+      return "Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, network is disabled by default unless configured, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits. Set background=true for long-running processes like dev servers or watchers.";
+    }
+    return "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.";
+  }
+
+  private prepareCommand(command: string): { ok: true; command: string } | { ok: false; error: string } {
+    if (this.sandboxMode !== "shuru") {
+      return { ok: true, command };
+    }
+    const unsupportedReason = getSandboxUnsupportedReason();
+    if (unsupportedReason) {
+      return { ok: false, error: unsupportedReason };
+    }
+    const blockedReason = getSandboxMutationBlockReason(command);
+    if (blockedReason) {
+      return { ok: false, error: blockedReason };
+    }
+    return { ok: true, command: wrapCommandForShuru(this.cwd, command) };
+  }
+
+  private formatSandboxRuntimeError(output: string, fallbackMessage: string): string | null {
+    if (this.sandboxMode !== "shuru") {
+      return null;
+    }
+    if (output.includes("shuru: command not found") || output.includes("sh: shuru: not found")) {
+      return "Shuru sandbox mode is enabled, but the `shuru` CLI is not installed or not on PATH. Install Shuru or disable sandbox mode.";
+    }
+    if (output.includes("Apple Silicon") || fallbackMessage.includes("Apple Silicon")) {
+      return "Shuru sandbox mode requires macOS on Apple Silicon.";
+    }
+    return null;
+  }
 }
 
 function truncCmd(cmd: string, max: number): string {
@@ -346,4 +410,56 @@ function formatAge(start: Date): string {
   if (min < 60) return `${min}m${sec % 60}s`;
   const hr = Math.floor(min / 60);
   return `${hr}h${min % 60}m`;
+}
+
+export function wrapCommandForShuru(cwd: string, command: string): string {
+  const mountArg = `${cwd}:/workspace`;
+  const innerCommand = `cd /workspace && ${command}`;
+  return `shuru run --mount ${shellQuote(mountArg)} -- sh -lc ${shellQuote(innerCommand)}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function getSandboxUnsupportedReason(): string | null {
+  if (process.platform !== "darwin" || process.arch !== "arm64") {
+    return "Shuru sandbox mode currently requires macOS on Apple Silicon.";
+  }
+  return null;
+}
+
+export function getSandboxMutationBlockReason(command: string): string | null {
+  const trimmed = command.trim();
+  if (!trimmed) return null;
+
+  if (/\bgit\s+/.test(trimmed) && !/\bgit\s+(status|diff|log|show|rev-parse|grep|ls-files)\b/.test(trimmed)) {
+    return [
+      "Sandbox mode blocks git commands that mutate repository state because Shuru guest-side workspace changes do not persist back to the host.",
+      "Disable sandbox mode to run persistent git mutations on the real workspace.",
+    ].join(" ");
+  }
+
+  const blockedPatterns: Array<{ pattern: RegExp; reason: string }> = [
+    {
+      pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:add|install|remove|unlink|update|upgrade)\b/,
+      reason:
+        "Package-manager installs are blocked in sandbox mode because workspace changes like lockfile updates would stay inside the Shuru guest overlay.",
+    },
+    {
+      pattern: /\b(?:pip|pip3)\s+install\b|\bpoetry\s+add\b|\buv\s+add\b|\bcargo\s+add\b/,
+      reason:
+        "Dependency install commands are blocked in sandbox mode because resulting workspace changes would not persist back to the host.",
+    },
+    {
+      pattern:
+        /\b(?:prettier\s+--write|eslint\b.*--fix|biome\s+check\b.*--write|ruff\s+check\b.*--fix|gofmt\s+-w|rustfmt\b|clang-format\b.*-i)\b/,
+      reason:
+        "Shell-driven formatters that rewrite files are blocked in sandbox mode because those file changes would not persist back to the host workspace.",
+    },
+  ];
+
+  const matched = blockedPatterns.find(({ pattern }) => pattern.test(trimmed));
+  if (!matched) return null;
+  return `${matched.reason} Use read_file/edit_file/write_file for durable edits, or disable sandbox mode for host-persistent shell changes.`;
 }

@@ -44,6 +44,7 @@ import {
   loadValidSubAgents,
   type McpRemoteTransport,
   type McpServerConfig,
+  type SandboxMode,
   saveApprovedTelegramUserId,
   saveMcpServers,
   saveProjectSettings,
@@ -282,6 +283,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "agents", label: "agents", description: "Manage custom sub-agents" },
   { id: "schedule", label: "schedule", description: "View scheduled runs" },
   { id: "mcp", label: "mcp", description: "Manage MCP servers" },
+  { id: "sandbox", label: "sandbox", description: "Select shell sandbox mode" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
   { id: "commit-push", label: "commit & push", description: "Commit and push" },
@@ -330,6 +332,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/clear",
   "/model",
   "/models",
+  "/sandbox",
   "/remote-control",
   "/mcp",
   "/mcps",
@@ -344,6 +347,11 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/commit-push",
   "/commit-pr",
 ]);
+
+const SANDBOX_OPTIONS: Array<{ id: SandboxMode; label: string; description: string }> = [
+  { id: "off", label: "Off", description: "Run shell commands directly on the host" },
+  { id: "shuru", label: "Shuru", description: "Run shell commands inside a Shuru sandbox" },
+];
 
 function parseCustomSubagentSlashCommand(
   cmd: string,
@@ -397,6 +405,7 @@ export interface AppStartupConfig {
   apiKey: string | undefined;
   baseURL: string;
   model: string;
+  sandboxMode: SandboxMode;
   maxToolRounds: number;
 }
 
@@ -429,10 +438,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveTurnSourceLabel, setLiveTurnSourceLabel] = useState<string | null>(null);
   const [model, setModel] = useState(agent.getModel());
+  const [sandboxMode, setSandboxModeState] = useState<SandboxMode>(agent.getSandboxMode());
   const [mode, setModeState] = useState<AgentMode>(agent.getMode());
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelPickerIndex, setModelPickerIndex] = useState(0);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [showSandboxPicker, setShowSandboxPicker] = useState(false);
+  const [sandboxPickerIndex, setSandboxPickerIndex] = useState(0);
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
@@ -572,6 +584,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
+  const currentSandboxIndex = SANDBOX_OPTIONS.findIndex((option) => option.id === sandboxMode);
   const filteredSlashItems = slashSearchQuery
     ? SLASH_MENU_ITEMS.filter(
         (item) =>
@@ -594,6 +607,24 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setMcpServers(servers);
     saveMcpServers(servers);
   }, []);
+
+  const applySandboxMode = useCallback(
+    (next: SandboxMode) => {
+      agent.setSandboxMode(next);
+      for (const telegramAgent of telegramAgentsRef.current.values()) {
+        telegramAgent.setSandboxMode(next);
+      }
+      setSandboxModeState(next);
+      saveProjectSettings({ sandboxMode: next });
+      saveUserSettings({ sandboxMode: next });
+    },
+    [agent],
+  );
+
+  const openSandboxPicker = useCallback(() => {
+    setSandboxPickerIndex(Math.max(0, currentSandboxIndex));
+    setShowSandboxPicker(true);
+  }, [currentSandboxIndex]);
 
   const setReasoningEfforts = useCallback((next: Record<string, ReasoningEffort>) => {
     setReasoningEffortByModel(next);
@@ -1275,6 +1306,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       const sid = u.telegram?.sessionsByUserId?.[String(userId)];
       const a = new Agent(apiKey, startupConfig.baseURL, startupConfig.model, startupConfig.maxToolRounds, {
         session: sid,
+        sandboxMode,
       });
       if (!sid && a.getSessionId()) {
         saveUserSettings({
@@ -1291,7 +1323,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       map.set(userId, a);
       return a;
     },
-    [startupConfig, wireTelegramAgentUi],
+    [sandboxMode, startupConfig, wireTelegramAgentUi],
   );
 
   const appendTelegramUserMessage = useCallback(
@@ -1830,6 +1862,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         setModelSearchQuery("");
         return true;
       }
+      if (c === "/sandbox") {
+        openSandboxPicker();
+        return true;
+      }
       if (c === "/remote-control") {
         setConnectModalIndex(0);
         setShowConnectModal(true);
@@ -1880,7 +1916,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       return false;
     },
-    [handleExit, openAgentsModal, openMcpModal, openScheduleModal, processMessage, resetToNewSession, subAgents],
+    [
+      handleExit,
+      openAgentsModal,
+      openMcpModal,
+      openSandboxPicker,
+      openScheduleModal,
+      processMessage,
+      resetToNewSession,
+      subAgents,
+    ],
   );
 
   const handleSlashMenuSelect = useCallback(
@@ -1895,6 +1940,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           setShowModelPicker(true);
           setModelPickerIndex(0);
           setModelSearchQuery("");
+          break;
+        case "sandbox":
+          openSandboxPicker();
           break;
         case "remote-control":
           setConnectModalIndex(0);
@@ -1943,7 +1991,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
       }
     },
-    [agent, handleExit, openAgentsModal, openMcpModal, openScheduleModal, processMessage, resetToNewSession],
+    [
+      agent,
+      handleExit,
+      openAgentsModal,
+      openMcpModal,
+      openSandboxPicker,
+      openScheduleModal,
+      processMessage,
+      resetToNewSession,
+    ],
   );
 
   const blockPrompt =
@@ -1951,6 +2008,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showTelegramTokenModal ||
     showTelegramPairModal ||
     showMcpModal ||
+    showSandboxPicker ||
     showScheduleModal ||
     showAgentsModal ||
     showAgentsEditor;
@@ -2467,6 +2525,29 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (showSandboxPicker) {
+        if (isEscapeKey(key)) {
+          setShowSandboxPicker(false);
+          return;
+        }
+        if (key.name === "up") {
+          setSandboxPickerIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setSandboxPickerIndex((i) => Math.min(SANDBOX_OPTIONS.length - 1, i + 1));
+          return;
+        }
+        if (key.name === "return") {
+          const selected = SANDBOX_OPTIONS[sandboxPickerIndex];
+          if (selected) {
+            applySandboxMode(selected.id);
+          }
+          setShowSandboxPicker(false);
+          return;
+        }
+        return;
+      }
 
       if (isEscapeKey(key) && interruptActiveRun(key)) {
         return;
@@ -2572,8 +2653,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       planTabCount,
       pqs,
       removeEditingSubagent,
+      applySandboxMode,
+      sandboxPickerIndex,
       showModelPicker,
       showPlanPanel,
+      showSandboxPicker,
       showSlashMenu,
       slashMenuIndex,
       submitApiKey,
@@ -2721,6 +2805,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 inputRef={inputRef}
                 isProcessing={isProcessing}
                 showModelPicker={showModelPicker}
+                showSandboxPicker={showSandboxPicker}
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
                 showApiKeyModal={showApiKeyModal}
@@ -2736,6 +2821,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 queuedMessages={queuedMessages}
               />
             </box>
+          </box>
+          <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
+            <text fg={t.textDim}>{agent.getCwd().replace(os.homedir(), "~")}</text>
+            {sandboxMode === "shuru" ? <text fg="#f97316">{" · sandbox"}</text> : null}
+            <box flexGrow={1} />
           </box>
         </box>
       ) : (
@@ -2753,6 +2843,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 inputRef={inputRef}
                 isProcessing={isProcessing}
                 showModelPicker={showModelPicker}
+                showSandboxPicker={showSandboxPicker}
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
                 showApiKeyModal={showApiKeyModal}
@@ -2772,6 +2863,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           </box>
           <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
             <text fg={t.textDim}>{agent.getCwd().replace(os.homedir(), "~")}</text>
+            {sandboxMode === "shuru" ? <text fg="#f97316">{" · sandbox"}</text> : null}
             <box flexGrow={1} />
             <text fg={t.textDim}>{"v1.0.0"}</text>
           </box>
@@ -2876,6 +2968,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           reasoningEffortByModel={reasoningEffortByModel}
         />
       )}
+      {showSandboxPicker && (
+        <SandboxPickerModal
+          t={t}
+          currentMode={sandboxMode}
+          selectedIndex={sandboxPickerIndex}
+          width={width}
+          height={height}
+        />
+      )}
       {showConnectModal && (
         <ConnectModal
           t={t}
@@ -2972,6 +3073,7 @@ function PromptBox({
   inputRef,
   isProcessing,
   showModelPicker,
+  showSandboxPicker,
   showSlashMenu,
   showPlanQuestions,
   showApiKeyModal,
@@ -2991,6 +3093,7 @@ function PromptBox({
   inputRef: React.RefObject<TextareaRenderable | null>;
   isProcessing: boolean;
   showModelPicker: boolean;
+  showSandboxPicker: boolean;
   showSlashMenu: boolean;
   showPlanQuestions: boolean;
   showApiKeyModal: boolean;
@@ -3055,7 +3158,14 @@ function PromptBox({
           <box flexGrow={1}>
             <textarea
               ref={inputRef}
-              focused={!showModelPicker && !showSlashMenu && !showPlanQuestions && !showApiKeyModal && !blockPrompt}
+              focused={
+                !showModelPicker &&
+                !showSandboxPicker &&
+                !showSlashMenu &&
+                !showPlanQuestions &&
+                !showApiKeyModal &&
+                !blockPrompt
+              }
               placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
               textColor={t.text}
               backgroundColor={t.backgroundElement}
@@ -4281,6 +4391,75 @@ function ModelPickerModal({
           <text fg={t.textMuted}>
             {selectedSupportsReasoning ? "left/right reasoning  enter select  esc close" : "enter select  esc close"}
           </text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function SandboxPickerModal({
+  t,
+  currentMode,
+  selectedIndex,
+  width,
+  height,
+}: {
+  t: Theme;
+  currentMode: SandboxMode;
+  selectedIndex: number;
+  width: number;
+  height: number;
+}) {
+  const panelHeight = Math.min(SANDBOX_OPTIONS.length + 5, Math.floor(height * 0.4));
+  const top = bottomAlignedModalTop(height, panelHeight);
+  const overlayBg = "#000000cc" as string;
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={Math.min(64, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Select sandbox mode"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <scrollbox flexGrow={1} minHeight={0}>
+          {SANDBOX_OPTIONS.map((option, idx) => {
+            const selected = idx === selectedIndex;
+            const current = option.id === currentMode;
+            return (
+              <box
+                key={option.id}
+                backgroundColor={selected ? t.selectedBg : undefined}
+                paddingLeft={2}
+                paddingRight={2}
+                width="100%"
+              >
+                <box width="100%" flexDirection="row" justifyContent="space-between">
+                  <text fg={current ? t.accent : selected ? t.selected : t.text}>{option.label}</text>
+                  <text fg={selected ? t.primary : t.textMuted}>{option.description}</text>
+                </box>
+              </box>
+            );
+          })}
+        </scrollbox>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>{"enter select  esc close"}</text>
         </box>
       </box>
     </box>
