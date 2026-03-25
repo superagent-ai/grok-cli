@@ -12,13 +12,16 @@ import {
   renderHeadlessChunk,
   renderHeadlessPrelude,
 } from "./headless/output";
+import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
 import { getApiKey, getBaseURL, getCurrentModel, saveUserSettings } from "./utils/settings";
 
 dotenv.config();
 
-process.on("SIGTERM", () => {
+const exitCleanlyOnSigterm = () => {
   process.exit(0);
-});
+};
+
+process.on("SIGTERM", exitCleanlyOnSigterm);
 
 process.on("uncaughtException", (err) => {
   console.error("Fatal:", err.message);
@@ -104,6 +107,20 @@ async function runHeadless(
     const writes = renderHeadlessChunk(chunk);
     if (writes.stdout) process.stdout.write(writes.stdout);
     if (writes.stderr) process.stderr.write(writes.stderr);
+  }
+}
+
+function changeDirectoryOrExit(directory: string | undefined) {
+  if (!directory) {
+    return;
+  }
+
+  try {
+    process.chdir(directory);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Cannot change to directory ${directory}: ${msg}`);
+    process.exit(1);
   }
 }
 
@@ -193,15 +210,7 @@ program
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .action(async (message: string[], options) => {
-    if (options.directory) {
-      try {
-        process.chdir(options.directory);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`Cannot change to directory ${options.directory}: ${msg}`);
-        process.exit(1);
-      }
-    }
+    changeDirectoryOrExit(options.directory);
 
     if (options.backgroundTaskFile) {
       await runBackgroundDelegation(options.backgroundTaskFile, options);
@@ -232,6 +241,35 @@ program
       options.session,
       initialMessage,
     );
+  });
+
+program
+  .command("telegram-bridge")
+  .description("Start the Telegram remote-control bridge without opening the TUI")
+  .option("-k, --api-key <key>", "Grok API key")
+  .option("-u, --base-url <url>", "API base URL")
+  .option("-m, --model <model>", "Model to use")
+  .option("-d, --directory <dir>", "Working directory", process.cwd())
+  .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
+  .option("--log-file <path>", "Bridge log file", "telegram-remote-bridge.log")
+  .option("--pair-code-file <path>", "Pairing code file", "telegram-pair-code.txt")
+  .action(async (options) => {
+    changeDirectoryOrExit(options.directory);
+    const config = resolveConfig(options);
+
+    process.off("SIGTERM", exitCleanlyOnSigterm);
+    try {
+      await runTelegramHeadlessBridge({
+        apiKey: requireApiKey(config.apiKey),
+        baseURL: config.baseURL,
+        model: config.model,
+        maxToolRounds: config.maxToolRounds,
+        logFile: options.logFile,
+        pairCodeFile: options.pairCodeFile,
+      });
+    } finally {
+      process.on("SIGTERM", exitCleanlyOnSigterm);
+    }
   });
 
 program
