@@ -25,6 +25,7 @@ import {
   type SandboxSettings,
   saveUserSettings,
 } from "./utils/settings";
+import { runUpdate } from "./utils/update-checker";
 
 dotenv.config();
 
@@ -84,6 +85,7 @@ async function startInteractive(
         maxToolRounds,
         sandboxMode,
         sandboxSettings,
+        version: packageJson.version,
       },
       initialMessage,
       onExit,
@@ -267,7 +269,15 @@ program
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
+  .option("--update", "Update grok to the latest version and exit")
   .action(async (message: string[], options) => {
+    if (options.update) {
+      console.log("Checking for updates...");
+      const result = await runUpdate();
+      console.log(result.output);
+      process.exit(result.success ? 0 : 1);
+    }
+
     changeDirectoryOrExit(options.directory);
 
     if (options.backgroundTaskFile) {

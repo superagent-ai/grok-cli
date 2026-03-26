@@ -52,6 +52,7 @@ import {
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
+import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -291,6 +292,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
   { id: "review", label: "review", description: "Review recent changes" },
   { id: "skills", label: "skills", description: "Manage skills" },
+  { id: "update", label: "update", description: "Update grok to the latest version" },
 ];
 
 const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
@@ -503,6 +505,7 @@ export interface AppStartupConfig {
   sandboxMode: SandboxMode;
   sandboxSettings: SandboxSettings;
   maxToolRounds: number;
+  version: string;
 }
 
 interface AppProps {
@@ -645,6 +648,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
   const [scheduleModalIndex, setScheduleModalIndex] = useState(0);
   const showScheduleModalRef = useRef(false);
+
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateOutput, setUpdateOutput] = useState<string | null>(null);
+  const showUpdateModalRef = useRef(false);
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -1653,6 +1662,21 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     showScheduleModalRef.current = showScheduleModal;
   }, [showScheduleModal]);
+  useEffect(() => {
+    showUpdateModalRef.current = showUpdateModal;
+  }, [showUpdateModal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkForUpdate(startupConfig.version).then((result) => {
+      if (cancelled || !result?.hasUpdate) return;
+      setUpdateInfo(result);
+      setShowUpdateModal(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [startupConfig.version]);
 
   useEffect(() => {
     return () => {
@@ -2103,6 +2127,18 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "commit-pr":
           processMessage(COMMIT_PR_PROMPT);
           break;
+        case "update":
+          setIsUpdating(true);
+          setUpdateOutput(null);
+          runUpdate().then((result) => {
+            setIsUpdating(false);
+            setUpdateOutput(
+              result.success
+                ? "Update complete! Restart the CLI to use the new version."
+                : `Update failed: ${result.output}`,
+            );
+          });
+          break;
       }
     },
     [
@@ -2125,7 +2161,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showSandboxPicker ||
     showScheduleModal ||
     showAgentsModal ||
-    showAgentsEditor;
+    showAgentsEditor ||
+    showUpdateModal;
 
   const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
@@ -2313,6 +2350,24 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
 
+        return;
+      }
+      if (showUpdateModalRef.current) {
+        if (isEscapeKey(key)) {
+          setShowUpdateModal(false);
+          return;
+        }
+        if (key.name === "return") {
+          setIsUpdating(true);
+          setShowUpdateModal(false);
+          runUpdate().then((result) => {
+            setIsUpdating(false);
+            setUpdateOutput(
+              result.success ? "Update complete! Restart the CLI to use the new version." : result.output,
+            );
+          });
+          return;
+        }
         return;
       }
       if (showMcpEditorRef.current) {
@@ -3038,11 +3093,35 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             <box height={2} minHeight={0} flexShrink={1} />
             <box flexGrow={1} minHeight={0} />
           </box>
+          {updateInfo?.hasUpdate && (
+            <box paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0}>
+              <text fg="#f59e0b">
+                {"┃ Update available: v"}
+                {startupConfig.version}
+                {" → v"}
+                {updateInfo.latestVersion}
+                {" — run /update to install"}
+              </text>
+            </box>
+          )}
+          {isUpdating && (
+            <box paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0}>
+              <text fg="#f59e0b">{"┃ Updating..."}</text>
+            </box>
+          )}
+          {updateOutput && !isUpdating && (
+            <box paddingLeft={2} paddingRight={2} flexDirection="row" flexShrink={0}>
+              <text fg={updateOutput.startsWith("Update complete") ? "#22c55e" : "#ef4444"}>
+                {"┃ "}
+                {updateOutput}
+              </text>
+            </box>
+          )}
           <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexShrink={0}>
             <text fg={t.textDim}>{agent.getCwd().replace(os.homedir(), "~")}</text>
             {sandboxMode === "shuru" ? <text fg="#f97316">{" · sandbox"}</text> : null}
             <box flexGrow={1} />
-            <text fg={t.textDim}>{"v1.0.0"}</text>
+            <text fg={t.textDim}>{`v${startupConfig.version}`}</text>
           </box>
         </>
       )}
@@ -3054,6 +3133,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           inputRef={apiKeyInputRef}
           error={apiKeyError}
           onSubmit={submitApiKey}
+        />
+      )}
+      {showUpdateModal && updateInfo && (
+        <UpdateModal
+          t={t}
+          width={width}
+          height={height}
+          currentVersion={startupConfig.version}
+          latestVersion={updateInfo.latestVersion}
         />
       )}
       {showSlashMenu && (
@@ -4138,6 +4226,73 @@ function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string
 
 function bottomAlignedModalTop(height: number, panelHeight: number): number {
   return Math.max(2, Math.floor((height - panelHeight) / 2));
+}
+
+/* ── Update Modal ────────────────────────────────────────────── */
+
+function UpdateModal({
+  t,
+  width,
+  height,
+  currentVersion,
+  latestVersion,
+}: {
+  t: Theme;
+  width: number;
+  height: number;
+  currentVersion: string;
+  latestVersion: string;
+}) {
+  const overlayBg = "#000000cc" as string;
+  const panelWidth = Math.min(60, width - 6);
+  const panelHeight = 9;
+  const top = bottomAlignedModalTop(height, panelHeight);
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={panelWidth}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg="#f59e0b">
+            <b>{"Update Available"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc to dismiss"}</text>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.text}>
+            {"A new version of grok is available: "}
+            <span style={{ fg: t.textMuted }}>
+              {"v"}
+              {currentVersion}
+            </span>
+            {" → "}
+            <span style={{ fg: "#22c55e" }}>
+              {"v"}
+              {latestVersion}
+            </span>
+          </text>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>{"Press enter to update now, or esc to dismiss"}</text>
+        </box>
+      </box>
+    </box>
+  );
 }
 
 function SlashMenuModal({
