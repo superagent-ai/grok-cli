@@ -53,6 +53,7 @@
     "dotenv": "^16.6.1",
     "grammy": "^1.41.1",
     "react": "^19.2.4",
+    "semver": "^7.7.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -60,6 +61,7 @@
     "@types/diff": "^8.0.0",
     "@types/node": "^22.19.15",
     "@types/react": "^19.2.14",
+    "@types/semver": "^7.7.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "typescript": "^5.9.3",
