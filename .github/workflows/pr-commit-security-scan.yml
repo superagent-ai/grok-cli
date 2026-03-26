@@ -42,7 +42,7 @@ jobs:
             commit_url="https://github.com/${REPO}/commit/${sha}"
 
             response="$(
-              curl -sfL --max-time 110 \
+              curl -sfL --max-time 300 \
                 "https://api.brin.sh/commit/${REPO}@${sha}?details=true&mode=full&tolerance=conservative" \
                 || echo '{}'
             )"
