@@ -48,7 +48,7 @@ export function ScheduleBrowserModal({
   }, [rows, selectedIndex]);
 
   const itemCount = Math.max(rows.length, 1);
-  const contentHeight = itemCount + 8;
+  const contentHeight = itemCount + 10;
   const panelHeight = Math.min(contentHeight, Math.floor(height * 0.6));
   const panelWidth = Math.min(60, width - 6);
   const overlayBg = "#000000cc" as string;
@@ -97,13 +97,12 @@ export function ScheduleBrowserModal({
                 paddingLeft={2}
                 paddingRight={2}
               >
-                <text>
-                  <span style={{ fg: selected ? t.primary : t.text }}>
+                <box width="100%" flexDirection="row">
+                  <text fg={selected ? t.primary : t.text}>
                     <b>{schedule.name}</b>
-                  </span>
-                  <span style={{ fg: t.textMuted }}>{" - "}</span>
-                  <span style={{ fg: t.textMuted }}>{scheduleText}</span>
-                </text>
+                  </text>
+                  <text fg={t.textMuted}>{` - ${scheduleText}`}</text>
+                </box>
               </box>
             );
           })}
