@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Built-in `telegram-bridge` command for headless Telegram bridge entrypoint with shared approval persistence (#211)
 
+## [1.0.0-rc7] - 2026-03-26
+
+### Added
+- Scheduled headless runs with daemon and agent tools (#214)
+- Shuru sandbox mode for agent shell execution (#215)
+- Configurable sandbox settings (network, resources, ports, secrets) (#217)
+
 ## [1.0.0-rc6] - 2026-03-24
 
 ### Added
