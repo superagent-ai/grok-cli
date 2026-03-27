@@ -588,11 +588,13 @@ export function inferVerifyProjectProfile(
 function buildBrowserGuidance(profile: VerifyProjectProfile): string[] {
   if (profile.recipe.smokeKind === "http" && profile.recipe.smokeTarget) {
     return [
-      `- Browser smoke testing is available at ${profile.recipe.smokeTarget} if the app can be started on the forwarded port.`,
-      "- If the `agent-browser` skill is available, read it first, then use it for a short localhost smoke test.",
-      "- Browser automation commands run on the host during verify mode so they can connect to forwarded localhost services.",
-      "- Keep browser checks narrow: open the page, wait for readiness, inspect the page, optionally click one or two critical controls, and save a screenshot.",
-      "- Save screenshots to stable workspace-relative paths under `.grok/verify-artifacts/` whenever possible, for example `.grok/verify-artifacts/verify-smoke-home.png`.",
+      `- REQUIRED: After the dev server is running, you MUST run browser smoke tests against ${profile.recipe.smokeTarget}.`,
+      "- The agent-browser command runs on the HOST, not inside the sandbox. It WILL work. Do not skip it or assume it is unavailable.",
+      "- Run this exact sequence using the bash tool:",
+      `    mkdir -p .grok/verify-artifacts && agent-browser --screenshot-dir .grok/verify-artifacts open ${profile.recipe.smokeTarget} && agent-browser wait --load networkidle && agent-browser --screenshot-dir .grok/verify-artifacts screenshot && agent-browser get title && agent-browser close`,
+      "- IMPORTANT: Use --screenshot-dir .grok/verify-artifacts to control where screenshots are saved. Do NOT pass a filename as a positional arg to the screenshot command.",
+      "- If that command fails, report the exact error output. Do not preemptively skip browser checks.",
+      "- Include the screenshot file paths from the output in the Evidence section.",
     ];
   }
 
@@ -679,8 +681,8 @@ export function buildVerifyTaskPrompt(
     "- If the recipe needs install/setup work and no checkpoint already provides it, prefer chaining install + build/test/start in the same sandbox command so the installed dependencies remain available for that command.",
     "- Use background bash only when a dev server or watcher must stay alive while you continue verifying.",
     "- If an inferred install/setup step is blocked by sandbox persistence rules, explain the blocker clearly and continue with any valid non-setup checks.",
-    "- Host-side browser commands such as `agent-browser` should run on the host during verify mode so they can talk to forwarded localhost services.",
-    "- When browser checks are possible, save a screenshot and include the screenshot file path in the final report so the user can verify visually.",
+    "- IMPORTANT: agent-browser commands run on the HOST, not inside the sandbox. They WILL work. Do not skip browser checks or assume agent-browser is unavailable. Just run the command via the bash tool.",
+    "- Always save a screenshot and include the screenshot file path in the final report so the user can verify visually.",
     ...buildBrowserGuidance(profile),
     "",
     "Reporting requirements:",

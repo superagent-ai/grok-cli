@@ -188,13 +188,14 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Available package.json scripts: dev, build.");
     expect(prompt).toContain("Bootstrap commands:");
     expect(prompt).toContain("Install commands:");
-    expect(prompt).toContain("agent-browser");
+    expect(prompt).toContain("MUST run browser smoke tests");
+    expect(prompt).toContain("--screenshot-dir .grok/verify-artifacts");
     expect(prompt).toContain("Browser Checks");
     expect(prompt).toContain("Evidence");
     expect(prompt).toContain("Recipe");
     expect(prompt).toContain("ephemeral dependency installs are allowed inside the sandbox");
     expect(prompt).toContain("prefer chaining install + build/test/start");
-    expect(prompt).toContain(".grok/verify-artifacts/");
+    expect(prompt).toContain(".grok/verify-artifacts");
     expect(prompt).toContain("markdown links");
   });
 

@@ -46,10 +46,10 @@ agent-browser --session verify click @e1
 agent-browser --session verify fill @e2 "text"
 agent-browser --session verify press Enter
 
-# Capture proof
+# Capture proof (use --screenshot-dir, not a positional path)
 mkdir -p .grok/verify-artifacts
-agent-browser --session verify screenshot .grok/verify-artifacts/verify-smoke-home.png
-agent-browser --session verify screenshot --full .grok/verify-artifacts/verify-smoke-full.png
+agent-browser --session verify --screenshot-dir .grok/verify-artifacts screenshot
+agent-browser --session verify --screenshot-dir .grok/verify-artifacts screenshot --full
 
 # Clean up
 agent-browser --session verify close

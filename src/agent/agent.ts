@@ -313,7 +313,7 @@ function buildSubagentPrompt(
         ? [
             "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
             "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
-            "Use the sandbox-aware bash/tooling flow and optionally use browser automation only when the task prompt makes the smoke URL clear enough.",
+            "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
             "Return a concise structured verification report for the parent agent.",
           ]
         : [

@@ -2,7 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { BashTool, getSandboxMutationBlockReason, shouldRunOnHostInSandboxMode, wrapCommandForShuru } from "./bash";
+import {
+  BashTool,
+  getSandboxMutationBlockReason,
+  shouldRunOnHostInSandboxMode,
+  wrapCommandForShuru,
+  wrapHostBrowserCommand,
+} from "./bash";
 
 const tempDirs: string[] = [];
 
@@ -105,6 +111,21 @@ describe("shouldRunOnHostInSandboxMode", () => {
     ).toBe(true);
   });
 
+  it("detects agent-browser anywhere in compound commands", () => {
+    expect(
+      shouldRunOnHostInSandboxMode(
+        "mkdir -p .grok/verify-artifacts && agent-browser --session verify open http://127.0.0.1:3000",
+        { hostBrowserCommandsOnHost: true },
+      ),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("sleep 5 && agent-browser screenshot out.png", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(shouldRunOnHostInSandboxMode("cd /tmp; agent-browser get title", { hostBrowserCommandsOnHost: true })).toBe(
+      true,
+    );
+  });
+
   it("does not bypass unrelated commands", () => {
     expect(shouldRunOnHostInSandboxMode("bun run dev", { hostBrowserCommandsOnHost: true })).toBe(false);
     expect(shouldRunOnHostInSandboxMode("curl http://127.0.0.1:3000", { hostBrowserCommandsOnHost: true })).toBe(false);
@@ -112,6 +133,27 @@ describe("shouldRunOnHostInSandboxMode", () => {
 
   it("does nothing when host bypass is disabled", () => {
     expect(shouldRunOnHostInSandboxMode("agent-browser open http://127.0.0.1:3000", {})).toBe(false);
+  });
+});
+
+describe("wrapHostBrowserCommand", () => {
+  it("injects a deterministic CLI fallback wrapper", () => {
+    const result = wrapHostBrowserCommand(
+      "agent-browser open http://127.0.0.1:3000 && agent-browser screenshot out.png",
+    );
+    expect(result).toContain("__grok_ab()");
+    expect(result).toContain("command agent-browser");
+    expect(result).toContain("bunx agent-browser");
+    expect(result).toContain("npx -y agent-browser");
+    expect(result).toContain("__grok_ab open http://127.0.0.1:3000");
+    expect(result).toContain("__grok_ab screenshot out.png");
+  });
+
+  it("handles session flags and screenshot paths correctly", () => {
+    const result = wrapHostBrowserCommand(
+      "agent-browser --session verify screenshot .grok/verify-artifacts/verify-smoke-home.png",
+    );
+    expect(result).toContain("__grok_ab --session verify screenshot .grok/verify-artifacts/verify-smoke-home.png");
   });
 });
 
