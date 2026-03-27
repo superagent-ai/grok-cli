@@ -53,6 +53,7 @@ import {
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
+import { buildVerifyShortcutPrompt, prepareVerifyRuntimeConfig } from "../verify/entrypoint";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -291,6 +292,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "commit-push", label: "commit & push", description: "Commit and push" },
   { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
   { id: "review", label: "review", description: "Review recent changes" },
+  { id: "verify", label: "verify", description: "Run local verification" },
   { id: "skills", label: "skills", description: "Manage skills" },
   { id: "update", label: "update", description: "Update grok to the latest version" },
 ];
@@ -347,6 +349,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/exit",
   "/q",
   "/review",
+  "/verify",
   "/commit-push",
   "/commit-pr",
 ]);
@@ -1944,6 +1947,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     processMessageRef.current = processMessage;
   }, [processMessage]);
+  const runVerify = useCallback(async () => {
+    const previousMode = agent.getSandboxMode();
+    const previousSettings = agent.getSandboxSettings();
+    const detectedRecipe = await agent.detectVerifyRecipe(previousSettings);
+    const runtime = await prepareVerifyRuntimeConfig(agent.getCwd(), previousSettings, detectedRecipe);
+
+    agent.setSandboxMode(runtime.sandboxMode);
+    agent.setSandboxSettings(runtime.sandboxSettings);
+    setSandboxModeState(runtime.sandboxMode);
+    setSandboxSettingsState(runtime.sandboxSettings);
+
+    try {
+      await processMessage(buildVerifyShortcutPrompt(runtime.taskRequest));
+    } finally {
+      agent.setSandboxMode(previousMode);
+      agent.setSandboxSettings(previousSettings);
+      setSandboxModeState(previousMode);
+      setSandboxSettingsState(previousSettings);
+    }
+  }, [agent, processMessage]);
   useEffect(
     () =>
       agent.onSubagentStatus((status) => {
@@ -2029,6 +2052,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         processMessage(REVIEW_PROMPT);
         return true;
       }
+      if (c === "/verify") {
+        runVerify();
+        return true;
+      }
       if (c === "/commit-push") {
         processMessage(COMMIT_PUSH_PROMPT);
         return true;
@@ -2062,6 +2089,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openScheduleModal,
       processMessage,
       resetToNewSession,
+      runVerify,
       subAgents,
     ],
   );
@@ -2121,6 +2149,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "review":
           processMessage(REVIEW_PROMPT);
           break;
+        case "verify":
+          runVerify();
+          break;
         case "commit-push":
           processMessage(COMMIT_PUSH_PROMPT);
           break;
@@ -2150,6 +2181,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openScheduleModal,
       processMessage,
       resetToNewSession,
+      runVerify,
     ],
   );
 

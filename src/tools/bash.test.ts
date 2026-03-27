@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { BashTool, getSandboxMutationBlockReason, wrapCommandForShuru } from "./bash";
+import { BashTool, getSandboxMutationBlockReason, shouldRunOnHostInSandboxMode, wrapCommandForShuru } from "./bash";
 
 const tempDirs: string[] = [];
 
@@ -92,6 +92,29 @@ describe("wrapCommandForShuru", () => {
   });
 });
 
+describe("shouldRunOnHostInSandboxMode", () => {
+  it("keeps agent-browser on the host when enabled", () => {
+    expect(
+      shouldRunOnHostInSandboxMode("agent-browser open http://127.0.0.1:3000", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("npx agent-browser screenshot out.png", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("bunx agent-browser wait --load networkidle", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+  });
+
+  it("does not bypass unrelated commands", () => {
+    expect(shouldRunOnHostInSandboxMode("bun run dev", { hostBrowserCommandsOnHost: true })).toBe(false);
+    expect(shouldRunOnHostInSandboxMode("curl http://127.0.0.1:3000", { hostBrowserCommandsOnHost: true })).toBe(false);
+  });
+
+  it("does nothing when host bypass is disabled", () => {
+    expect(shouldRunOnHostInSandboxMode("agent-browser open http://127.0.0.1:3000", {})).toBe(false);
+  });
+});
+
 describe("getSandboxMutationBlockReason", () => {
   it("returns null for read-only git commands", () => {
     expect(getSandboxMutationBlockReason("git status")).toBeNull();
@@ -127,6 +150,12 @@ describe("getSandboxMutationBlockReason", () => {
     expect(getSandboxMutationBlockReason("yarn add lodash")).toContain("Package-manager installs");
     expect(getSandboxMutationBlockReason("pnpm install")).toContain("Package-manager installs");
     expect(getSandboxMutationBlockReason("bun add zod")).toContain("Package-manager installs");
+  });
+
+  it("allows package-manager installs when ephemeral installs are enabled", () => {
+    expect(getSandboxMutationBlockReason("npm install express", { allowEphemeralInstall: true })).toBeNull();
+    expect(getSandboxMutationBlockReason("pnpm install", { allowEphemeralInstall: true })).toBeNull();
+    expect(getSandboxMutationBlockReason("pip install fastapi", { allowEphemeralInstall: true })).toBeNull();
   });
 
   it("blocks package-manager installs in compound commands", () => {

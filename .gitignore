@@ -105,4 +105,8 @@ temp/
 # .cursor/
 .cursor/hooks/state/
 .agents
+!.agents/
+!.agents/skills/
+!.agents/skills/agent-browser/
+!.agents/skills/agent-browser/SKILL.md
 skills-lock.json

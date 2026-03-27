@@ -23,6 +23,12 @@ export interface SandboxSettings {
   diskSize?: number;
   secrets?: SandboxSecretConfig[];
   from?: string;
+  allowEphemeralInstall?: boolean;
+  guestWorkdir?: string;
+  syncHostWorkspace?: boolean;
+  verifyBaseFrom?: string;
+  shellInit?: string[];
+  hostBrowserCommandsOnHost?: boolean;
 }
 
 export const DEFAULT_TELEGRAM_AUDIO_INPUT_BINARY = "whisper-cli";
@@ -83,7 +89,7 @@ export interface CustomSubagentConfig {
   instruction: string;
 }
 
-const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore", "vision"]);
+const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore", "vision", "verify"]);
 
 export function isReservedSubagentName(name: string): boolean {
   return RESERVED_SUBAGENT_NAMES.has(name.trim().toLowerCase());
@@ -300,6 +306,8 @@ export function normalizeSandboxSettings(raw: unknown): SandboxSettings {
     if (secrets.length > 0) result.secrets = secrets;
   }
   if (typeof raw.from === "string" && raw.from.trim()) result.from = raw.from.trim();
+  if (typeof raw.hostBrowserCommandsOnHost === "boolean")
+    result.hostBrowserCommandsOnHost = raw.hostBrowserCommandsOnHost;
 
   return result;
 }
@@ -320,6 +328,12 @@ export function mergeSandboxSettings(
     diskSize: override.diskSize ?? base.diskSize,
     secrets: override.secrets ?? base.secrets,
     from: override.from ?? base.from,
+    allowEphemeralInstall: override.allowEphemeralInstall ?? base.allowEphemeralInstall,
+    guestWorkdir: override.guestWorkdir ?? base.guestWorkdir,
+    syncHostWorkspace: override.syncHostWorkspace ?? base.syncHostWorkspace,
+    verifyBaseFrom: override.verifyBaseFrom ?? base.verifyBaseFrom,
+    shellInit: override.shellInit ?? base.shellInit,
+    hostBrowserCommandsOnHost: override.hostBrowserCommandsOnHost ?? base.hostBrowserCommandsOnHost,
   };
 }
 
