@@ -304,12 +304,10 @@ function detectNodeRecipe(cwd: string, pkg: PackageJsonLike, packageManager: str
     bootstrapCommands: getNodeBootstrapCommands(packageManager),
     installCommands: dedupe([install]),
     buildCommands: dedupe(
-      [scripts.build, scripts.typecheck, scripts.lint].map(
-        (script) => script && pickPackageScript(packageManager, scripts, script),
-      ),
+      [scripts.build, scripts.typecheck].map((script) => script && pickPackageScript(packageManager, scripts, script)),
     ),
     testCommands: dedupe(
-      ["test", "check", "lint", "typecheck"]
+      ["test", "check", "lint"]
         .filter((name) => scripts[name])
         .map((name) => pickPackageScript(packageManager, scripts, scripts[name]!)),
     ),
