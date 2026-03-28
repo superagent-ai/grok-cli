@@ -4025,6 +4025,7 @@ function formatSubagentName(agent: string): string {
   if (agent === "general") return "General";
   if (agent === "explore") return "Explore";
   if (agent === "vision") return "Vision";
+  if (agent === "verify") return "Verify";
   return agent || "Sub-agent";
 }
 
