@@ -60,12 +60,8 @@ export function isHeadlessOutputFormat(value: string): value is HeadlessOutputFo
   return value === "text" || value === "json";
 }
 
-export function renderHeadlessPrelude(
-  format: HeadlessOutputFormat,
-  sessionId?: string,
-  options?: { skipPrelude?: boolean },
-): HeadlessWrites {
-  if (format === "json" || options?.skipPrelude) {
+export function renderHeadlessPrelude(format: HeadlessOutputFormat, sessionId?: string): HeadlessWrites {
+  if (format === "json") {
     return {};
   }
 

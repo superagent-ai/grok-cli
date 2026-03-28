@@ -104,10 +104,9 @@ async function runHeadless(
   sandboxSettings: SandboxSettings,
   format: HeadlessOutputFormat,
   session?: string,
-  options?: { skipPrelude?: boolean },
 ) {
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
-  const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined, options);
+  const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
 
@@ -297,38 +296,14 @@ program
         process.exit(1);
       }
 
-      const verifyLog = (msg: string) => process.stderr.write(`\x1b[36m▸ ${msg}\x1b[0m\n`);
-      verifyLog("Inspecting project...");
-
       const verifyAgent = new Agent(requireApiKey(config.apiKey), config.baseURL, config.model, config.maxToolRounds, {
         persistSession: false,
         sandboxMode: config.sandboxMode,
         sandboxSettings: config.sandboxSettings,
       });
-
-      verifyLog("Detecting verification recipe...");
       const detectedRecipe = await verifyAgent.detectVerifyRecipe(config.sandboxSettings);
-      if (detectedRecipe) {
-        verifyLog(`Recipe: ${detectedRecipe.appLabel} (${detectedRecipe.ecosystem})`);
-        if (detectedRecipe.installCommands.length > 0)
-          verifyLog(`Install: ${detectedRecipe.installCommands.join(", ")}`);
-        if (detectedRecipe.testCommands.length > 0) verifyLog(`Test: ${detectedRecipe.testCommands.join(", ")}`);
-        if (detectedRecipe.startCommand) verifyLog(`Start: ${detectedRecipe.startCommand}`);
-        if (detectedRecipe.smokeKind === "http" && detectedRecipe.startPort)
-          verifyLog(`Smoke: http://127.0.0.1:${detectedRecipe.startPort}`);
-      } else {
-        verifyLog("Recipe detection returned no result; using fallback heuristics.");
-      }
-
-      verifyLog("Preparing sandbox environment...");
       const runtime = await prepareVerifyRuntimeConfig(process.cwd(), config.sandboxSettings, detectedRecipe);
-      if (runtime.checkpointCreated) {
-        verifyLog("Created new checkpoint for this recipe.");
-      } else if (runtime.sandboxSettings.from) {
-        verifyLog(`Reusing checkpoint: ${runtime.sandboxSettings.from}`);
-      }
 
-      verifyLog("Running verification in sandbox...");
       await runHeadless(
         buildVerifyShortcutPrompt(runtime.taskRequest),
         requireApiKey(config.apiKey),
@@ -339,7 +314,6 @@ program
         runtime.sandboxSettings,
         options.format,
         options.session,
-        { skipPrelude: true },
       );
       return;
     }

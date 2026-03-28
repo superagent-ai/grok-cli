@@ -1950,41 +1950,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const runVerify = useCallback(async () => {
     const previousMode = agent.getSandboxMode();
     const previousSettings = agent.getSandboxSettings();
-
-    const verifyStatus = (msg: string) => {
-      setMessages((prev) => [...prev, buildAssistantEntry(`▸ ${msg}`)]);
-      setTimeout(scrollToBottom, 10);
-    };
-
-    verifyStatus("Inspecting project...");
-    verifyStatus("Detecting verification recipe...");
     const detectedRecipe = await agent.detectVerifyRecipe(previousSettings);
-    if (detectedRecipe) {
-      verifyStatus(`Recipe: ${detectedRecipe.appLabel} (${detectedRecipe.ecosystem})`);
-      if (detectedRecipe.installCommands.length > 0)
-        verifyStatus(`Install: ${detectedRecipe.installCommands.join(", ")}`);
-      if (detectedRecipe.testCommands.length > 0) verifyStatus(`Test: ${detectedRecipe.testCommands.join(", ")}`);
-      if (detectedRecipe.startCommand) verifyStatus(`Start: ${detectedRecipe.startCommand}`);
-      if (detectedRecipe.smokeKind === "http" && detectedRecipe.startPort)
-        verifyStatus(`Smoke: http://127.0.0.1:${detectedRecipe.startPort}`);
-    } else {
-      verifyStatus("Recipe detection returned no result; using fallback heuristics.");
-    }
-
-    verifyStatus("Preparing sandbox environment...");
     const runtime = await prepareVerifyRuntimeConfig(agent.getCwd(), previousSettings, detectedRecipe);
-    if (runtime.checkpointCreated) {
-      verifyStatus("Created new checkpoint for this recipe.");
-    } else if (runtime.sandboxSettings.from) {
-      verifyStatus(`Reusing checkpoint: ${runtime.sandboxSettings.from}`);
-    }
 
     agent.setSandboxMode(runtime.sandboxMode);
     agent.setSandboxSettings(runtime.sandboxSettings);
     setSandboxModeState(runtime.sandboxMode);
     setSandboxSettingsState(runtime.sandboxSettings);
-
-    verifyStatus("Running verification in sandbox...");
 
     try {
       await processMessage(buildVerifyShortcutPrompt(runtime.taskRequest));
@@ -1994,7 +1966,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setSandboxModeState(previousMode);
       setSandboxSettingsState(previousSettings);
     }
-  }, [agent, processMessage, scrollToBottom]);
+  }, [agent, processMessage]);
   useEffect(
     () =>
       agent.onSubagentStatus((status) => {
