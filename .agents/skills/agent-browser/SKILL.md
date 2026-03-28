@@ -46,13 +46,17 @@ agent-browser --session verify click @e1
 agent-browser --session verify fill @e2 "text"
 agent-browser --session verify press Enter
 
-# Capture proof (use --screenshot-dir, not a positional path)
-mkdir -p .grok/verify-artifacts
-agent-browser --session verify --screenshot-dir .grok/verify-artifacts screenshot
-agent-browser --session verify --screenshot-dir .grok/verify-artifacts screenshot --full
+# Record the smoke test as video
+agent-browser record start .grok/verify-artifacts/verify-smoke.webm
 
-# Clean up
-agent-browser --session verify close
+# Capture screenshot proof (use --screenshot-dir, not a positional path)
+mkdir -p .grok/verify-artifacts
+agent-browser --screenshot-dir .grok/verify-artifacts screenshot
+agent-browser --screenshot-dir .grok/verify-artifacts screenshot --full
+
+# Stop recording and clean up
+agent-browser record stop
+agent-browser close
 ```
 
 ## Guidance

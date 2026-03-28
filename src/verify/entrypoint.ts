@@ -589,10 +589,11 @@ function buildBrowserGuidance(profile: VerifyProjectProfile): string[] {
       `- REQUIRED: After the dev server is running, you MUST run browser smoke tests against ${profile.recipe.smokeTarget}.`,
       "- The agent-browser command runs on the HOST, not inside the sandbox. It WILL work. Do not skip it or assume it is unavailable.",
       "- Run this exact sequence using the bash tool:",
-      `    mkdir -p .grok/verify-artifacts && agent-browser --screenshot-dir .grok/verify-artifacts open ${profile.recipe.smokeTarget} && agent-browser wait --load networkidle && agent-browser --screenshot-dir .grok/verify-artifacts screenshot && agent-browser get title && agent-browser close`,
+      `    mkdir -p .grok/verify-artifacts && agent-browser record start .grok/verify-artifacts/verify-smoke.webm && agent-browser --screenshot-dir .grok/verify-artifacts open ${profile.recipe.smokeTarget} && agent-browser wait --load networkidle && agent-browser --screenshot-dir .grok/verify-artifacts screenshot && agent-browser get title && agent-browser record stop && agent-browser close`,
       "- IMPORTANT: Use --screenshot-dir .grok/verify-artifacts to control where screenshots are saved. Do NOT pass a filename as a positional arg to the screenshot command.",
+      "- IMPORTANT: Use `agent-browser record start <path>` and `agent-browser record stop` to capture a video recording of the smoke test flow.",
       "- If that command fails, report the exact error output. Do not preemptively skip browser checks.",
-      "- Include the screenshot file paths from the output in the Evidence section.",
+      "- Include both the screenshot and video file paths from the output in the Evidence section.",
     ];
   }
 

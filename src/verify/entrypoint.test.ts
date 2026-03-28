@@ -190,6 +190,8 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Install commands:");
     expect(prompt).toContain("MUST run browser smoke tests");
     expect(prompt).toContain("--screenshot-dir .grok/verify-artifacts");
+    expect(prompt).toContain("record start .grok/verify-artifacts/verify-smoke.webm");
+    expect(prompt).toContain("record stop");
     expect(prompt).toContain("Browser Checks");
     expect(prompt).toContain("Evidence");
     expect(prompt).toContain("Recipe");
