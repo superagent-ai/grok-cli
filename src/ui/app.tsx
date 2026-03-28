@@ -53,7 +53,7 @@ import {
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
-import { buildVerifyPrompt } from "../verify/entrypoint";
+import { VERIFY_PROMPT } from "../verify/entrypoint";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -1947,9 +1947,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     processMessageRef.current = processMessage;
   }, [processMessage]);
-  const runVerify = useCallback(() => {
-    processMessage(buildVerifyPrompt(agent.getCwd(), agent.getSandboxSettings()));
-  }, [agent, processMessage]);
   useEffect(
     () =>
       agent.onSubagentStatus((status) => {
@@ -2036,7 +2033,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return true;
       }
       if (c === "/verify") {
-        runVerify();
+        processMessage(VERIFY_PROMPT);
         return true;
       }
       if (c === "/commit-push") {
@@ -2072,7 +2069,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openScheduleModal,
       processMessage,
       resetToNewSession,
-      runVerify,
       subAgents,
     ],
   );
@@ -2133,7 +2129,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           processMessage(REVIEW_PROMPT);
           break;
         case "verify":
-          runVerify();
+          processMessage(VERIFY_PROMPT);
           break;
         case "commit-push":
           processMessage(COMMIT_PUSH_PROMPT);
@@ -2164,7 +2160,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openScheduleModal,
       processMessage,
       resetToNewSession,
-      runVerify,
     ],
   );
 

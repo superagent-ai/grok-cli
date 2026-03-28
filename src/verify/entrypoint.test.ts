@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { VerifyRecipe } from "../types/index";
 import {
   buildVerifyDetectPrompt,
-  buildVerifyPrompt,
   buildVerifyTaskPrompt,
   createVerifyRuntimeConfig,
   getVerifyCliError,
   inferVerifyProjectProfile,
   inferVerifySmokeUrl,
+  VERIFY_PROMPT,
 } from "./entrypoint";
 
 const tempDirs: string[] = [];
@@ -218,15 +218,11 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Skip browser checks unless the user clearly identifies");
   });
 
-  it("builds a verify prompt that drives both sub-agents", () => {
-    const dir = makeTempDir("grok-verify-prompt-driver-");
-    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "15.0.0" } }, null, 2));
-    const prompt = buildVerifyPrompt(dir);
-    expect(prompt).toContain("verify-detect");
-    expect(prompt).toContain("verify");
-    expect(prompt).toContain("Step 1");
-    expect(prompt).toContain("Step 2");
-    expect(prompt).toContain("task");
+  it("VERIFY_PROMPT drives both sub-agents", () => {
+    expect(VERIFY_PROMPT).toContain("verify-detect");
+    expect(VERIFY_PROMPT).toContain("Step 1");
+    expect(VERIFY_PROMPT).toContain("Step 2");
+    expect(VERIFY_PROMPT).toContain("task");
   });
 
   it("uses an override recipe when creating the runtime config", () => {
