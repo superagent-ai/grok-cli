@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { VerifyRecipe } from "../types/index";
 import {
   buildVerifyDetectPrompt,
-  buildVerifyShortcutPrompt,
+  buildVerifyPrompt,
   buildVerifyTaskPrompt,
   createVerifyRuntimeConfig,
   getVerifyCliError,
@@ -218,14 +218,15 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Skip browser checks unless the user clearly identifies");
   });
 
-  it("builds a parent shortcut prompt that dispatches to the verify sub-agent", () => {
-    const dir = makeTempDir("grok-verify-shortcut-");
+  it("builds a verify prompt that drives both sub-agents", () => {
+    const dir = makeTempDir("grok-verify-prompt-driver-");
     fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ dependencies: { next: "15.0.0" } }, null, 2));
-    const runtime = createVerifyRuntimeConfig(dir, { ports: ["3000:3000"] });
-    const prompt = buildVerifyShortcutPrompt(runtime.taskRequest);
-    expect(prompt).toContain("Use the `task` tool immediately.");
-    expect(prompt).toContain('agent: "verify"');
-    expect(prompt).toContain("Run local verification");
+    const prompt = buildVerifyPrompt(dir);
+    expect(prompt).toContain("verify-detect");
+    expect(prompt).toContain("verify");
+    expect(prompt).toContain("Step 1");
+    expect(prompt).toContain("Step 2");
+    expect(prompt).toContain("task");
   });
 
   it("uses an override recipe when creating the runtime config", () => {

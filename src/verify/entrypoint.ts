@@ -803,17 +803,29 @@ export async function prepareVerifyRuntimeConfig(
   };
 }
 
-export function buildVerifyShortcutPrompt(request: TaskRequest): string {
+export function buildVerifyPrompt(cwd: string, settings?: SandboxSettings): string {
+  const fallbackProfile = inferVerifyProjectProfile(cwd, settings);
+  const fallbackContext = buildProjectContextLines(fallbackProfile).join("\n");
   return [
-    "Run the built-in verify sub-agent now.",
+    "Verify this project locally. Follow these steps in order using the `task` tool:",
+    "",
+    "Step 1: Run the `verify-detect` sub-agent to inspect the repository and produce a verification recipe.",
+    "- agent: verify-detect",
+    '- description: "Detect verification recipe"',
+    "- The prompt should ask it to read config files, package manifests, scripts, and source layout, then return ONLY a JSON VerifyRecipe object.",
+    "- Pass these fallback hints in the prompt so the detect agent has context:",
+    fallbackContext,
+    "",
+    "Step 2: Once you have the recipe JSON from step 1, run the `verify` sub-agent to execute it.",
+    "- agent: verify",
+    '- description: "Run local verification"',
+    "- Pass the full recipe JSON and execution instructions in the prompt.",
+    "- The verify agent should: install deps, build, test, start the app, run browser smoke tests, capture screenshots, and produce a structured report.",
     "",
     "Important:",
-    "- Use the `task` tool immediately.",
-    "- Do not perform the verification work in the parent agent.",
-    `- agent: "${request.agent}"`,
-    `- description: "${request.description}"`,
-    "- prompt:",
-    request.prompt,
+    "- Do NOT perform verification work yourself. Delegate each step to the respective sub-agent using the `task` tool.",
+    "- Run step 1 first, then step 2. Do not skip or combine them.",
+    "- After step 2 completes, relay the verification report back to the user.",
   ].join("\n");
 }
 

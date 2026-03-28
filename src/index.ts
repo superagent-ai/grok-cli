@@ -26,7 +26,7 @@ import {
   saveUserSettings,
 } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
-import { buildVerifyShortcutPrompt, getVerifyCliError, prepareVerifyRuntimeConfig } from "./verify/entrypoint";
+import { buildVerifyPrompt, getVerifyCliError } from "./verify/entrypoint";
 
 dotenv.config();
 
@@ -296,22 +296,14 @@ program
         process.exit(1);
       }
 
-      const verifyAgent = new Agent(requireApiKey(config.apiKey), config.baseURL, config.model, config.maxToolRounds, {
-        persistSession: false,
-        sandboxMode: config.sandboxMode,
-        sandboxSettings: config.sandboxSettings,
-      });
-      const detectedRecipe = await verifyAgent.detectVerifyRecipe(config.sandboxSettings);
-      const runtime = await prepareVerifyRuntimeConfig(process.cwd(), config.sandboxSettings, detectedRecipe);
-
       await runHeadless(
-        buildVerifyShortcutPrompt(runtime.taskRequest),
+        buildVerifyPrompt(process.cwd(), config.sandboxSettings),
         requireApiKey(config.apiKey),
         config.baseURL,
         config.model,
         config.maxToolRounds,
-        runtime.sandboxMode,
-        runtime.sandboxSettings,
+        config.sandboxMode,
+        config.sandboxSettings,
         options.format,
         options.session,
       );

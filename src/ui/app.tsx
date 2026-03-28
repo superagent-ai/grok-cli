@@ -53,7 +53,7 @@ import {
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
-import { buildVerifyShortcutPrompt, prepareVerifyRuntimeConfig } from "../verify/entrypoint";
+import { buildVerifyPrompt } from "../verify/entrypoint";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -1947,25 +1947,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   useEffect(() => {
     processMessageRef.current = processMessage;
   }, [processMessage]);
-  const runVerify = useCallback(async () => {
-    const previousMode = agent.getSandboxMode();
-    const previousSettings = agent.getSandboxSettings();
-    const detectedRecipe = await agent.detectVerifyRecipe(previousSettings);
-    const runtime = await prepareVerifyRuntimeConfig(agent.getCwd(), previousSettings, detectedRecipe);
-
-    agent.setSandboxMode(runtime.sandboxMode);
-    agent.setSandboxSettings(runtime.sandboxSettings);
-    setSandboxModeState(runtime.sandboxMode);
-    setSandboxSettingsState(runtime.sandboxSettings);
-
-    try {
-      await processMessage(buildVerifyShortcutPrompt(runtime.taskRequest));
-    } finally {
-      agent.setSandboxMode(previousMode);
-      agent.setSandboxSettings(previousSettings);
-      setSandboxModeState(previousMode);
-      setSandboxSettingsState(previousSettings);
-    }
+  const runVerify = useCallback(() => {
+    processMessage(buildVerifyPrompt(agent.getCwd(), agent.getSandboxSettings()));
   }, [agent, processMessage]);
   useEffect(
     () =>

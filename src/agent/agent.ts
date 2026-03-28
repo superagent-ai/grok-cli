@@ -712,9 +712,14 @@ export class Agent {
     }
 
     const childMode: AgentMode = isExplore || isVerifyDetect ? "ask" : "agent";
+    const verifySandboxOverrides: SandboxSettings = isVerify
+      ? { allowNet: true, allowedHosts: undefined, allowEphemeralInstall: true, hostBrowserCommandsOnHost: true }
+      : {};
     const childBash = new BashTool(this.bash.getCwd(), {
-      sandboxMode: this.bash.getSandboxMode(),
-      sandboxSettings: this.bash.getSandboxSettings(),
+      sandboxMode: isVerify ? "shuru" : this.bash.getSandboxMode(),
+      sandboxSettings: isVerify
+        ? { ...this.bash.getSandboxSettings(), ...verifySandboxOverrides }
+        : this.bash.getSandboxSettings(),
     });
     const childBaseTools = createTools(childBash, provider, childMode);
     const initialDetail = isExplore
