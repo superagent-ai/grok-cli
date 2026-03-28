@@ -60,8 +60,12 @@ export function isHeadlessOutputFormat(value: string): value is HeadlessOutputFo
   return value === "text" || value === "json";
 }
 
-export function renderHeadlessPrelude(format: HeadlessOutputFormat, sessionId?: string): HeadlessWrites {
-  if (format === "json") {
+export function renderHeadlessPrelude(
+  format: HeadlessOutputFormat,
+  sessionId?: string,
+  options?: { skipPrelude?: boolean },
+): HeadlessWrites {
+  if (format === "json" || options?.skipPrelude) {
     return {};
   }
 
@@ -82,7 +86,7 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
     case "tool_calls":
       return chunk.toolCalls?.length
         ? {
-            stderr: chunk.toolCalls.map((tc) => `\x1b[33m⚙ ${formatToolCallLabel(tc)}\x1b[0m\n`).join(""),
+            stderr: chunk.toolCalls.map((tc) => `\x1b[33m▸ ${formatToolCallLabel(tc)}\x1b[0m\n`).join(""),
           }
         : {};
 
@@ -91,7 +95,7 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
         return {};
       }
 
-      const icon = chunk.toolResult.success ? "✓" : "✗";
+      const icon = chunk.toolResult.success ? "▸" : "✗";
       const color = chunk.toolResult.success ? "\x1b[32m" : "\x1b[31m";
       const label = chunk.toolCall ? formatToolCallLabel(chunk.toolCall) : "tool";
       const mediaLines =

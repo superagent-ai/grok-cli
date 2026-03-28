@@ -104,9 +104,10 @@ async function runHeadless(
   sandboxSettings: SandboxSettings,
   format: HeadlessOutputFormat,
   session?: string,
+  options?: { skipPrelude?: boolean },
 ) {
   const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
-  const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
+  const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined, options);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
 
@@ -327,7 +328,7 @@ program
         verifyLog(`Reusing checkpoint: ${runtime.sandboxSettings.from}`);
       }
 
-      verifyLog("Running verification...");
+      verifyLog("Running verification in sandbox...");
       await runHeadless(
         buildVerifyShortcutPrompt(runtime.taskRequest),
         requireApiKey(config.apiKey),
@@ -338,6 +339,7 @@ program
         runtime.sandboxSettings,
         options.format,
         options.session,
+        { skipPrelude: true },
       );
       return;
     }
