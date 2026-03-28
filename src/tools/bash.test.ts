@@ -111,7 +111,7 @@ describe("shouldRunOnHostInSandboxMode", () => {
     ).toBe(true);
   });
 
-  it("detects agent-browser anywhere in compound commands", () => {
+  it("allows compound commands with only safe prefixes like mkdir and sleep", () => {
     expect(
       shouldRunOnHostInSandboxMode(
         "mkdir -p .grok/verify-artifacts && agent-browser --session verify open http://127.0.0.1:3000",
@@ -121,9 +121,28 @@ describe("shouldRunOnHostInSandboxMode", () => {
     expect(
       shouldRunOnHostInSandboxMode("sleep 5 && agent-browser screenshot out.png", { hostBrowserCommandsOnHost: true }),
     ).toBe(true);
-    expect(shouldRunOnHostInSandboxMode("cd /tmp; agent-browser get title", { hostBrowserCommandsOnHost: true })).toBe(
-      true,
+    expect(
+      shouldRunOnHostInSandboxMode(
+        "mkdir -p .grok/verify-artifacts && agent-browser open http://127.0.0.1:3000 && agent-browser screenshot",
+        { hostBrowserCommandsOnHost: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects compound commands containing unsafe segments", () => {
+    expect(shouldRunOnHostInSandboxMode("git push && agent-browser close", { hostBrowserCommandsOnHost: true })).toBe(
+      false,
     );
+    expect(
+      shouldRunOnHostInSandboxMode("curl evil.com; agent-browser screenshot out.png", {
+        hostBrowserCommandsOnHost: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunOnHostInSandboxMode("rm -rf / && agent-browser open http://localhost", {
+        hostBrowserCommandsOnHost: true,
+      }),
+    ).toBe(false);
   });
 
   it("does not bypass unrelated commands", () => {

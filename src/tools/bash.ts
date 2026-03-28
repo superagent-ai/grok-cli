@@ -470,11 +470,18 @@ export function wrapCommandForShuru(cwd: string, command: string, settings: Sand
   return parts.join(" ");
 }
 
+const HOST_SAFE_SEGMENT_RE =
+  /^\s*(?:(?:npx(?:\s+-y)?|bunx)\s+)?agent-browser\b|^\s*mkdir\s|^\s*sleep\s|^\s*echo\s|^\s*true\s*$|^\s*$/;
+
 export function shouldRunOnHostInSandboxMode(command: string, settings: SandboxSettings = {}): boolean {
   if (!settings.hostBrowserCommandsOnHost) {
     return false;
   }
-  return /\bagent-browser\b/.test(command);
+  if (!/\bagent-browser\b/.test(command)) {
+    return false;
+  }
+  const segments = command.split(/\s*(?:&&|\|\||;)\s*/);
+  return segments.every((segment) => HOST_SAFE_SEGMENT_RE.test(segment));
 }
 
 export function wrapHostBrowserCommand(command: string): string {
