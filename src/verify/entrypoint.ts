@@ -124,88 +124,8 @@ function dedupe(values: Array<string | undefined | null>): string[] {
   return [...new Set(values.map((v) => v?.trim()).filter((v): v is string => Boolean(v)))];
 }
 
-function bootstrapWhenMissing(check: string, install: string): string {
-  return `command -v ${check} >/dev/null 2>&1 || (${install})`;
-}
-
-function getBaseShellInitCommands(): string[] {
+function defaultShellInit(): string[] {
   return ["export DEBIAN_FRONTEND=noninteractive"];
-}
-
-function getNodeBootstrapCommands(packageManager: string | null): string[] {
-  const ensureNode = bootstrapWhenMissing("node", "apt-get update && apt-get install -y nodejs npm");
-  const ensureBun =
-    "command -v bun >/dev/null 2>&1 || (apt-get update && apt-get install -y curl unzip ca-certificates && curl -fsSL https://bun.sh/install | bash)";
-  const ensurePnpm = `${ensureNode} && command -v pnpm >/dev/null 2>&1 || npm install -g pnpm`;
-  const ensureYarn = `${ensureNode} && command -v yarn >/dev/null 2>&1 || npm install -g yarn`;
-
-  if (packageManager === "bun") return [ensureBun, ensureNode];
-  if (packageManager === "pnpm") return [ensurePnpm];
-  if (packageManager === "yarn") return [ensureYarn];
-  return [ensureNode];
-}
-
-function getNodeShellInitCommands(packageManager: string | null): string[] {
-  const base = getBaseShellInitCommands();
-  if (packageManager === "bun") {
-    return [...base, 'export PATH="$HOME/.bun/bin:$PATH"'];
-  }
-  return base;
-}
-
-function getPythonBootstrapCommands(packageManager: string | null): string[] {
-  const ensurePython = bootstrapWhenMissing(
-    "python3",
-    "apt-get update && apt-get install -y python3 python3-pip python3-venv",
-  );
-  if (packageManager === "uv") {
-    return [ensurePython, "command -v uv >/dev/null 2>&1 || (python3 -m pip install --break-system-packages uv)"];
-  }
-  if (packageManager === "poetry") {
-    return [
-      ensurePython,
-      "command -v poetry >/dev/null 2>&1 || (python3 -m pip install --break-system-packages poetry)",
-    ];
-  }
-  if (packageManager === "pipenv") {
-    return [
-      ensurePython,
-      "command -v pipenv >/dev/null 2>&1 || (python3 -m pip install --break-system-packages pipenv)",
-    ];
-  }
-  return [ensurePython];
-}
-
-function getPythonShellInitCommands(packageManager: string | null): string[] {
-  const base = getBaseShellInitCommands();
-  if (packageManager === "uv" || packageManager === "poetry" || packageManager === "pipenv") {
-    return [...base, 'export PATH="$HOME/.local/bin:$PATH"'];
-  }
-  return base;
-}
-
-function getGoBootstrapCommands(): string[] {
-  return [bootstrapWhenMissing("go", "apt-get update && apt-get install -y golang-go")];
-}
-
-function getRustBootstrapCommands(): string[] {
-  return [bootstrapWhenMissing("cargo", "apt-get update && apt-get install -y cargo rustc")];
-}
-
-function getJavaBootstrapCommands(appKind: VerifyAppKind): string[] {
-  if (appKind === "maven") {
-    return [
-      bootstrapWhenMissing("java", "apt-get update && apt-get install -y default-jdk"),
-      bootstrapWhenMissing("mvn", "apt-get update && apt-get install -y maven"),
-    ];
-  }
-  if (appKind === "gradle") {
-    return [
-      bootstrapWhenMissing("java", "apt-get update && apt-get install -y default-jdk"),
-      bootstrapWhenMissing("gradle", "apt-get update && apt-get install -y gradle"),
-    ];
-  }
-  return [];
 }
 
 function inferPortFromCommand(command: string | undefined): string | undefined {
@@ -238,7 +158,7 @@ function detectMakeRecipe(cwd: string): VerifyRecipe | null {
     ecosystem: "make",
     appKind: "make",
     appLabel: "Makefile-driven project",
-    shellInitCommands: getBaseShellInitCommands(),
+    shellInitCommands: defaultShellInit(),
     bootstrapCommands: [],
     installCommands: install ? [`make ${install}`] : [],
     buildCommands: build ? [`make ${build}`] : [],
@@ -300,8 +220,8 @@ function detectNodeRecipe(cwd: string, pkg: PackageJsonLike, packageManager: str
     ecosystem: "node",
     appKind,
     appLabel,
-    shellInitCommands: getNodeShellInitCommands(packageManager),
-    bootstrapCommands: getNodeBootstrapCommands(packageManager),
+    shellInitCommands: defaultShellInit(),
+    bootstrapCommands: [],
     installCommands: dedupe([install]),
     buildCommands: dedupe(
       [scripts.build, scripts.typecheck].map((script) => script && pickPackageScript(packageManager, scripts, script)),
@@ -357,8 +277,8 @@ function detectPythonRecipe(cwd: string): VerifyRecipe | null {
       ecosystem: "python",
       appKind: "django",
       appLabel: "Django app",
-      shellInitCommands: getPythonShellInitCommands(packageManager),
-      bootstrapCommands: getPythonBootstrapCommands(packageManager),
+      shellInitCommands: defaultShellInit(),
+      bootstrapCommands: [],
       installCommands: [install],
       buildCommands: [],
       testCommands: ["python manage.py test"],
@@ -376,8 +296,8 @@ function detectPythonRecipe(cwd: string): VerifyRecipe | null {
       ecosystem: "python",
       appKind: "python",
       appLabel: "Python web app",
-      shellInitCommands: getPythonShellInitCommands(packageManager),
-      bootstrapCommands: getPythonBootstrapCommands(packageManager),
+      shellInitCommands: defaultShellInit(),
+      bootstrapCommands: [],
       installCommands: [install],
       buildCommands: [],
       testCommands: fileExists(cwd, "tests") ? ["pytest"] : [],
@@ -393,8 +313,8 @@ function detectPythonRecipe(cwd: string): VerifyRecipe | null {
     ecosystem: "python",
     appKind: "python",
     appLabel: "Python project",
-    shellInitCommands: getPythonShellInitCommands(packageManager),
-    bootstrapCommands: getPythonBootstrapCommands(packageManager),
+    shellInitCommands: defaultShellInit(),
+    bootstrapCommands: [],
     installCommands: [install],
     buildCommands: [],
     testCommands: fileExists(cwd, "tests") ? ["pytest"] : ["python -m unittest discover"],
@@ -410,8 +330,8 @@ function detectGoRecipe(cwd: string): VerifyRecipe | null {
     ecosystem: "go",
     appKind: "go",
     appLabel: "Go project",
-    shellInitCommands: getBaseShellInitCommands(),
-    bootstrapCommands: getGoBootstrapCommands(),
+    shellInitCommands: defaultShellInit(),
+    bootstrapCommands: [],
     installCommands: [],
     buildCommands: ["go build ./..."],
     testCommands: ["go test ./..."],
@@ -428,8 +348,8 @@ function detectRustRecipe(cwd: string): VerifyRecipe | null {
     ecosystem: "rust",
     appKind: "rust",
     appLabel: "Rust project",
-    shellInitCommands: getBaseShellInitCommands(),
-    bootstrapCommands: getRustBootstrapCommands(),
+    shellInitCommands: defaultShellInit(),
+    bootstrapCommands: [],
     installCommands: [],
     buildCommands: ["cargo build"],
     testCommands: ["cargo test"],
@@ -446,8 +366,8 @@ function detectJavaRecipe(cwd: string): VerifyRecipe | null {
       ecosystem: "java",
       appKind: "maven",
       appLabel: "Maven project",
-      shellInitCommands: getBaseShellInitCommands(),
-      bootstrapCommands: getJavaBootstrapCommands("maven"),
+      shellInitCommands: defaultShellInit(),
+      bootstrapCommands: [],
       installCommands: [],
       buildCommands: ["mvn package"],
       testCommands: ["mvn test"],
@@ -463,8 +383,8 @@ function detectJavaRecipe(cwd: string): VerifyRecipe | null {
       ecosystem: "java",
       appKind: "gradle",
       appLabel: "Gradle project",
-      shellInitCommands: getBaseShellInitCommands(),
-      bootstrapCommands: getJavaBootstrapCommands("gradle"),
+      shellInitCommands: defaultShellInit(),
+      bootstrapCommands: [],
       installCommands: [],
       buildCommands: [`${gradle} build`],
       testCommands: [`${gradle} test`],
@@ -484,7 +404,7 @@ function detectFallbackRecipe(cwd: string): VerifyRecipe {
     ecosystem: "unknown",
     appKind: "unknown",
     appLabel: "Unknown project type",
-    shellInitCommands: getBaseShellInitCommands(),
+    shellInitCommands: defaultShellInit(),
     bootstrapCommands: [],
     installCommands: [],
     buildCommands: [],
@@ -722,8 +642,16 @@ export function buildVerifyDetectPrompt(cwd: string, settings?: SandboxSettings)
     "- Read the codebase, config files, and any relevant docs or AGENTS guidance.",
     "- Infer how the project should be installed, built, tested, and started.",
     "- Infer whether verification should use HTTP/browser smoke checks, CLI checks, or no runtime smoke step.",
-    "- Prefer concrete commands that are likely to work in a Linux dev environment.",
+    "- Prefer concrete commands that are likely to work in a fresh Debian Linux environment.",
     "- Use the fallback hints below only as clues, not as the final answer.",
+    "",
+    "IMPORTANT for shellInitCommands and bootstrapCommands:",
+    "- The sandbox is a fresh Debian Linux VM with almost nothing pre-installed.",
+    '- shellInitCommands run before every bash command. Use them for PATH exports (e.g. export PATH="$HOME/.bun/bin:$PATH").',
+    "- bootstrapCommands run once during checkpoint creation to install runtimes and tools.",
+    "- You MUST include bootstrap commands to install any runtime the project needs (e.g. bun, node, npm, python3, go, cargo, java).",
+    "- Example for a Bun + Next.js project: bootstrapCommands should install both bun AND node/npm, since Next.js calls npm internally.",
+    '- Example: ["apt-get update && apt-get install -y curl unzip ca-certificates && curl -fsSL https://bun.sh/install | bash", "apt-get install -y nodejs npm"]',
     "",
     "Fallback hints from static detection:",
     ...buildProjectContextLines(fallbackProfile),

@@ -56,12 +56,12 @@ describe("verify entrypoint helpers", () => {
     expect(profile.packageManager).toBe("npm");
     expect(profile.sandboxSettings.ports).toEqual(["3000:3000"]);
     expect(profile.availableScripts).toEqual(["dev", "build", "lint"]);
-    expect(profile.recipe.bootstrapCommands[0]).toContain("node");
+    expect(profile.recipe.bootstrapCommands).toEqual([]);
     expect(profile.recipe.startCommand).toBe("npm run dev");
     expect(profile.recipe.testCommands).toContain("npm run lint");
   });
 
-  it("adds bun bootstrap commands for bun-based node apps", () => {
+  it("detects bun as package manager without hardcoded bootstrap", () => {
     const dir = makeTempDir("grok-verify-bun-");
     fs.writeFileSync(
       path.join(dir, "package.json"),
@@ -71,8 +71,7 @@ describe("verify entrypoint helpers", () => {
 
     const profile = inferVerifyProjectProfile(dir);
     expect(profile.packageManager).toBe("bun");
-    expect(profile.recipe.shellInitCommands.join(" ")).toContain("$HOME/.bun/bin");
-    expect(profile.recipe.bootstrapCommands.join(" ")).toContain("bun.sh/install");
+    expect(profile.recipe.bootstrapCommands).toEqual([]);
     expect(profile.recipe.installCommands).toContain("bun install");
   });
 

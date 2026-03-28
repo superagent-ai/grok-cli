@@ -68,37 +68,6 @@ describe("verify checkpoints", () => {
     const createArgs = createCall[1] as string[];
     expect(createArgs.slice(0, 3)).toEqual(["checkpoint", "create", result.checkpointName!]);
     expect(createArgs.join(" ")).toContain("export DEBIAN_FRONTEND=noninteractive");
-    expect(createArgs.join(" ")).toContain("apt-get install -y nodejs npm");
-  });
-
-  it("includes bun shell init and bootstrap for bun-based apps", async () => {
-    const dir = makeTempDir("grok-verify-ckpt-bun-");
-    fs.writeFileSync(
-      path.join(dir, "package.json"),
-      JSON.stringify({ dependencies: { next: "15.0.0" }, scripts: { dev: "next dev" } }, null, 2),
-    );
-    fs.writeFileSync(path.join(dir, "bun.lock"), "");
-
-    execFileMock.mockImplementation((command, args, _options, callback) => {
-      const cb = callback as (error: Error | null, stdout: string, stderr: string) => void;
-      if (Array.isArray(args) && args[0] === "checkpoint" && args[1] === "list") {
-        cb(null, "", "");
-        return {} as never;
-      }
-      cb(null, "created", "");
-      return {} as never;
-    });
-
-    const profile = inferVerifyProjectProfile(dir);
-    await ensureVerifyCheckpoint(dir, profile, {
-      ...profile.sandboxSettings,
-      shellInit: profile.recipe.shellInitCommands,
-    });
-
-    const createArgs = execFileMock.mock.calls[1]?.[1] as string[];
-    expect(createArgs.join(" ")).toContain('export PATH="$HOME/.bun/bin:$PATH"');
-    expect(createArgs.join(" ")).toContain("bun.sh/install");
-    expect(createArgs.join(" ")).toContain("bun install");
   });
 
   it("reuses an existing checkpoint when present", async () => {
