@@ -1,4 +1,4 @@
-import { generateText, type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
+import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
 import { createProvider, generateTitle as genTitle, resolveModelRuntime, type XaiProvider } from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { createTools } from "../grok/tools";
@@ -290,16 +290,19 @@ function buildSubagentPrompt(
   const isExplore = request.agent === "explore";
   const isVision = request.agent === "vision";
   const isVerify = request.agent === "verify";
-  const mode: AgentMode = isExplore ? "ask" : "agent";
+  const isVerifyDetect = request.agent === "verify-detect";
+  const mode: AgentMode = isExplore || isVerifyDetect ? "ask" : "agent";
   const role = custom
     ? `You are the custom sub-agent "${custom.name}". You can investigate, edit files, and run commands unless the delegated task says otherwise.`
     : request.agent === "explore"
       ? "You are the Explore sub-agent. You are read-only and focus on fast codebase research."
       : isVision
         ? "You are the Vision sub-agent."
-        : isVerify
-          ? "You are the Verify sub-agent. You specialize in sandbox-aware local verification using builds, tests, app boot checks, and optional browser smoke tests."
-          : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
+        : isVerifyDetect
+          ? "You are the Verify Detect sub-agent. You inspect a repository to produce a structured verification recipe. You are read-only."
+          : isVerify
+            ? "You are the Verify sub-agent. You specialize in sandbox-aware local verification using builds, tests, app boot checks, and optional browser smoke tests."
+            : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
 
   const rules = isExplore
     ? [
@@ -307,20 +310,26 @@ function buildSubagentPrompt(
         "Prefer `read_file` and search commands over broad shell exploration.",
         "Return concise findings for the parent agent.",
       ]
-    : isVision
-      ? ["Validate the image."]
-      : isVerify
-        ? [
-            "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
-            "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
-            "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
-            "Return a concise structured verification report for the parent agent.",
-          ]
-        : [
-            "Work only on the delegated task below.",
-            "Use tools directly instead of narrating your intent.",
-            "Return a concise summary for the parent agent with key outcomes and any open risks.",
-          ];
+    : isVerifyDetect
+      ? [
+          "Do not create, modify, or delete files.",
+          "Read config files, package manifests, scripts, and source layout to understand the project.",
+          "Return ONLY a valid JSON object with the VerifyRecipe schema. No markdown, no prose, no explanation outside the JSON.",
+        ]
+      : isVision
+        ? ["Validate the image."]
+        : isVerify
+          ? [
+              "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
+              "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
+              "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
+              "Return a concise structured verification report for the parent agent.",
+            ]
+          : [
+              "Work only on the delegated task below.",
+              "Use tools directly instead of narrating your intent.",
+              "Return a concise summary for the parent agent with key outcomes and any open risks.",
+            ];
 
   const instructionLines = custom?.instruction.trim() ? ["", "SUB-AGENT INSTRUCTIONS:", custom.instruction.trim()] : [];
 
@@ -682,11 +691,14 @@ export class Agent {
     const isGeneral = agentKey === "general";
     const isVision = agentKey === "vision";
     const isVerify = agentKey === "verify";
+    const isVerifyDetect = agentKey === "verify-detect";
     const subagents = loadValidSubAgents();
     const custom =
-      !isExplore && !isGeneral && !isVision && !isVerify ? findCustomSubagent(agentKey, subagents) : undefined;
+      !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect
+        ? findCustomSubagent(agentKey, subagents)
+        : undefined;
 
-    if (!isExplore && !isGeneral && !isVision && !isVerify && !custom) {
+    if (!isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !custom) {
       const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, verify, or a configured name from ~/.grok/user-settings.json.`;
       return {
         success: false,
@@ -699,7 +711,7 @@ export class Agent {
       };
     }
 
-    const childMode: AgentMode = isExplore ? "ask" : "agent";
+    const childMode: AgentMode = isExplore || isVerifyDetect ? "ask" : "agent";
     const childBash = new BashTool(this.bash.getCwd(), {
       sandboxMode: this.bash.getSandboxMode(),
       sandboxSettings: this.bash.getSandboxSettings(),
@@ -707,9 +719,11 @@ export class Agent {
     const childBaseTools = createTools(childBash, provider, childMode);
     const initialDetail = isExplore
       ? "Scanning the codebase"
-      : isVerify
-        ? "Preparing verification pass"
-        : "Planning delegated work";
+      : isVerifyDetect
+        ? "Detecting verification recipe"
+        : isVerify
+          ? "Preparing verification pass"
+          : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
@@ -720,23 +734,7 @@ export class Agent {
     const childRuntime = isVision
       ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
       : resolveModelRuntime(provider, childModelId);
-    let verifyRecipeContext = "";
-    if (isVerify) {
-      const detectedRecipe = await this.detectVerifyRecipe(this.bash.getSandboxSettings(), signal);
-      verifyRecipeContext = detectedRecipe
-        ? [
-            "",
-            "DETECTED VERIFY RECIPE:",
-            JSON.stringify(detectedRecipe, null, 2),
-            "",
-            "Use the detected recipe above as the primary execution plan unless direct repo inspection proves it wrong.",
-          ].join("\n")
-        : [
-            "",
-            "DETECTED VERIFY RECIPE:",
-            "(Unavailable — fall back to direct repository inspection and derive the recipe manually.)",
-          ].join("\n");
-    }
+    const verifyRecipeContext = "";
     const childSystem = applyModelConstraints(
       buildSubagentPrompt(
         {
@@ -1234,18 +1232,18 @@ export class Agent {
   }
 
   async detectVerifyRecipe(settings?: SandboxSettings, abortSignal?: AbortSignal): Promise<VerifyRecipe | null> {
-    const provider = this.requireProvider();
-    const runtime = resolveModelRuntime(provider, this.modelId);
     try {
-      const detected = await generateText({
-        model: runtime.model,
-        prompt: buildVerifyDetectPrompt(this.bash.getCwd(), settings ?? this.bash.getSandboxSettings()),
-        temperature: 0.1,
-        ...(runtime.modelInfo?.supportsMaxOutputTokens === false ? {} : { maxOutputTokens: 2_048 }),
-        ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
+      const result = await this.runTaskRequest(
+        {
+          agent: "verify-detect",
+          description: "Detect verification recipe",
+          prompt: buildVerifyDetectPrompt(this.bash.getCwd(), settings ?? this.bash.getSandboxSettings()),
+        },
+        undefined,
         abortSignal,
-      });
-      const maybeJson = extractJsonObject(detected.text ?? "");
+      );
+      if (!result.success || !result.output) return null;
+      const maybeJson = extractJsonObject(result.output);
       if (!maybeJson) return null;
       return normalizeVerifyRecipe(JSON.parse(maybeJson));
     } catch {

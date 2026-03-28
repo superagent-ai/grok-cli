@@ -29,7 +29,7 @@ export interface Plan {
   questions?: PlanQuestion[];
 }
 
-export type BuiltinSubagentId = "general" | "explore" | "vision" | "verify";
+export type BuiltinSubagentId = "general" | "explore" | "vision" | "verify" | "verify-detect";
 
 export interface TaskRequest {
   agent: BuiltinSubagentId | string;
