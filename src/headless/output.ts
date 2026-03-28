@@ -82,7 +82,7 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
     case "tool_calls":
       return chunk.toolCalls?.length
         ? {
-            stderr: chunk.toolCalls.map((tc) => `\x1b[33m⚙ ${tc.function.name}\x1b[0m\n`).join(""),
+            stderr: chunk.toolCalls.map((tc) => `\x1b[33m⚙ ${formatToolCallLabel(tc)}\x1b[0m\n`).join(""),
           }
         : {};
 
@@ -93,13 +93,13 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
 
       const icon = chunk.toolResult.success ? "✓" : "✗";
       const color = chunk.toolResult.success ? "\x1b[32m" : "\x1b[31m";
-      const name = chunk.toolCall?.function.name || "tool";
+      const label = chunk.toolCall ? formatToolCallLabel(chunk.toolCall) : "tool";
       const mediaLines =
         chunk.toolResult.media?.map((asset) => {
           const suffix = asset.url ? ` (${asset.url})` : "";
           return `  ${asset.path}${suffix}`;
         }) ?? [];
-      const stderr = [`${color}${icon} ${name}\x1b[0m`, ...mediaLines].join("\n");
+      const stderr = [`${color}${icon} ${label}\x1b[0m`, ...mediaLines].join("\n");
       return { stderr: `${stderr}\n` };
     }
 
@@ -115,6 +115,32 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
     default:
       return {};
   }
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function formatToolCallLabel(tc: ToolCall): string {
+  const name = tc.function.name;
+  try {
+    const args = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
+    if (name === "bash" && typeof args.command === "string") {
+      const cmd = args.command.replace(/\n/g, " ").trim();
+      return `bash: ${truncate(cmd, 80)}`;
+    }
+    if (name === "task" && typeof args.agent === "string") {
+      const desc = typeof args.description === "string" ? ` — ${args.description}` : "";
+      return `task: ${args.agent}${truncate(desc, 60)}`;
+    }
+    if (name === "read_file" && typeof args.path === "string") {
+      return `read: ${args.path}`;
+    }
+    if ((name === "write_file" || name === "edit_file") && typeof args.path === "string") {
+      return `${name === "write_file" ? "write" : "edit"}: ${args.path}`;
+    }
+  } catch {}
+  return name;
 }
 
 function jsonLine(event: HeadlessJsonEvent): string {
