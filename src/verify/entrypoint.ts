@@ -139,7 +139,7 @@ function getNodeBootstrapCommands(packageManager: string | null): string[] {
   const ensurePnpm = `${ensureNode} && command -v pnpm >/dev/null 2>&1 || npm install -g pnpm`;
   const ensureYarn = `${ensureNode} && command -v yarn >/dev/null 2>&1 || npm install -g yarn`;
 
-  if (packageManager === "bun") return [ensureBun];
+  if (packageManager === "bun") return [ensureBun, ensureNode];
   if (packageManager === "pnpm") return [ensurePnpm];
   if (packageManager === "yarn") return [ensureYarn];
   return [ensureNode];
