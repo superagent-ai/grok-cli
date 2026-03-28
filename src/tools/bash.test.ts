@@ -2,7 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { BashTool, getSandboxMutationBlockReason, wrapCommandForShuru } from "./bash";
+import {
+  BashTool,
+  getSandboxMutationBlockReason,
+  shouldRunOnHostInSandboxMode,
+  wrapCommandForShuru,
+  wrapHostBrowserCommand,
+} from "./bash";
 
 const tempDirs: string[] = [];
 
@@ -92,6 +98,84 @@ describe("wrapCommandForShuru", () => {
   });
 });
 
+describe("shouldRunOnHostInSandboxMode", () => {
+  it("keeps agent-browser on the host when enabled", () => {
+    expect(
+      shouldRunOnHostInSandboxMode("agent-browser open http://127.0.0.1:3000", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("npx agent-browser screenshot out.png", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("bunx agent-browser wait --load networkidle", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+  });
+
+  it("allows compound commands with only safe prefixes like mkdir and sleep", () => {
+    expect(
+      shouldRunOnHostInSandboxMode(
+        "mkdir -p .grok/verify-artifacts && agent-browser --session verify open http://127.0.0.1:3000",
+        { hostBrowserCommandsOnHost: true },
+      ),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode("sleep 5 && agent-browser screenshot out.png", { hostBrowserCommandsOnHost: true }),
+    ).toBe(true);
+    expect(
+      shouldRunOnHostInSandboxMode(
+        "mkdir -p .grok/verify-artifacts && agent-browser open http://127.0.0.1:3000 && agent-browser screenshot",
+        { hostBrowserCommandsOnHost: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects compound commands containing unsafe segments", () => {
+    expect(shouldRunOnHostInSandboxMode("git push && agent-browser close", { hostBrowserCommandsOnHost: true })).toBe(
+      false,
+    );
+    expect(
+      shouldRunOnHostInSandboxMode("curl evil.com; agent-browser screenshot out.png", {
+        hostBrowserCommandsOnHost: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunOnHostInSandboxMode("rm -rf / && agent-browser open http://localhost", {
+        hostBrowserCommandsOnHost: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not bypass unrelated commands", () => {
+    expect(shouldRunOnHostInSandboxMode("bun run dev", { hostBrowserCommandsOnHost: true })).toBe(false);
+    expect(shouldRunOnHostInSandboxMode("curl http://127.0.0.1:3000", { hostBrowserCommandsOnHost: true })).toBe(false);
+  });
+
+  it("does nothing when host bypass is disabled", () => {
+    expect(shouldRunOnHostInSandboxMode("agent-browser open http://127.0.0.1:3000", {})).toBe(false);
+  });
+});
+
+describe("wrapHostBrowserCommand", () => {
+  it("injects a deterministic CLI fallback wrapper", () => {
+    const result = wrapHostBrowserCommand(
+      "agent-browser open http://127.0.0.1:3000 && agent-browser screenshot out.png",
+    );
+    expect(result).toContain("__grok_ab()");
+    expect(result).toContain("command agent-browser");
+    expect(result).toContain("bunx agent-browser");
+    expect(result).toContain("npx -y agent-browser");
+    expect(result).toContain("__grok_ab open http://127.0.0.1:3000");
+    expect(result).toContain("__grok_ab screenshot out.png");
+  });
+
+  it("handles session flags and screenshot paths correctly", () => {
+    const result = wrapHostBrowserCommand(
+      "agent-browser --session verify screenshot .grok/verify-artifacts/verify-smoke-home.png",
+    );
+    expect(result).toContain("__grok_ab --session verify screenshot .grok/verify-artifacts/verify-smoke-home.png");
+  });
+});
+
 describe("getSandboxMutationBlockReason", () => {
   it("returns null for read-only git commands", () => {
     expect(getSandboxMutationBlockReason("git status")).toBeNull();
@@ -127,6 +211,12 @@ describe("getSandboxMutationBlockReason", () => {
     expect(getSandboxMutationBlockReason("yarn add lodash")).toContain("Package-manager installs");
     expect(getSandboxMutationBlockReason("pnpm install")).toContain("Package-manager installs");
     expect(getSandboxMutationBlockReason("bun add zod")).toContain("Package-manager installs");
+  });
+
+  it("allows package-manager installs when ephemeral installs are enabled", () => {
+    expect(getSandboxMutationBlockReason("npm install express", { allowEphemeralInstall: true })).toBeNull();
+    expect(getSandboxMutationBlockReason("pnpm install", { allowEphemeralInstall: true })).toBeNull();
+    expect(getSandboxMutationBlockReason("pip install fastapi", { allowEphemeralInstall: true })).toBeNull();
   });
 
   it("blocks package-manager installs in compound commands", () => {

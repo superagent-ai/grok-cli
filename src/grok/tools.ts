@@ -245,21 +245,21 @@ export function createTools(
 
   if (options.runTask) {
     const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
-    const taskAgentEnum = ["general", "explore", "vision", ...customNames] as [string, ...string[]];
+    const taskAgentEnum = ["general", "explore", "vision", "verify", ...customNames] as [string, ...string[]];
     const customHint =
       customNames.length > 0
         ? ` You may also use these user-defined sub-agents by exact name: ${customNames.join(", ")}.`
         : "";
 
     tools.task = tool({
-      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, and code quality work instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, and \`vision\` for image validation.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
+      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, code quality work, and verification instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, \`vision\` for image validation, and \`verify\` for sandbox-aware build, test, and smoke validation.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
       inputSchema: z.object({
         agent: z
           .enum(taskAgentEnum)
           .default("general")
           .describe(
             customNames.length > 0
-              ? "Built-in general, explore, or vision, or a configured custom sub-agent name from user settings"
+              ? "Built-in general, explore, vision, or verify, or a configured custom sub-agent name from user settings"
               : "Which sub-agent to use",
           ),
         description: z.string().describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
