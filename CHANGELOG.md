@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Built-in `telegram-bridge` command for headless Telegram bridge entrypoint with shared approval persistence (#211)
+- Add CLI update checker (#223)
+- Add verify workflow
+
+### Fixed
+- Issue with schedule modal (#226)
+- Host-side browser smoke tests, skill inheritance, and screenshot paths
+
+### Changed
+- Replace commit scan with PR security scan (#224)
 
 ## [1.0.0-rc7] - 2026-03-26
 
