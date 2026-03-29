@@ -480,7 +480,10 @@ export function shouldRunOnHostInSandboxMode(command: string, settings: SandboxS
   if (!/\bagent-browser\b/.test(command)) {
     return false;
   }
-  const segments = command.split(/\s*(?:&&|\|\||;)\s*/);
+  if (/\$\(|`/.test(command)) {
+    return false;
+  }
+  const segments = command.split(/\s*(?:&&|\|\||;|\|[^|]|>>?)\s*/);
   return segments.every((segment) => HOST_SAFE_SEGMENT_RE.test(segment));
 }
 
