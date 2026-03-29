@@ -2,7 +2,6 @@ import * as fs from "fs";
 import * as path from "path";
 import type { TaskRequest, VerifyRecipe } from "../types/index";
 import { mergeSandboxSettings, type SandboxSettings } from "../utils/settings";
-import { ensureVerifyCheckpoint } from "./checkpoint";
 
 export const VERIFY_SUBAGENT_ID = "verify";
 export const VERIFY_TASK_DESCRIPTION = "Run local verification";
@@ -700,34 +699,6 @@ export function createVerifyRuntimeConfig(
     sandboxSettings,
     taskRequest: createVerifyTaskRequest(cwd, sandboxSettings, profile.recipe),
     profile: { ...profile, sandboxSettings },
-  };
-}
-
-export async function prepareVerifyRuntimeConfig(
-  cwd: string,
-  baseSettings: SandboxSettings = {},
-  recipeOverride?: VerifyRecipe | null,
-): Promise<VerifyRuntimeConfig> {
-  const runtime = createVerifyRuntimeConfig(cwd, baseSettings, recipeOverride);
-  const prepared = await ensureVerifyCheckpoint(cwd, runtime.profile, runtime.sandboxSettings);
-
-  if (!prepared.checkpointName) {
-    return runtime;
-  }
-
-  const sandboxSettings: SandboxSettings = {
-    ...runtime.sandboxSettings,
-    from: prepared.checkpointName,
-    guestWorkdir: prepared.guestWorkdir,
-    syncHostWorkspace: true,
-  };
-
-  return {
-    sandboxMode: "shuru",
-    sandboxSettings,
-    taskRequest: createVerifyTaskRequest(cwd, sandboxSettings, runtime.profile.recipe),
-    profile: { ...runtime.profile, sandboxSettings },
-    checkpointCreated: prepared.created,
   };
 }
 
