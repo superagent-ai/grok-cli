@@ -136,7 +136,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 | **X + web search** | **`search_x`** and **`search_web`** tools—live posts and docs without pretending the internet stopped in 2023. |
 | **Media generation** | Built-in **`generate_image`** and **`generate_video`** tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
 | **Sub-agents (default behavior)** | Foreground **`task`** delegation (e.g. explore vs general) plus background **`delegate`** for read-only deep dives—parallelize like you mean it. |
-| **Built-in verify flow** | **`/verify`** in the TUI or **`--verify`** on the CLI launches a verification-oriented sub-agent that auto-enables **Shuru**, inspects the repo, infers a run/test recipe across common ecosystems, and can optionally use **`agent-browser`** for localhost browser smoke tests. |
+| **Verify** | **`/verify`** or **`--verify`** — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included. |
 | **Custom sub-agents** | Define named agents with **`subAgents`** in **`~/.grok/user-settings.json`** and manage them from the TUI with **`/agents`**. |
 | **Remote control** | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, **`/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone. |
 | **No “mystery meat” UI** | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of. |
@@ -148,7 +148,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 ### Coming soon
 
-**Deeper autonomous agent testing** (think: longer-lived sandbox sessions, richer browser workflows, recorded runs, and stronger “prove it works” evidence). Phase 1 ships a local **`verify`** flow; the bigger version is still coming.
+**Deeper autonomous agent testing** — persistent sandbox sessions, richer browser workflows, and stronger "prove it works" evidence.
 
 ---
 
@@ -302,33 +302,16 @@ When sandbox mode is active you can configure:
 
 All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/settings.json` (project).
 
-### Verify with Shuru
+### Verify
 
-The built-in **`verify`** flow is meant for local confidence checks before you commit or open a PR.
-
-Typical setup:
+Run **`/verify`** in the TUI or **`--verify`** on the CLI to verify your app locally:
 
 ```bash
-# Run verify against the current workspace
 grok --verify
+grok -d /path/to/your/app --verify
 ```
 
-`verify` will auto-enable Shuru for the run, inspect the repo, infer a recipe for how to build/test/start it, and then execute that recipe in the sandbox. You can still set a checkpoint in the TUI under **`/sandbox`** using the **Checkpoint** field, then launch **`/verify`** interactively.
-
-The intended phase-1 workflow is:
-
-- Use a Shuru checkpoint to preinstall toolchains and runtime dependencies.
-- Mount the current host workspace into `/workspace` so verify always runs against your latest code.
-- If `verify` detects an app with an HTTP runtime, it can infer a default localhost port for smoke testing.
-- You can still override the inferred port or other sandbox settings manually when needed.
-- If the project-level **`agent-browser`** skill is available, verify may use it for a small localhost browser smoke test after the app boots.
-
-Phase 1 stays intentionally narrow:
-
-- browser smoke testing is optional
-- multiple forwarded ports are treated as ambiguous unless you specify the target
-- checkpoint creation and branching still happen outside Grok CLI
-- Shuru runs stay ephemeral, so durable source edits should still happen through Grok’s file tools on the host
+The agent inspects your project, figures out how to build and run it, spins up a sandbox, and produces a verification report with screenshots and video evidence. Works with any app type.
 
 ---
 
