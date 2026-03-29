@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { findGitRoot } from "./git-root";
 
 export type SkillScope = "project" | "user";
 
@@ -113,13 +114,32 @@ function listSkillDirectories(skillsRoot: string): string[] {
   }
 }
 
+function listProjectSkillRoots(projectRoot: string): string[] {
+  const start = path.resolve(projectRoot);
+  const gitRoot = findGitRoot(start);
+  const roots: string[] = [];
+  let current = start;
+
+  while (true) {
+    roots.push(path.join(current, ".agents", "skills"));
+    if (gitRoot ? current === gitRoot : path.dirname(current) === current) {
+      break;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return roots.reverse();
+}
+
 /**
- * Discover Agent Skills under ~/.agents/skills and <projectRoot>/.agents/skills.
- * Project-level skills override user-level skills with the same `name` (frontmatter).
+ * Discover Agent Skills under ~/.agents/skills and from <projectRoot> upward through
+ * parent directories to the git root. The nearest project-level skill overrides
+ * user-level and higher-level project skills with the same `name` (frontmatter).
  */
 export function discoverSkills(projectRoot: string): DiscoveredSkill[] {
   const userRoot = path.join(os.homedir(), ".agents", "skills");
-  const projectSkillsRoot = path.join(projectRoot, ".agents", "skills");
 
   const byName = new Map<string, DiscoveredSkill>();
 
@@ -127,9 +147,11 @@ export function discoverSkills(projectRoot: string): DiscoveredSkill[] {
     const s = loadSkillFromDir(dir, "user");
     if (s) byName.set(s.name, s);
   }
-  for (const dir of listSkillDirectories(projectSkillsRoot)) {
-    const s = loadSkillFromDir(dir, "project");
-    if (s) byName.set(s.name, s);
+  for (const skillsRoot of listProjectSkillRoots(projectRoot)) {
+    for (const dir of listSkillDirectories(skillsRoot)) {
+      const s = loadSkillFromDir(dir, "project");
+      if (s) byName.set(s.name, s);
+    }
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));

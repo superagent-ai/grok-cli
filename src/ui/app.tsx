@@ -53,6 +53,7 @@ import {
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
+import { VERIFY_PROMPT } from "../verify/entrypoint";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -291,6 +292,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "commit-push", label: "commit & push", description: "Commit and push" },
   { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
   { id: "review", label: "review", description: "Review recent changes" },
+  { id: "verify", label: "verify", description: "Run local verification" },
   { id: "skills", label: "skills", description: "Manage skills" },
   { id: "update", label: "update", description: "Update grok to the latest version" },
 ];
@@ -347,6 +349,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/exit",
   "/q",
   "/review",
+  "/verify",
   "/commit-push",
   "/commit-pr",
 ]);
@@ -2029,6 +2032,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         processMessage(REVIEW_PROMPT);
         return true;
       }
+      if (c === "/verify") {
+        processMessage(VERIFY_PROMPT);
+        return true;
+      }
       if (c === "/commit-push") {
         processMessage(COMMIT_PUSH_PROMPT);
         return true;
@@ -2120,6 +2127,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "review":
           processMessage(REVIEW_PROMPT);
+          break;
+        case "verify":
+          processMessage(VERIFY_PROMPT);
           break;
         case "commit-push":
           processMessage(COMMIT_PUSH_PROMPT);
@@ -3965,6 +3975,8 @@ function formatSubagentName(agent: string): string {
   if (agent === "general") return "General";
   if (agent === "explore") return "Explore";
   if (agent === "vision") return "Vision";
+  if (agent === "verify") return "Verify";
+  if (agent === "verify-detect") return "Verify Detect";
   return agent || "Sub-agent";
 }
 

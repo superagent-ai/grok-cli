@@ -381,7 +381,10 @@ export class BashTool {
           ? `network is restricted to: ${s.allowedHosts.join(", ")}`
           : "network access is enabled"
         : "network is disabled";
-      return `Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, ${netStatus}, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits. Set background=true for long-running processes like dev servers or watchers.`;
+      const hostBrowserNote = s.hostBrowserCommandsOnHost
+        ? " Commands that invoke agent-browser run on the host instead of inside Shuru so they can interact with forwarded localhost services."
+        : "";
+      return `Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, ${netStatus}, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits.${hostBrowserNote} Set background=true for long-running processes like dev servers or watchers.`;
     }
     return "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.";
   }
@@ -390,11 +393,14 @@ export class BashTool {
     if (this.sandboxMode !== "shuru") {
       return { ok: true, command };
     }
+    if (shouldRunOnHostInSandboxMode(command, this.sandboxSettings)) {
+      return { ok: true, command: wrapHostBrowserCommand(command) };
+    }
     const unsupportedReason = getSandboxUnsupportedReason();
     if (unsupportedReason) {
       return { ok: false, error: unsupportedReason };
     }
-    const blockedReason = getSandboxMutationBlockReason(command);
+    const blockedReason = getSandboxMutationBlockReason(command, this.sandboxSettings);
     if (blockedReason) {
       return { ok: false, error: blockedReason };
     }
@@ -451,12 +457,95 @@ export function wrapCommandForShuru(cwd: string, command: string, settings: Sand
 
   const mountArg = `${cwd}:/workspace`;
   parts.push("--mount", shellQuote(mountArg));
-  parts.push("--", "sh", "-lc", shellQuote(`cd /workspace && ${command}`));
+  const shellInit = buildShellInitScript(settings);
+  const guestPrelude = buildGuestWorkspacePrelude(settings);
+  const guestSteps = [
+    shellInit,
+    guestPrelude,
+    `cd ${shellPathForScript(settings.guestWorkdir || "/workspace")}`,
+    command,
+  ].filter(Boolean);
+  const guestCommand = guestSteps.join(" && ");
+  parts.push("--", "sh", "-lc", shellQuote(guestCommand));
   return parts.join(" ");
+}
+
+const HOST_SAFE_SEGMENT_RE =
+  /^\s*(?:(?:npx(?:\s+-y)?|bunx)\s+)?agent-browser\b|^\s*mkdir\s|^\s*sleep\s|^\s*echo\s|^\s*true\s*$|^\s*$/;
+
+export function shouldRunOnHostInSandboxMode(command: string, settings: SandboxSettings = {}): boolean {
+  if (!settings.hostBrowserCommandsOnHost) {
+    return false;
+  }
+  if (!/\bagent-browser\b/.test(command)) {
+    return false;
+  }
+  if (/\$\(|`/.test(command)) {
+    return false;
+  }
+  const segments = command.split(/\s*(?:&&|\|\||;|\|[^|]|>>?)\s*/);
+  return segments.every((segment) => HOST_SAFE_SEGMENT_RE.test(segment));
+}
+
+export function wrapHostBrowserCommand(command: string): string {
+  const normalized = command
+    .replace(/\bbunx\s+agent-browser\b/g, "__grok_ab")
+    .replace(/\bnpx(?:\s+-y)?\s+agent-browser\b/g, "__grok_ab")
+    .replace(/\bagent-browser\b/g, "__grok_ab");
+  return [
+    "__grok_ab() {",
+    "  if command -v agent-browser >/dev/null 2>&1; then",
+    '    command agent-browser "$@"',
+    "  elif command -v bunx >/dev/null 2>&1; then",
+    '    bunx agent-browser "$@"',
+    "  elif command -v npx >/dev/null 2>&1; then",
+    '    npx -y agent-browser "$@"',
+    "  else",
+    '    echo "agent-browser: not found (no bunx/npx fallback)" >&2',
+    "    return 127",
+    "  fi",
+    "}",
+    normalized,
+  ].join("\n");
 }
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function shellPathForScript(value: string): string {
+  return /^[A-Za-z0-9_./-]+$/.test(value) ? value : shellQuote(value);
+}
+
+function buildGuestWorkspacePrelude(settings: SandboxSettings): string {
+  if (!settings.guestWorkdir || !settings.syncHostWorkspace) {
+    return "";
+  }
+
+  const guest = shellQuote(settings.guestWorkdir);
+  const exclusions = [
+    ".git",
+    "node_modules",
+    ".venv",
+    ".next",
+    "dist",
+    "build",
+    "target",
+    ".pytest_cache",
+    ".mypy_cache",
+  ];
+  const tarExcludes = exclusions.map((entry) => `--exclude=${shellQuote(entry)}`).join(" ");
+  return [
+    `mkdir -p ${guest}`,
+    `find ${guest} -mindepth 1 -maxdepth 1 ${exclusions
+      .map((entry) => `! -name ${shellQuote(entry)}`)
+      .join(" ")} -exec rm -rf {} + 2>/dev/null || true`,
+    `tar -C /workspace ${tarExcludes} -cf - . | tar -C ${guest} -xf -`,
+  ].join(" && ");
+}
+
+function buildShellInitScript(settings: SandboxSettings): string {
+  return (settings.shellInit ?? []).filter(Boolean).join(" && ");
 }
 
 function getSandboxUnsupportedReason(): string | null {
@@ -466,7 +555,7 @@ function getSandboxUnsupportedReason(): string | null {
   return null;
 }
 
-export function getSandboxMutationBlockReason(command: string): string | null {
+export function getSandboxMutationBlockReason(command: string, settings: SandboxSettings = {}): string | null {
   const trimmed = command.trim();
   if (!trimmed) return null;
 
@@ -479,22 +568,31 @@ export function getSandboxMutationBlockReason(command: string): string | null {
 
   const blockedPatterns: Array<{ pattern: RegExp; reason: string }> = [
     {
-      pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:add|install|remove|unlink|update|upgrade)\b/,
-      reason:
-        "Package-manager installs are blocked in sandbox mode because workspace changes like lockfile updates would stay inside the Shuru guest overlay.",
-    },
-    {
-      pattern: /\b(?:pip|pip3)\s+install\b|\bpoetry\s+add\b|\buv\s+add\b|\bcargo\s+add\b/,
-      reason:
-        "Dependency install commands are blocked in sandbox mode because resulting workspace changes would not persist back to the host.",
-    },
-    {
       pattern:
         /\b(?:prettier\s+--write|eslint\b.*--fix|biome\s+check\b.*--write|ruff\s+check\b.*--fix|gofmt\s+-w|rustfmt\b|clang-format\b.*-i)\b/,
       reason:
         "Shell-driven formatters that rewrite files are blocked in sandbox mode because those file changes would not persist back to the host workspace.",
     },
   ];
+
+  if (!settings.allowEphemeralInstall) {
+    const installPatterns: Array<{ pattern: RegExp; reason: string }> = [
+      {
+        pattern: /\b(?:npm|pnpm|yarn|bun)\s+(?:add|install|remove|unlink|update|upgrade)\b/,
+        reason:
+          "Package-manager installs are blocked in sandbox mode because workspace changes like lockfile updates would stay inside the Shuru guest overlay.",
+      },
+      {
+        pattern: /\b(?:pip|pip3)\s+install\b|\bpoetry\s+add\b|\buv\s+add\b|\bcargo\s+add\b/,
+        reason:
+          "Dependency install commands are blocked in sandbox mode because resulting workspace changes would not persist back to the host.",
+      },
+    ];
+    const installMatch = installPatterns.find(({ pattern }) => pattern.test(trimmed));
+    if (installMatch) {
+      return `${installMatch.reason} Use read_file/edit_file/write_file for durable edits, or disable sandbox mode for host-persistent shell changes.`;
+    }
+  }
 
   const matched = blockedPatterns.find(({ pattern }) => pattern.test(trimmed));
   if (!matched) return null;

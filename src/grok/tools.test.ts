@@ -67,6 +67,49 @@ describe("schedule daemon tools", () => {
     expect(bashTool.description).toContain("network is restricted to: api.openai.com");
   });
 
+  it("mentions host-side browser automation when enabled", () => {
+    const tools = createTools(
+      new BashTool("/tmp", {
+        sandboxMode: "shuru",
+        sandboxSettings: { allowNet: true, hostBrowserCommandsOnHost: true },
+      }),
+      {} as never,
+      "agent",
+    );
+    const bashTool = tools.bash as { description?: string };
+    expect(bashTool.description).toContain("agent-browser run on the host");
+  });
+
+  it("routes verify task requests through the task tool", async () => {
+    const runTask = vi.fn(async () => ({ success: true, output: "verified" }));
+    const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
+      runTask,
+      subagents: [],
+    }) as Record<string, { execute: (input: unknown, context?: unknown) => Promise<unknown>; description?: string }>;
+
+    const taskTool = tools.task;
+    expect(taskTool.description).toContain("`verify`");
+
+    const result = (await taskTool.execute(
+      {
+        agent: "verify",
+        description: "Run local verification",
+        prompt: "Verify the current workspace.",
+      },
+      { abortSignal: undefined },
+    )) as { success: boolean; output: string };
+
+    expect(runTask).toHaveBeenCalledWith(
+      {
+        agent: "verify",
+        description: "Run local verification",
+        prompt: "Verify the current workspace.",
+      },
+      undefined,
+    );
+    expect(result).toEqual({ success: true, output: "verified" });
+  });
+
   it("reports daemon status", async () => {
     const { tools } = createScheduleToolSet({
       getDaemonStatus: async () => ({ running: true, pid: 4321 }),

@@ -26,6 +26,7 @@ import {
   saveUserSettings,
 } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
+import { getVerifyCliError, VERIFY_PROMPT } from "./verify/entrypoint";
 
 dotenv.config();
 
@@ -260,6 +261,7 @@ program
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
+  .option("--verify", "Run the built-in verify flow headlessly")
   .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
   .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
   .option("--no-sandbox", "Run agent shell commands directly on the host")
@@ -286,6 +288,27 @@ program
     }
 
     const config = resolveConfig(options);
+
+    if (options.verify) {
+      const verifyError = getVerifyCliError({ hasPrompt: Boolean(options.prompt), hasMessageArgs: message.length > 0 });
+      if (verifyError) {
+        console.error(verifyError);
+        process.exit(1);
+      }
+
+      await runHeadless(
+        VERIFY_PROMPT,
+        requireApiKey(config.apiKey),
+        config.baseURL,
+        config.model,
+        config.maxToolRounds,
+        config.sandboxMode,
+        config.sandboxSettings,
+        options.format,
+        options.session,
+      );
+      return;
+    }
 
     if (options.prompt) {
       await runHeadless(

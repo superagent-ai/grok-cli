@@ -52,7 +52,7 @@ describe("headless output helpers", () => {
     };
 
     expect(renderHeadlessChunk(chunk)).toEqual({
-      stderr: "\u001b[33m⚙ bash\u001b[0m\n\u001b[33m⚙ read_file\u001b[0m\n",
+      stderr: "\u001b[33m▸ bash\u001b[0m\n\u001b[33m▸ read_file\u001b[0m\n",
     });
   });
 
@@ -83,7 +83,7 @@ describe("headless output helpers", () => {
     };
 
     expect(renderHeadlessChunk(chunk)).toEqual({
-      stderr: "\u001b[32m✓ generate_image\u001b[0m\n  /tmp/generated.png (https://example.com/generated.png)\n",
+      stderr: "\u001b[32m▸ generate_image\u001b[0m\n  /tmp/generated.png (https://example.com/generated.png)\n",
     });
   });
 

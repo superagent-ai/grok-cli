@@ -29,7 +29,7 @@ export interface Plan {
   questions?: PlanQuestion[];
 }
 
-export type BuiltinSubagentId = "general" | "explore" | "vision";
+export type BuiltinSubagentId = "general" | "explore" | "vision" | "verify" | "verify-detect";
 
 export interface TaskRequest {
   agent: BuiltinSubagentId | string;
@@ -78,6 +78,23 @@ export interface MediaAsset {
   modelId?: string;
 }
 
+export interface VerifyRecipe {
+  ecosystem: string;
+  appKind: string;
+  appLabel: string;
+  shellInitCommands: string[];
+  bootstrapCommands: string[];
+  installCommands: string[];
+  buildCommands: string[];
+  testCommands: string[];
+  startCommand?: string;
+  startPort?: string;
+  smokeKind: "http" | "cli" | "none";
+  smokeTarget?: string;
+  evidence: string[];
+  notes: string[];
+}
+
 export interface ToolResult {
   success: boolean;
   output?: string;
@@ -88,6 +105,7 @@ export interface ToolResult {
   delegation?: DelegationRun;
   backgroundProcess?: BackgroundProcessInfo;
   media?: MediaAsset[];
+  verifyRecipe?: VerifyRecipe;
 }
 
 export interface ToolCall {

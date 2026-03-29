@@ -60,6 +60,7 @@ grok --prompt "run the test suite and summarize failures"
 grok -p "show me package.json" --directory /path/to/project
 grok --prompt "refactor X" --max-tool-rounds 30
 grok --prompt "summarize the repo state" --format json
+grok --verify
 ```
 
 **Continue a saved session:**
@@ -135,6 +136,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 | **X + web search** | **`search_x`** and **`search_web`** tools—live posts and docs without pretending the internet stopped in 2023. |
 | **Media generation** | Built-in **`generate_image`** and **`generate_video`** tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
 | **Sub-agents (default behavior)** | Foreground **`task`** delegation (e.g. explore vs general) plus background **`delegate`** for read-only deep dives—parallelize like you mean it. |
+| **Verify** | **`/verify`** or **`--verify`** — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included. |
 | **Custom sub-agents** | Define named agents with **`subAgents`** in **`~/.grok/user-settings.json`** and manage them from the TUI with **`/agents`**. |
 | **Remote control** | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, **`/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone. |
 | **No “mystery meat” UI** | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of. |
@@ -146,7 +148,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 ### Coming soon
 
-**Autonomous agent testing** (think: sandboxed machine, recorded runs, Replit-style “prove it works”—the kind of thing that makes flaky human QA nervous). Not shipped yet; when it lands, we’ll be insufferable about it.
+**Deeper autonomous agent testing** — persistent sandbox sessions, richer browser workflows, and stronger "prove it works" evidence.
 
 ---
 
@@ -190,7 +192,7 @@ Optional **`subAgents`** — custom foreground sub-agents. Each entry needs **`n
 }
 ```
 
-Names cannot be `general` or `explore` because those are reserved for the built-in sub-agents.
+Names cannot be `general`, `explore`, `vision`, or `verify` because those are reserved for the built-in sub-agents.
 
 Optional: **`GROK_BASE_URL`** (default `https://api.x.ai/v1`), **`GROK_MODEL`**, **`GROK_MAX_TOKENS`**.
 
@@ -299,6 +301,17 @@ When sandbox mode is active you can configure:
 - **Secrets** — inject API keys without exposing them inside the VM
 
 All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/settings.json` (project).
+
+### Verify
+
+Run **`/verify`** in the TUI or **`--verify`** on the CLI to verify your app locally:
+
+```bash
+grok --verify
+grok -d /path/to/your/app --verify
+```
+
+The agent inspects your project, figures out how to build and run it, spins up a sandbox, and produces a verification report with screenshots and video evidence. Works with any app type.
 
 ---
 
