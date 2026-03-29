@@ -739,13 +739,9 @@ export class Agent {
     const childRuntime = isVision
       ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
       : resolveModelRuntime(provider, childModelId);
-    const verifyRecipeContext = "";
     const childSystem = applyModelConstraints(
       buildSubagentPrompt(
-        {
-          ...request,
-          prompt: isVerify ? `${request.prompt}${verifyRecipeContext}` : request.prompt,
-        },
+        request,
         childBash.getCwd(),
         custom ?? null,
         childBash.getSandboxMode(),
