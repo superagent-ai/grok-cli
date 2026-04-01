@@ -4,6 +4,7 @@ import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type AgentDesktopRunner,
+  buildAgentDesktopEnv,
   buildScreenshotPath,
   computerClick,
   computerLaunch,
@@ -164,5 +165,23 @@ describe("computer tools", () => {
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("Accessibility permission");
+  });
+
+  it("only forwards an allowlisted environment to agent-desktop", () => {
+    const env = buildAgentDesktopEnv({
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/tester",
+      TERM: "xterm-256color",
+      GROK_API_KEY: "secret",
+      TELEGRAM_BOT_TOKEN: "also-secret",
+      CUSTOM_SECRET: "nope",
+    });
+
+    expect(env).toEqual({
+      FORCE_COLOR: "0",
+      HOME: "/Users/tester",
+      PATH: "/usr/bin:/bin",
+      TERM: "xterm-256color",
+    });
   });
 });

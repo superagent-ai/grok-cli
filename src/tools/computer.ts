@@ -118,6 +118,24 @@ interface AgentDesktopJson {
 
 let cachedInvoker: AgentDesktopInvoker | null = null;
 
+const AGENT_DESKTOP_ENV_ALLOWLIST = [
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOGNAME",
+  "PATH",
+  "SHELL",
+  "TERM",
+  "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION",
+  "TMP",
+  "TMPDIR",
+  "TEMP",
+  "USER",
+  "__CF_USER_TEXT_ENCODING",
+] as const;
+
 export async function computerScreenshot(
   input: ComputerScreenshotInput,
   cwd: string,
@@ -526,7 +544,7 @@ async function runAgentDesktop(args: string[], cwd: string, abortSignal?: AbortS
         [...invoker.prefixArgs, ...args],
         {
           cwd,
-          env: { ...process.env, FORCE_COLOR: "0" },
+          env: buildAgentDesktopEnv(),
           maxBuffer: 10 * 1024 * 1024,
         },
         (error, stdout, stderr) => {
@@ -577,6 +595,17 @@ async function runAgentDesktop(args: string[], cwd: string, abortSignal?: AbortS
       error: message,
     };
   }
+}
+
+export function buildAgentDesktopEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { FORCE_COLOR: "0" };
+  for (const key of AGENT_DESKTOP_ENV_ALLOWLIST) {
+    const value = source[key];
+    if (value) {
+      env[key] = value;
+    }
+  }
+  return env;
 }
 
 function resolveAgentDesktopInvoker(): AgentDesktopInvoker {
