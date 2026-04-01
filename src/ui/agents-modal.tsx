@@ -2,6 +2,7 @@ import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { type RefObject, useEffect, useRef } from "react";
 import { MODELS } from "../grok/models";
 import type { CustomSubagentConfig } from "../utils/settings";
+import { formatSubagentName } from "../utils/subagent-display";
 import type { Theme } from "./theme";
 
 const EDITOR_KEYBINDINGS = [{ name: "return", action: "submit" as const }];
@@ -110,7 +111,7 @@ export function SubagentsBrowserModal({
               >
                 <box width="100%" flexDirection="row" justifyContent="space-between">
                   <text fg={selected ? t.primary : t.text}>
-                    <b>{row.agent.name}</b>
+                    <b>{formatSubagentName(row.agent.name)}</b>
                   </text>
                   <text fg={t.textMuted}>{row.agent.model}</text>
                 </box>

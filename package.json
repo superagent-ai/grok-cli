@@ -48,6 +48,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
+    "agent-desktop": "^0.1.11",
     "ai": "^6.0.116",
     "commander": "^12.1.0",
     "diff": "^8.0.3",
