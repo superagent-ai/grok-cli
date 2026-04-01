@@ -839,6 +839,9 @@ export class Agent {
       accumulateUsage(totalUsage, getBatchUsage(response));
 
       const choice = response.choices[0];
+      if (!choice) {
+        throw new Error("Batch response did not contain any choices.");
+      }
       const content = choice?.message.content ?? "";
       if (content) {
         assistantText += content;
