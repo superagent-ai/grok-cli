@@ -196,6 +196,19 @@ export async function computerClick(
   abortSignal?: AbortSignal,
   runner: AgentDesktopRunner = runAgentDesktop,
 ): Promise<ToolResult> {
+  if (input.ref && input.button && input.button !== "left") {
+    return {
+      success: false,
+      output: `computer_click with \`ref\` supports only the left button. Use coordinates for ${input.button} clicks.`,
+    };
+  }
+  if (input.ref && typeof input.count === "number" && (input.count < 1 || input.count > 3)) {
+    return {
+      success: false,
+      output: "computer_click with `ref` supports only single, double, or triple clicks.",
+    };
+  }
+
   const args = buildClickArgs(input);
   if (!args) {
     return { success: false, output: "computer_click requires either `ref` or both `x` and `y`." };

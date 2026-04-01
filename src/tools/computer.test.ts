@@ -104,6 +104,20 @@ describe("computer tools", () => {
     expect(runner).toHaveBeenCalledWith(["click", "@e7"], "/tmp", undefined);
   });
 
+  it("reports a specific error for non-left ref clicks", async () => {
+    const runner: AgentDesktopRunner = vi.fn(async () => ({
+      success: true,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const result = await computerClick({ ref: "@e7", button: "right" }, "/tmp", undefined, runner);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("supports only the left button");
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   it("types into an element ref", async () => {
     const runner: AgentDesktopRunner = vi.fn(async () => ({
       success: true,
