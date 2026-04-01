@@ -100,6 +100,7 @@ temp/
 # Coding agents
 .claude/
 .grok/*
+.grok/
 
 # Cursor config (tracked — do not ignore)
 # .cursor/
@@ -110,3 +111,6 @@ temp/
 !.agents/skills/agent-browser/
 !.agents/skills/agent-browser/SKILL.md
 skills-lock.json
+
+# Secrets / credentials
+telegram-pair-code.txt
