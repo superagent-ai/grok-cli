@@ -33,6 +33,8 @@ import type {
   ToolResult,
 } from "../types/index";
 import { MODES } from "../types/index";
+import { processAtMentions } from "../utils/at-mentions.js";
+import { FileIndex } from "../utils/file-index.js";
 import { copyTextToHostClipboard } from "../utils/host-clipboard";
 import {
   type CustomSubagentConfig,
@@ -62,6 +64,8 @@ import {
   SubagentEditorModal,
   SubagentsBrowserModal,
 } from "./agents-modal";
+import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
+import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
 import { Markdown } from "./markdown";
 import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
 import { createEmptyMcpEditorDraft, type McpEditorDraft, type McpEditorField } from "./mcp-modal-types";
@@ -104,12 +108,19 @@ type ContextStats = {
   ratioRemaining: number;
 };
 type PasteBlock = { id: number; content: string; lines: number; isImage?: boolean };
+type FileMentionBlock = { id: number; path: string };
+type QueuedMessage = { text: string; displayText: string };
 
 function getPasteBlockToken(block: Pick<PasteBlock, "id" | "lines" | "isImage">): string {
   if (block.isImage) {
     return `[Image #${block.id}]`;
   }
   return `[Pasted #${block.id} ${block.lines}+ lines]`;
+}
+
+function getFileMentionToken(block: FileMentionBlock): string {
+  const name = block.path.split("/").pop() || block.path;
+  return `[File: ${name}]`;
 }
 
 const HERO_ROWS: Row[] = [
@@ -571,6 +582,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
+  const [expandedMessages, setExpandedMessages] = useState<Set<number>>(() => new Set());
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
   const pasteCounterRef = useRef(0);
@@ -585,8 +597,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const isProcessingRef = useRef(false);
   const hasApiKeyRef = useRef(initialHasApiKey);
   const showApiKeyModalRef = useRef(!initialHasApiKey);
-  const queuedMessagesRef = useRef<string[]>([]);
-  const processMessageRef = useRef<(text: string) => Promise<void> | void>(() => {});
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
+  const processMessageRef = useRef<(text: string, displayText?: string) => Promise<void> | void>(() => {});
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
   const modeInfoRef = useRef<(typeof MODES)[number]>(MODES[0]);
   const activeRunIdRef = useRef(0);
@@ -658,6 +670,34 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateOutput, setUpdateOutput] = useState<string | null>(null);
   const showUpdateModalRef = useRef(false);
+
+  const fileIndexRef = useRef<FileIndex | null>(null);
+  if (!fileIndexRef.current) {
+    fileIndexRef.current = new FileIndex(agent.getCwd());
+  }
+  const fileMentionCounterRef = useRef(0);
+  const fileMentionBlocksRef = useRef<FileMentionBlock[]>([]);
+
+  const handleFileAccept = useCallback((filePath: string, tokenInfo: { startPos: number; endPos: number }) => {
+    const ta = inputRef.current;
+    if (!ta) return;
+
+    const id = ++fileMentionCounterRef.current;
+    const block: FileMentionBlock = { id, path: fileIndexRef.current?.resolvePath(filePath) ?? filePath };
+    fileMentionBlocksRef.current = [...fileMentionBlocksRef.current, block];
+
+    const text = ta.plainText;
+    const before = text.slice(0, tokenInfo.startPos);
+    const after = text.slice(tokenInfo.endPos);
+    const token = getFileMentionToken(block);
+    const newText = `${before}${token} ${after}`;
+    ta.setText(newText);
+    ta.cursorOffset = before.length + token.length + 1;
+  }, []);
+
+  const typeahead = useTypeahead(inputRef, fileIndexRef.current, handleFileAccept);
+  const typeaheadRef = useRef(typeahead);
+  typeaheadRef.current = typeahead;
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -1235,9 +1275,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const finishTurnProcessing = useCallback(() => {
     const nextQueued = queuedMessagesRef.current.shift();
     if (nextQueued) {
-      setQueuedMessages([...queuedMessagesRef.current]);
+      setQueuedMessages(queuedMessagesRef.current.map((msg) => msg.displayText));
       isProcessingRef.current = false;
-      void processMessageRef.current(nextQueued);
+      void processMessageRef.current(nextQueued.text, nextQueued.displayText);
       return;
     }
 
@@ -1382,7 +1422,19 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
       if (!wasInterrupted) {
         if (activeTurn.kind === "local" && activeTurn.agent.getSessionId()) {
-          setMessages(activeTurn.agent.getChatEntries());
+          setMessages((prev) => {
+            const fresh = activeTurn.agent.getChatEntries();
+            let prevUserIdx = 0;
+            for (let i = 0; i < fresh.length; i++) {
+              if (fresh[i]!.type !== "user") continue;
+              while (prevUserIdx < prev.length && prev[prevUserIdx]!.type !== "user") prevUserIdx++;
+              if (prevUserIdx < prev.length) {
+                fresh[i] = { ...fresh[i]!, content: prev[prevUserIdx]!.content };
+                prevUserIdx++;
+              }
+            }
+            return fresh;
+          });
           setSessionTitle(activeTurn.agent.getSessionTitle());
           setSessionId(activeTurn.agent.getSessionId());
         } else if (activeTurn.kind === "telegram") {
@@ -1848,6 +1900,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const resetToNewSession = useCallback(() => {
     const snapshot = agent.startNewSession();
     setMessages(snapshot?.entries ?? []);
+    setExpandedMessages(new Set());
     activeTurnRef.current = null;
     clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);
@@ -1860,7 +1913,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, [agent, clearLiveTurnUi, replacePasteBlocks]);
 
   const processMessage = useCallback(
-    async (text: string) => {
+    async (text: string, displayText?: string) => {
       if (!text.trim() || isProcessingRef.current) return;
       const runId = ++activeRunIdRef.current;
       const isStale = () => activeRunIdRef.current !== runId;
@@ -1868,14 +1921,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setIsProcessing(true);
       if (!sessionTitle)
         agent
-          .generateTitle(text.trim())
+          .generateTitle((displayText ?? text).trim())
           .then(setSessionTitle)
           .catch(() => {});
       await coordinatorRef.current.run(async () => {
         const color = modeInfoRef.current.color;
         beginLiveTurn({ kind: "local", agent, modeColor: color });
-        setMessages((prev) => [...prev, buildUserEntry(text.trim(), { modeColor: color })]);
+        setMessages((prev) => [...prev, buildUserEntry((displayText ?? text).trim(), { modeColor: color })]);
         setTimeout(scrollToBottom, 50);
+        await new Promise((r) => setTimeout(r, 0));
         try {
           for await (const chunk of agent.processMessage(text.trim())) {
             if (isStale()) {
@@ -2805,6 +2859,24 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
       }
 
+      if (key.name === "e" && key.ctrl) {
+        let lastUserIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]!.type === "user") {
+            lastUserIdx = i;
+            break;
+          }
+        }
+        if (lastUserIdx >= 0) {
+          setExpandedMessages((prev) => {
+            const next = new Set(prev);
+            if (next.has(lastUserIdx)) next.delete(lastUserIdx);
+            else next.add(lastUserIdx);
+            return next;
+          });
+        }
+        return;
+      }
       if (key.name === "c" && key.ctrl && key.shift) {
         if (copyTuiSelectionToHost()) {
           key.preventDefault();
@@ -2839,6 +2911,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           handleExit();
         }
         return;
+      }
+      if (typeaheadRef.current.visible) {
+        if (key.name === "up") {
+          typeaheadRef.current.navigateUp();
+          return;
+        }
+        if (key.name === "down") {
+          typeaheadRef.current.navigateDown();
+          return;
+        }
+        if (key.name === "tab" || key.name === "return") {
+          key.preventDefault();
+          key.stopPropagation();
+          typeaheadRef.current.accept();
+          return;
+        }
+        if (isEscapeKey(key)) {
+          typeaheadRef.current.dismiss();
+          return;
+        }
       }
       if (key.name === "tab" && !isProcessing) {
         cycleMode();
@@ -2907,6 +2999,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       submitPlanAnswers,
       copyTuiSelectionToHost,
       toggleSavedMcp,
+      messages,
     ],
   );
   useKeyboard(handleKey);
@@ -2960,19 +3053,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     for (const block of blocks) {
       message = message.replace(getPasteBlockToken(block), block.content);
     }
+    const displayText = message.trim();
+    const fileBlocks = [...fileMentionBlocksRef.current];
+    fileMentionBlocksRef.current = [];
+    for (const block of fileBlocks) {
+      message = message.replace(getFileMentionToken(block), `@${block.path}`);
+    }
     if (!message.trim()) return;
     if (!hasApiKeyRef.current) {
       openApiKeyModal();
       return;
     }
     if (handleCommand(message)) return;
+    const { enhancedMessage } = processAtMentions(message.trim(), agent.getCwd());
     if (isProcessingRef.current) {
-      queuedMessagesRef.current.push(message.trim());
-      setQueuedMessages([...queuedMessagesRef.current]);
+      queuedMessagesRef.current.push({ text: enhancedMessage, displayText });
+      setQueuedMessages(queuedMessagesRef.current.map((msg) => msg.displayText));
       setTimeout(scrollToBottom, 10);
       return;
     }
-    processMessage(message);
+    processMessage(enhancedMessage, displayText);
   }, [agent, clearLiveTurnUi, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
@@ -2995,8 +3095,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
             <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
               {messages.map((msg, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: append-only message list without stable IDs
-                <MessageView key={i} entry={msg} index={i} t={t} modeColor={modeInfo.color} />
+                <MessageView
+                  key={`${msg.timestamp.getTime()}-${msg.type}-${msg.remoteKey ?? ""}-${msg.content.slice(0, 24)}`}
+                  entry={msg}
+                  index={i}
+                  t={t}
+                  modeColor={modeInfo.color}
+                  expandedMessages={expandedMessages}
+                />
               ))}
               {liveTurnSourceLabel && (activeToolCalls.length > 0 || streamContent || isProcessing) && (
                 <box paddingLeft={3} marginTop={1} flexShrink={0}>
@@ -3062,6 +3168,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 contextStats={contextStats}
                 queuedCount={queuedMessages.length}
                 queuedMessages={queuedMessages}
+                typeahead={typeahead}
               />
             </box>
           </box>
@@ -3099,6 +3206,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 modelInfo={modelInfo}
                 contextStats={contextStats}
                 placeholder={"What are we building?"}
+                typeahead={typeahead}
               />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
@@ -3367,6 +3475,7 @@ function PromptBox({
   placeholder,
   queuedCount,
   queuedMessages,
+  typeahead,
 }: {
   t: Theme;
   inputRef: React.RefObject<TextareaRenderable | null>;
@@ -3387,8 +3496,10 @@ function PromptBox({
   placeholder?: string;
   queuedCount?: number;
   queuedMessages?: string[];
+  typeahead?: TypeaheadState;
 }) {
   const hasQueue = (queuedMessages?.length ?? 0) > 0;
+  const showSuggestions = typeahead?.visible ?? false;
 
   return (
     <box backgroundColor={t.backgroundPanel}>
@@ -3421,6 +3532,9 @@ function PromptBox({
               <span style={{ fg: t.textMuted }}>{"cancel"}</span>
             </text>
           </box>
+        )}
+        {showSuggestions && typeahead && (
+          <SuggestionOverlay t={t} suggestions={typeahead.suggestions} selectedIndex={typeahead.selectedIndex} />
         )}
         <box
           paddingLeft={2}
@@ -3484,8 +3598,27 @@ function PromptBox({
                 <span style={{ fg: t.textMuted }}>{(queuedCount ?? 0) > 0 ? "clear queue" : "interrupt"}</span>
               </text>
             </box>
+          ) : showSuggestions ? (
+            <box flexDirection="row" gap={3}>
+              <text fg={t.text}>
+                {"tab "}
+                <span style={{ fg: t.textMuted }}>{"accept"}</span>
+              </text>
+              <text fg={t.text}>
+                {"↑↓ "}
+                <span style={{ fg: t.textMuted }}>{"navigate"}</span>
+              </text>
+              <text fg={t.text}>
+                {"esc "}
+                <span style={{ fg: t.textMuted }}>{"dismiss"}</span>
+              </text>
+            </box>
           ) : (
             <>
+              <text fg={t.text}>
+                {"@ "}
+                <span style={{ fg: t.textMuted }}>{"files"}</span>
+              </text>
               <text fg={t.text}>
                 {"shift+enter "}
                 <span style={{ fg: t.textMuted }}>{"new line"}</span>
@@ -3690,7 +3823,58 @@ function ApiKeyModal({
 
 /* ── Messages ────────────────────────────────────────────────── */
 
-function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: number; t: Theme; modeColor: string }) {
+const USER_MSG_COLLAPSED_LINES = 5;
+
+function UserMessageContent({ content, t, expanded }: { content: string; t: Theme; expanded: boolean }) {
+  const lines = content.split("\n");
+  const isLong = lines.length > USER_MSG_COLLAPSED_LINES;
+
+  if (!isLong) {
+    return <text fg={t.text}>{content}</text>;
+  }
+
+  if (expanded) {
+    return (
+      <>
+        <text fg={t.text}>{content}</text>
+        <box marginTop={1}>
+          <text fg={t.textDim}>
+            {"ctrl+e "}
+            <span style={{ fg: t.textMuted }}>{"collapse"}</span>
+          </text>
+        </box>
+      </>
+    );
+  }
+
+  const preview = lines.slice(0, USER_MSG_COLLAPSED_LINES).join("\n");
+  const hiddenCount = lines.length - USER_MSG_COLLAPSED_LINES;
+  return (
+    <>
+      <text fg={t.text}>{preview}</text>
+      <box marginTop={1}>
+        <text fg={t.textDim}>
+          {"ctrl+e "}
+          <span style={{ fg: t.textMuted }}>{`expand (${hiddenCount} more lines)`}</span>
+        </text>
+      </box>
+    </>
+  );
+}
+
+function MessageView({
+  entry,
+  index,
+  t,
+  modeColor,
+  expandedMessages,
+}: {
+  entry: ChatEntry;
+  index: number;
+  t: Theme;
+  modeColor: string;
+  expandedMessages?: Set<number>;
+}) {
   switch (entry.type) {
     case "user":
       return (
@@ -3710,7 +3894,7 @@ function MessageView({ entry, index, t, modeColor }: { entry: ChatEntry; index: 
             flexDirection="column"
           >
             {entry.sourceLabel ? <text fg={t.textMuted}>{entry.sourceLabel}</text> : null}
-            <text fg={t.text}>{entry.content}</text>
+            <UserMessageContent content={entry.content} t={t} expanded={expandedMessages?.has(index) ?? false} />
           </box>
         </box>
       );
@@ -4212,8 +4396,11 @@ function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string
       ) : null}
       {media.length > 0 ? (
         <box paddingLeft={5} marginTop={toolResult.output ? 1 : 0} flexDirection="column">
-          {media.map((asset, index) => (
-            <box key={`${asset.path}-${index}`} flexDirection="column">
+          {media.map((asset) => (
+            <box
+              key={`${asset.path}-${asset.url ?? ""}-${asset.sourcePath ?? ""}-${asset.sourceUrl ?? ""}`}
+              flexDirection="column"
+            >
               <text fg={t.text}>{asset.path}</text>
               {asset.url ? <text fg={t.textMuted}>{`url: ${asset.url}`}</text> : null}
               {asset.sourcePath ? <text fg={t.textMuted}>{`source: ${asset.sourcePath}`}</text> : null}

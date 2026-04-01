@@ -14,6 +14,7 @@ import {
 } from "./headless/output";
 import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
 import { startScheduleDaemon } from "./tools/schedule";
+import { processAtMentions } from "./utils/at-mentions.js";
 import {
   getApiKey,
   getBaseURL,
@@ -117,9 +118,11 @@ async function runHeadless(
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
 
+  const { enhancedMessage } = processAtMentions(prompt, process.cwd());
+
   if (format === "json") {
     const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
-    for await (const chunk of agent.processMessage(prompt, observer)) {
+    for await (const chunk of agent.processMessage(enhancedMessage, observer)) {
       const writes = consumeChunk(chunk);
       if (writes.stdout) process.stdout.write(writes.stdout);
       if (writes.stderr) process.stderr.write(writes.stderr ?? "");
@@ -130,7 +133,7 @@ async function runHeadless(
     return;
   }
 
-  for await (const chunk of agent.processMessage(prompt)) {
+  for await (const chunk of agent.processMessage(enhancedMessage)) {
     const writes = renderHeadlessChunk(chunk);
     if (writes.stdout) process.stdout.write(writes.stdout);
     if (writes.stderr) process.stderr.write(writes.stderr);
