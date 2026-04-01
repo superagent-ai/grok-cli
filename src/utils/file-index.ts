@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { basename } from "path";
+import { basename, resolve } from "path";
 import { findGitRoot } from "./git-root.js";
 
 const REFRESH_TTL_MS = 30_000;
@@ -102,10 +102,12 @@ function scoreMatch(filePath: string, query: string): number {
 export class FileIndex {
   private files: string[] = [];
   private cwd: string;
+  private baseDir: string;
   private lastRefresh = 0;
 
   constructor(cwd: string) {
     this.cwd = cwd;
+    this.baseDir = findGitRoot(cwd) ?? cwd;
   }
 
   async refresh(): Promise<void> {
@@ -116,6 +118,7 @@ export class FileIndex {
   updateCwd(cwd: string): void {
     if (cwd !== this.cwd) {
       this.cwd = cwd;
+      this.baseDir = findGitRoot(cwd) ?? cwd;
       this.lastRefresh = 0;
     }
   }
@@ -141,5 +144,9 @@ export class FileIndex {
 
   get size(): number {
     return this.files.length;
+  }
+
+  resolvePath(filePath: string): string {
+    return resolve(this.baseDir, filePath);
   }
 }

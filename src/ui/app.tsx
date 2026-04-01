@@ -2,7 +2,6 @@ import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } fr
 import { decodePasteBytes, type PasteEvent, parseKeypress } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import os from "os";
-import { resolve } from "path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
 import {
@@ -678,27 +677,23 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }
   const fileMentionCounterRef = useRef(0);
   const fileMentionBlocksRef = useRef<FileMentionBlock[]>([]);
-  const currentCwd = agent.getCwd();
 
-  const handleFileAccept = useCallback(
-    (filePath: string, tokenInfo: { startPos: number; endPos: number }) => {
-      const ta = inputRef.current;
-      if (!ta) return;
+  const handleFileAccept = useCallback((filePath: string, tokenInfo: { startPos: number; endPos: number }) => {
+    const ta = inputRef.current;
+    if (!ta) return;
 
-      const id = ++fileMentionCounterRef.current;
-      const block: FileMentionBlock = { id, path: resolve(currentCwd, filePath) };
-      fileMentionBlocksRef.current = [...fileMentionBlocksRef.current, block];
+    const id = ++fileMentionCounterRef.current;
+    const block: FileMentionBlock = { id, path: fileIndexRef.current?.resolvePath(filePath) ?? filePath };
+    fileMentionBlocksRef.current = [...fileMentionBlocksRef.current, block];
 
-      const text = ta.plainText;
-      const before = text.slice(0, tokenInfo.startPos);
-      const after = text.slice(tokenInfo.endPos);
-      const token = getFileMentionToken(block);
-      const newText = `${before}${token} ${after}`;
-      ta.setText(newText);
-      ta.cursorOffset = before.length + token.length + 1;
-    },
-    [currentCwd],
-  );
+    const text = ta.plainText;
+    const before = text.slice(0, tokenInfo.startPos);
+    const after = text.slice(tokenInfo.endPos);
+    const token = getFileMentionToken(block);
+    const newText = `${before}${token} ${after}`;
+    ta.setText(newText);
+    ta.cursorOffset = before.length + token.length + 1;
+  }, []);
 
   const typeahead = useTypeahead(inputRef, fileIndexRef.current, handleFileAccept);
   const typeaheadRef = useRef(typeahead);
@@ -1905,6 +1900,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const resetToNewSession = useCallback(() => {
     const snapshot = agent.startNewSession();
     setMessages(snapshot?.entries ?? []);
+    setExpandedMessages(new Set());
     activeTurnRef.current = null;
     clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);

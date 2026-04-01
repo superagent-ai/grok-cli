@@ -57,6 +57,7 @@ export function useTypeahead(
   const tokenRef = useRef<TokenInfo | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTextRef = useRef("");
+  const lastCursorRef = useRef<number | null>(null);
   const onAcceptRef = useRef(onAccept);
   onAcceptRef.current = onAccept;
 
@@ -108,8 +109,9 @@ export function useTypeahead(
       const text = ta.plainText;
       const cursor = ta.cursorOffset;
 
-      if (text === lastTextRef.current && tokenRef.current) return;
+      if (text === lastTextRef.current && cursor === lastCursorRef.current && tokenRef.current) return;
       lastTextRef.current = text;
+      lastCursorRef.current = cursor;
 
       const token = extractToken(text, cursor);
       if (!token || token.token.length === 0) {
