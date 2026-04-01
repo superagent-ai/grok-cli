@@ -52,6 +52,7 @@ import {
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
+import { formatSubagentName } from "../utils/subagent-display";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
 import { VERIFY_PROMPT } from "../verify/entrypoint";
 import {
@@ -3224,7 +3225,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           focusedField={agentsEditorField}
           modelIndex={agentsEditorModelIndex}
           error={agentsEditorError}
-          title={editingSubagent ? `Edit sub-agent: ${editingSubagent.name}` : "Add sub-agent"}
+          title={editingSubagent ? `Edit sub-agent: ${formatSubagentName(editingSubagent.name)}` : "Add sub-agent"}
           nameRef={subagentNameRef}
           instructionRef={subagentInstructionRef}
           onSubmit={submitSubagentEditor}
@@ -3971,15 +3972,6 @@ function InlineTool({ t, pending: _pending, children }: { t: Theme; pending: boo
   );
 }
 
-function formatSubagentName(agent: string): string {
-  if (agent === "general") return "General";
-  if (agent === "explore") return "Explore";
-  if (agent === "vision") return "Vision";
-  if (agent === "verify") return "Verify";
-  if (agent === "verify-detect") return "Verify Detect";
-  return agent || "Sub-agent";
-}
-
 function SubagentTaskLine({ t, agent, label, pending }: { t: Theme; agent: string; label: string; pending: boolean }) {
   const displayLabel = compactTaskLabel(label);
   const displayAgent = formatSubagentName(agent);
@@ -4058,7 +4050,7 @@ function TaskResultView({ t, entry }: { t: Theme; entry: ChatEntry }) {
       <SubagentTaskLine t={t} agent={task.agent} label={task.description} pending={false} />
       <box paddingLeft={5}>
         <text fg={t.text}>
-          {task.agent}
+          {formatSubagentName(task.agent)}
           {": "}
           {truncateLine(task.summary, 90)}
         </text>

@@ -1,6 +1,20 @@
 import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { BashTool } from "../tools/bash";
+import {
+  computerClick,
+  computerFocusWindow,
+  computerGet,
+  computerLaunch,
+  computerListWindows,
+  computerMouseMove,
+  computerPress,
+  computerScreenshot,
+  computerScroll,
+  computerSnapshot,
+  computerType,
+  computerWait,
+} from "../tools/computer";
 import { editFile, readFile, writeFile } from "../tools/file";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
@@ -245,21 +259,24 @@ export function createTools(
 
   if (options.runTask) {
     const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
-    const taskAgentEnum = ["general", "explore", "vision", "verify", ...customNames] as [string, ...string[]];
+    const taskAgentEnum = ["general", "explore", "vision", "verify", "computer", ...customNames] as [
+      string,
+      ...string[],
+    ];
     const customHint =
       customNames.length > 0
         ? ` You may also use these user-defined sub-agents by exact name: ${customNames.join(", ")}.`
         : "";
 
     tools.task = tool({
-      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, code quality work, and verification instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, \`vision\` for image validation, and \`verify\` for sandbox-aware build, test, and smoke validation.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
+      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, code quality work, verification, and computer-use flows instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, \`vision\` for image validation, \`verify\` for sandbox-aware build, test, and smoke validation, and \`computer\` for host desktop screenshot/input workflows.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
       inputSchema: z.object({
         agent: z
           .enum(taskAgentEnum)
           .default("general")
           .describe(
             customNames.length > 0
-              ? "Built-in general, explore, vision, or verify, or a configured custom sub-agent name from user settings"
+              ? "Built-in general, explore, vision, verify, or computer, or a configured custom sub-agent name from user settings"
               : "Which sub-agent to use",
           ),
         description: z.string().describe("A short label for the delegated task, such as 'Deep code quality analysis'"),
@@ -272,6 +289,186 @@ export function createTools(
   }
 
   if (mode === "agent") {
+    tools.computer_snapshot = tool({
+      description:
+        "Capture a semantic accessibility snapshot of a desktop app using agent-desktop. Prefer this before desktop interaction. It returns stable refs like @e1 that remain valid until the next snapshot.",
+      inputSchema: z.object({
+        app: z.string().optional().describe("Optional application name to scope the snapshot"),
+        window_id: z.string().optional().describe("Optional window id from computer_list_windows"),
+        interactive_only: z
+          .boolean()
+          .optional()
+          .describe("If true or omitted, include only interactive elements with refs"),
+        include_bounds: z.boolean().optional().describe("Include element bounds in the snapshot"),
+        compact: z.boolean().optional().describe("Collapse single-child unnamed nodes to reduce tree depth"),
+        max_depth: z.number().int().min(1).max(30).optional().describe("Maximum tree depth"),
+        surface: z
+          .enum(["window", "focused", "menu", "menubar", "sheet", "popover", "alert"])
+          .optional()
+          .describe("Optional UI surface to snapshot"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerSnapshot(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_screenshot = tool({
+      description:
+        "Capture a PNG screenshot of a desktop app window using agent-desktop. Use for visual confirmation or when the accessibility snapshot is insufficient.",
+      inputSchema: z.object({
+        output_path: z
+          .string()
+          .optional()
+          .describe("Optional output path for the screenshot. Defaults to .grok/computer/*.png"),
+        app: z.string().optional().describe("Optional application name to capture"),
+        window_id: z.string().optional().describe("Optional window id from computer_list_windows"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerScreenshot(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_click = tool({
+      description:
+        "Click a desktop element via agent-desktop. Prefer `ref` values from computer_snapshot. Coordinates are a fallback only when accessibility refs are unavailable.",
+      inputSchema: z.object({
+        ref: z.string().optional().describe("Element ref from computer_snapshot, such as @e3"),
+        x: z.number().optional().describe("Fallback absolute screen X coordinate"),
+        y: z.number().optional().describe("Fallback absolute screen Y coordinate"),
+        button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button to click"),
+        count: z.number().int().min(1).max(3).optional().describe("Number of clicks"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerClick(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_mouse_move = tool({
+      description: "Hover over a desktop element or coordinates via agent-desktop. Prefer refs from computer_snapshot.",
+      inputSchema: z.object({
+        ref: z.string().optional().describe("Element ref from computer_snapshot, such as @e3"),
+        x: z.number().optional().describe("Fallback absolute screen X coordinate"),
+        y: z.number().optional().describe("Fallback absolute screen Y coordinate"),
+        duration_ms: z.number().int().min(0).optional().describe("Optional hover duration in milliseconds"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerMouseMove(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_type = tool({
+      description:
+        "Type text into a specific desktop element via agent-desktop. Pass a ref from computer_snapshot. For shortcuts like cmd+k or enter, prefer computer_press.",
+      inputSchema: z.object({
+        ref: z.string().describe("Element ref from computer_snapshot, such as @e5"),
+        text: z.string().describe("Text to type"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerType(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_press = tool({
+      description: "Press a key or key chord via agent-desktop, optionally targeting a specific app first.",
+      inputSchema: z.object({
+        key: z.string().describe("Key or key chord such as enter or cmd+s"),
+        app: z.string().optional().describe("Optional application name to focus before pressing"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerPress(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_scroll = tool({
+      description: "Scroll a desktop element via agent-desktop. Pass the element ref from computer_snapshot.",
+      inputSchema: z.object({
+        ref: z.string().describe("Element ref from computer_snapshot, such as @e8"),
+        direction: z.enum(["up", "down", "left", "right"]).describe("Scroll direction"),
+        amount: z.number().int().min(1).max(100).optional().describe("Optional scroll amount"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerScroll(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_launch = tool({
+      description: "Launch an application by name or bundle id using agent-desktop and wait for its window to appear.",
+      inputSchema: z.object({
+        app: z.string().describe("Application name or bundle id"),
+        timeout_ms: z
+          .number()
+          .int()
+          .min(100)
+          .max(120000)
+          .optional()
+          .describe("Optional launch timeout in milliseconds"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerLaunch(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_list_windows = tool({
+      description:
+        "List visible desktop windows using agent-desktop. Use this to discover window ids before focusing or scoping snapshots.",
+      inputSchema: z.object({
+        app: z.string().optional().describe("Optional application name to filter windows"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerListWindows(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_focus_window = tool({
+      description: "Bring a desktop window to the front using a window id, app name, or title.",
+      inputSchema: z.object({
+        window_id: z.string().optional().describe("Window id from computer_list_windows"),
+        app: z.string().optional().describe("Application name"),
+        title: z.string().optional().describe("Partial window title match"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerFocusWindow(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_wait = tool({
+      description:
+        "Wait for time, an element ref, a window title, or text to appear using agent-desktop. Use after launches, dialogs, or UI transitions.",
+      inputSchema: z.object({
+        milliseconds: z
+          .number()
+          .int()
+          .min(0)
+          .max(120000)
+          .optional()
+          .describe("Optional pause duration in milliseconds"),
+        element: z.string().optional().describe("Wait until this element ref appears"),
+        window: z.string().optional().describe("Wait until a window title appears"),
+        text: z.string().optional().describe("Wait until text appears in the accessibility tree"),
+        timeout_ms: z.number().int().min(100).max(120000).optional().describe("Timeout for element/window/text waits"),
+        app: z.string().optional().describe("Optional app scope for the wait"),
+        menu: z.boolean().optional().describe("Wait until a menu is open"),
+        menu_closed: z.boolean().optional().describe("Wait until a menu is dismissed"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerWait(input, cwd(), abortSignal);
+      },
+    });
+
+    tools.computer_get = tool({
+      description: "Read a property like text, value, title, bounds, role, or states from a desktop element ref.",
+      inputSchema: z.object({
+        ref: z.string().describe("Element ref from computer_snapshot, such as @e4"),
+        property: z
+          .enum(["text", "value", "title", "bounds", "role", "states"])
+          .optional()
+          .describe("Property to read"),
+      }),
+      execute: async (input, { abortSignal }) => {
+        return computerGet(input, cwd(), abortSignal);
+      },
+    });
+
     tools.write_file = tool({
       description:
         "Create or overwrite a file with the given content. Use for creating new files or completely rewriting existing ones. Returns a diff of the changes.",

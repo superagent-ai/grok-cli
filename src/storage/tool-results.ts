@@ -15,6 +15,7 @@ export function extractToolResultFromOutput(output: unknown): ToolResult | null 
       delegation: result.delegation,
       backgroundProcess: result.backgroundProcess,
       media: result.media,
+      computer: result.computer,
     };
   }
 

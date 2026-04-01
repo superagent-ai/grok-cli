@@ -73,6 +73,7 @@ import { buildVisionUserMessages } from "./vision-input";
 
 const MAX_TOOL_ROUNDS = 400;
 const VISION_MODEL = "grok-4-1-fast-reasoning";
+const COMPUTER_MODEL = "grok-4.20-0309-reasoning";
 
 interface AgentOptions {
   persistSession?: boolean;
@@ -149,7 +150,7 @@ TOOLS:
 - process_logs: View recent output from a background process by ID.
 - process_stop: Stop a background process by ID.
 - process_list: List all background processes with status and uptime.
-- task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution, explore for fast read-only research, verify for sandbox-aware validation, or a configured custom sub-agent name when listed under CUSTOM SUB-AGENTS.
+- task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution, explore for fast read-only research, verify for sandbox-aware validation, computer for host desktop screenshot/input workflows, or a configured custom sub-agent name when listed under CUSTOM SUB-AGENTS.
 - delegate: Launch a read-only background agent for longer research while you continue working.
 - delegation_read: Retrieve a completed background delegation result by ID.
 - delegation_list: List running and completed background delegations. Do not poll it repeatedly.
@@ -164,6 +165,18 @@ TOOLS:
 - search_x: Search X/Twitter for real-time posts, discussions, opinions, and trends.
 - generate_image: Generate a new image or edit an existing image. It saves image files locally and returns their paths.
 - generate_video: Generate a new video or animate an existing image. It saves video files locally and returns their paths.
+- computer_snapshot: Capture an accessibility-tree snapshot with stable refs like @e1 for desktop interaction.
+- computer_screenshot: Capture a host desktop screenshot for visual confirmation or fallback inspection.
+- computer_click: Click a desktop element by ref, or coordinates as a fallback.
+- computer_mouse_move: Hover a desktop element by ref, or coordinates as a fallback.
+- computer_type: Type text into a specific desktop element ref.
+- computer_press: Press a key or key chord in the focused host application.
+- computer_scroll: Scroll a desktop element by ref.
+- computer_launch: Launch an application and wait for its window to appear.
+- computer_list_windows: List visible windows and their ids.
+- computer_focus_window: Bring a target window to the front.
+- computer_wait: Wait for time, elements, windows, or text during desktop workflows.
+- computer_get: Read a property from a desktop element ref.
 - MCP tools: Enabled servers appear as tools named like mcp_<server>__<tool>.
 
 WORKFLOW:
@@ -183,6 +196,7 @@ DEFAULT DELEGATION POLICY:
 - Use the explore sub-agent for read-only investigation, reviews, research, and "how does this work?" tasks.
 - Use the general sub-agent for delegated work that may need editing files, running commands, or producing a concrete implementation.
 - Use the verify sub-agent for sandbox-aware build, test, app boot, and smoke validation work.
+- Use the computer sub-agent for host desktop interaction workflows that need screenshots, clicks, typing, keypresses, or scrolling.
 - Use a matching custom sub-agent when the task fits one of the configured specializations.
 - Never use delegate for tasks that should edit files or make shell changes.
 - When a background delegation is running, do not wait idly and do not spam delegation_list(). Continue useful work.
@@ -195,6 +209,7 @@ EXAMPLES:
 - "investigate why this test fails" -> delegate to explore first, then continue with findings
 - "refactor this module" -> delegate a focused part to general when helpful
 - "verify this feature locally" -> use verify
+- "open the host app and click through it" -> use computer
 - "generate a logo" -> use generate_image
 - "animate this still image" -> use generate_video
 - Recurring specialized workflows -> use the matching custom sub-agent via task
@@ -307,6 +322,7 @@ function buildSubagentPrompt(
   const isVision = request.agent === "vision";
   const isVerify = request.agent === "verify";
   const isVerifyDetect = request.agent === "verify-detect";
+  const isComputer = request.agent === "computer";
   const mode: AgentMode = isExplore || isVerifyDetect ? "ask" : "agent";
   const role = custom
     ? `You are the custom sub-agent "${custom.name}". You can investigate, edit files, and run commands unless the delegated task says otherwise.`
@@ -318,7 +334,9 @@ function buildSubagentPrompt(
           ? "You are the Verify Detect sub-agent. You inspect a repository to produce a structured verification recipe. You are read-only."
           : isVerify
             ? "You are the Verify sub-agent. You specialize in sandbox-aware local verification using builds, tests, app boot checks, and optional browser smoke tests."
-            : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
+            : isComputer
+              ? "You are the Computer sub-agent. You specialize in host desktop automation using accessibility snapshots, semantic element refs, screenshots, and careful mouse and keyboard actions."
+              : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
 
   const rules = isExplore
     ? [
@@ -334,18 +352,29 @@ function buildSubagentPrompt(
         ]
       : isVision
         ? ["Validate the image."]
-        : isVerify
+        : isComputer
           ? [
-              "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
-              "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
-              "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
-              "Return a concise structured verification report for the parent agent.",
+              "Operate carefully on the HOST desktop, not inside the shell sandbox.",
+              "Start with `computer_snapshot` when possible. It returns stable refs like @e1 that remain valid until the next snapshot.",
+              "Prefer accessibility refs over coordinates. Use `computer_click`, `computer_type`, `computer_scroll`, and `computer_get` with refs from the latest snapshot.",
+              "After any meaningful UI transition, launch, dialog open, or menu change, take another `computer_snapshot` before reusing old refs.",
+              "Use `computer_launch`, `computer_list_windows`, `computer_focus_window`, and `computer_wait` to manage apps and window state.",
+              "Use `computer_press` for shortcuts like Enter or cmd+k. Use `computer_screenshot` only for visual confirmation or when the accessibility tree is insufficient.",
+              "If `agent-desktop` is unavailable, permissions are missing, refs go stale, or the state is ambiguous, stop and return the blocker clearly to the parent agent.",
+              "Do not perform destructive or high-risk desktop actions unless the delegated task explicitly requires them.",
             ]
-          : [
-              "Work only on the delegated task below.",
-              "Use tools directly instead of narrating your intent.",
-              "Return a concise summary for the parent agent with key outcomes and any open risks.",
-            ];
+          : isVerify
+            ? [
+                "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
+                "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
+                "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
+                "Return a concise structured verification report for the parent agent.",
+              ]
+            : [
+                "Work only on the delegated task below.",
+                "Use tools directly instead of narrating your intent.",
+                "Return a concise summary for the parent agent with key outcomes and any open risks.",
+              ];
 
   const instructionLines = custom?.instruction.trim() ? ["", "SUB-AGENT INSTRUCTIONS:", custom.instruction.trim()] : [];
 
@@ -923,14 +952,15 @@ export class Agent {
     const isVision = agentKey === "vision";
     const isVerify = agentKey === "verify";
     const isVerifyDetect = agentKey === "verify-detect";
+    const isComputer = agentKey === "computer";
     const subagents = loadValidSubAgents();
     const custom =
-      !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect
+      !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isComputer
         ? findCustomSubagent(agentKey, subagents)
         : undefined;
 
-    if (!isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !custom) {
-      const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, verify, or a configured name from ~/.grok/user-settings.json.`;
+    if (!isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isComputer && !custom) {
+      const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, verify, computer, or a configured name from ~/.grok/user-settings.json.`;
       return {
         success: false,
         output: message,
@@ -959,17 +989,39 @@ export class Agent {
         ? "Detecting verification recipe"
         : isVerify
           ? "Preparing verification pass"
-          : "Planning delegated work";
+          : isComputer
+            ? "Preparing computer control pass"
+            : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
     let closeMcp: (() => Promise<void>) | undefined;
     const childModelId = normalizeModelId(
-      isVision ? VISION_MODEL : isExplore ? DEFAULT_MODEL : custom ? custom.model : this.modelId,
+      isVision
+        ? VISION_MODEL
+        : isComputer
+          ? COMPUTER_MODEL
+          : isExplore
+            ? DEFAULT_MODEL
+            : custom
+              ? custom.model
+              : this.modelId,
     );
     const childRuntime = isVision
       ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
       : resolveModelRuntime(provider, childModelId);
+    if (isComputer && childRuntime.modelInfo?.supportsClientTools === false) {
+      return {
+        success: false,
+        output:
+          "Computer sub-agent requires a tool-capable model, but the selected runtime does not support client tools.",
+        task: {
+          agent: agentKey,
+          description: request.description,
+          summary: "Computer sub-agent could not start because the chosen model does not support tools.",
+        },
+      };
+    }
     const childSystem = applyModelConstraints(
       buildSubagentPrompt(
         request,
@@ -2113,6 +2165,7 @@ function toToolResult(output: unknown): ToolResult {
       delegation?: ToolResult["delegation"];
       backgroundProcess?: ToolResult["backgroundProcess"];
       media?: ToolResult["media"];
+      computer?: ToolResult["computer"];
     };
     return {
       success: r.success,
@@ -2124,6 +2177,7 @@ function toToolResult(output: unknown): ToolResult {
       delegation: r.delegation,
       backgroundProcess: r.backgroundProcess,
       media: r.media,
+      computer: r.computer,
     };
   }
   return { success: true, output: String(output) };
@@ -2138,6 +2192,21 @@ function formatSubagentActivity(toolName: string, args?: unknown): string {
   if (toolName === "search_x") return `X search "${truncate(parsed.query || "", 50)}"`;
   if (toolName === "generate_image") return `Generate image "${truncate(parsed.prompt || "", 50)}"`;
   if (toolName === "generate_video") return `Generate video "${truncate(parsed.prompt || "", 50)}"`;
+  if (toolName === "computer_snapshot") return `Snapshot ${parsed.app || "desktop"}`;
+  if (toolName === "computer_screenshot") return "Capture desktop screenshot";
+  if (toolName === "computer_click")
+    return parsed.ref ? `Click ${parsed.ref}` : `Click at ${parsed.x || "?"},${parsed.y || "?"}`;
+  if (toolName === "computer_mouse_move")
+    return parsed.ref ? `Hover ${parsed.ref}` : `Move mouse to ${parsed.x || "?"},${parsed.y || "?"}`;
+  if (toolName === "computer_type") return `Type into ${parsed.ref || "element"}`;
+  if (toolName === "computer_press") return `Press ${parsed.key || "key"}`;
+  if (toolName === "computer_scroll") return `Scroll ${parsed.ref || "element"} ${parsed.direction || "down"}`;
+  if (toolName === "computer_launch") return `Launch ${parsed.app || "app"}`;
+  if (toolName === "computer_list_windows") return `List windows${parsed.app ? ` for ${parsed.app}` : ""}`;
+  if (toolName === "computer_focus_window")
+    return `Focus window ${parsed.window_id || parsed.title || parsed.app || ""}`.trim();
+  if (toolName === "computer_wait") return "Wait for desktop state";
+  if (toolName === "computer_get") return `Read ${parsed.property || "text"} from ${parsed.ref || "element"}`;
   if (toolName === "bash") return truncate(parsed.command || "Run command", 70);
   return truncate(`${toolName}`, 70);
 }

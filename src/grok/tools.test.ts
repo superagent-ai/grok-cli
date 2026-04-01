@@ -110,6 +110,49 @@ describe("schedule daemon tools", () => {
     expect(result).toEqual({ success: true, output: "verified" });
   });
 
+  it("exposes computer tools and routes computer task requests", async () => {
+    const runTask = vi.fn(async () => ({ success: true, output: "computer-ready" }));
+    const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
+      runTask,
+      subagents: [],
+    }) as Record<string, { execute: (input: unknown, context?: unknown) => Promise<unknown>; description?: string }>;
+
+    expect(tools).toHaveProperty("computer_screenshot");
+    expect(tools).toHaveProperty("computer_snapshot");
+    expect(tools).toHaveProperty("computer_click");
+    expect(tools).toHaveProperty("computer_mouse_move");
+    expect(tools).toHaveProperty("computer_type");
+    expect(tools).toHaveProperty("computer_press");
+    expect(tools).toHaveProperty("computer_scroll");
+    expect(tools).toHaveProperty("computer_launch");
+    expect(tools).toHaveProperty("computer_list_windows");
+    expect(tools).toHaveProperty("computer_focus_window");
+    expect(tools).toHaveProperty("computer_wait");
+    expect(tools).toHaveProperty("computer_get");
+
+    const taskTool = tools.task;
+    expect(taskTool.description).toContain("`computer`");
+
+    const result = (await taskTool.execute(
+      {
+        agent: "computer",
+        description: "Drive the host desktop",
+        prompt: "Take a screenshot and click the requested target.",
+      },
+      { abortSignal: undefined },
+    )) as { success: boolean; output: string };
+
+    expect(runTask).toHaveBeenCalledWith(
+      {
+        agent: "computer",
+        description: "Drive the host desktop",
+        prompt: "Take a screenshot and click the requested target.",
+      },
+      undefined,
+    );
+    expect(result).toEqual({ success: true, output: "computer-ready" });
+  });
+
   it("reports daemon status", async () => {
     const { tools } = createScheduleToolSet({
       getDaemonStatus: async () => ({ running: true, pid: 4321 }),

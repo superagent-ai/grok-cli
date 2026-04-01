@@ -11,6 +11,7 @@
         "@modelcontextprotocol/sdk": "^1.27.1",
         "@opentui/core": "^0.1.88",
         "@opentui/react": "^0.1.88",
+        "agent-desktop": "^0.1.11",
         "ai": "^6.0.116",
         "commander": "^12.1.0",
         "diff": "^8.0.3",
@@ -231,6 +232,8 @@
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
+
+    "agent-desktop": ["agent-desktop@0.1.11", "", { "bin": { "agent-desktop": "bin/agent-desktop.js" } }, "sha512-qK+d09VLsNSJMOjM/8bHIy4dEPzqVmgu6TQGwH7wXH0Fz6O0bXFyvvNxCLAX0ryxXQEnE/+xXoA8oOlRCU4unw=="],
 
     "ai": ["ai@6.0.116", "", { "dependencies": { "@ai-sdk/gateway": "3.0.66", "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.19", "@opentelemetry/api": "1.9.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-7yM+cTmyRLeNIXwt4Vj+mrrJgVQ9RMIW5WO0ydoLoYkewIvsMcvUmqS4j2RJTUXaF1HphwmSKUMQ/HypNRGOmA=="],
 
