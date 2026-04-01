@@ -1,6 +1,20 @@
+import { convertToBase64 } from "@ai-sdk/provider-utils";
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
+import {
+  addBatchRequests,
+  type BatchChatCompletionRequest,
+  type BatchChatCompletionResponse,
+  type BatchChatMessage,
+  type BatchClientOptions,
+  type BatchFunctionTool,
+  type BatchToolCall,
+  createBatch,
+  getBatchChatCompletion,
+  pollBatchRequestResult,
+} from "../grok/batch";
 import { createProvider, generateTitle as genTitle, resolveModelRuntime, type XaiProvider } from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
+import { toolSetToBatchTools } from "../grok/tool-schemas";
 import { createTools } from "../grok/tools";
 import { buildMcpToolSet } from "../mcp/runtime";
 import {
@@ -65,6 +79,7 @@ interface AgentOptions {
   session?: string;
   sandboxMode?: SandboxMode;
   sandboxSettings?: SandboxSettings;
+  batchApi?: boolean;
 }
 
 type ProcessMessageFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
@@ -73,6 +88,7 @@ export interface ProcessMessageUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  costUsdTicks?: number;
 }
 
 export interface ProcessMessageStepStart {
@@ -418,6 +434,7 @@ export class Agent {
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
   private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
+  private batchApi = false;
 
   constructor(
     apiKey: string | undefined,
@@ -443,6 +460,7 @@ export class Agent {
     this.maxToolRounds = maxToolRounds || MAX_TOOL_ROUNDS;
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
+    this.batchApi = options.batchApi ?? false;
 
     if (options.persistSession !== false) {
       this.sessionStore = new SessionStore(this.bash.getCwd());
@@ -679,6 +697,219 @@ export class Agent {
     }
   }
 
+  private getBatchClientOptions(signal?: AbortSignal): BatchClientOptions {
+    if (!this.apiKey) {
+      throw new Error("API key required. Add an API key to continue.");
+    }
+
+    return {
+      apiKey: this.apiKey,
+      baseURL: this.baseURL ?? undefined,
+      signal,
+    };
+  }
+
+  private async executeBatchToolCall(
+    tools: ToolSet,
+    toolCall: ToolCall,
+    messages: ModelMessage[],
+    signal?: AbortSignal,
+  ): Promise<{ input: unknown; result: ToolResult }> {
+    const tool = tools[toolCall.function.name];
+    if (!tool || tool.type === "provider" || typeof tool.execute !== "function") {
+      return {
+        input: parseToolArgumentsOrRaw(toolCall.function.arguments),
+        result: {
+          success: false,
+          output: `Tool "${toolCall.function.name}" is unavailable in batch mode.`,
+        },
+      };
+    }
+
+    let parsedInput: unknown;
+    try {
+      parsedInput = toolCall.function.arguments.trim() ? JSON.parse(toolCall.function.arguments) : {};
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        input: toolCall.function.arguments,
+        result: {
+          success: false,
+          output: `Tool "${toolCall.function.name}" received invalid JSON arguments: ${message}`,
+        },
+      };
+    }
+
+    try {
+      const output = await tool.execute(parsedInput as never, {
+        toolCallId: toolCall.id,
+        messages,
+        abortSignal: signal,
+      });
+      return {
+        input: parsedInput,
+        result: toToolResult(output),
+      };
+    } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        input: parsedInput,
+        result: {
+          success: false,
+          output: `Tool "${toolCall.function.name}" failed: ${message}`,
+        },
+      };
+    }
+  }
+
+  private async runTaskRequestBatch(args: {
+    request: TaskRequest;
+    childMessages: ModelMessage[];
+    childSystem: string;
+    childRuntime: ReturnType<typeof resolveModelRuntime>;
+    childTools: ToolSet;
+    maxSteps: number;
+    initialDetail: string;
+    onActivity?: (detail: string) => void;
+    signal?: AbortSignal;
+  }): Promise<ToolResult> {
+    const {
+      request,
+      childMessages,
+      childSystem,
+      childRuntime,
+      childTools,
+      maxSteps,
+      initialDetail,
+      onActivity,
+      signal,
+    } = args;
+
+    if (childRuntime.modelInfo?.responsesOnly) {
+      throw new Error("Batch mode currently supports chat-completions models only.");
+    }
+
+    const batchTools =
+      childRuntime.modelInfo?.supportsClientTools === false ? [] : await toolSetToBatchTools(childTools);
+    const batch = await createBatch({
+      ...this.getBatchClientOptions(signal),
+      name: buildBatchName(`task-${request.agent}`, request.description),
+    });
+
+    const turnMessages: ModelMessage[] = [];
+    const totalUsage: ProcessMessageUsage = {};
+    let assistantText = "";
+    let lastActivity = initialDetail;
+
+    for (let round = 0; round < maxSteps; round++) {
+      const batchRequestId = `task-${Date.now()}-${round + 1}`;
+      await addBatchRequests({
+        ...this.getBatchClientOptions(signal),
+        batchId: batch.batch_id,
+        batchRequests: [
+          {
+            batch_request_id: batchRequestId,
+            batch_request: {
+              chat_get_completion: buildBatchChatCompletionRequest({
+                modelId: childRuntime.modelId,
+                system: childSystem,
+                messages: [...childMessages, ...turnMessages],
+                temperature: request.agent === "explore" ? 0.2 : 0.5,
+                maxOutputTokens:
+                  childRuntime.modelInfo?.supportsMaxOutputTokens === false
+                    ? undefined
+                    : Math.min(this.maxTokens, 8_192),
+                reasoningEffort: childRuntime.providerOptions?.xai.reasoningEffort,
+                tools: batchTools,
+              }),
+            },
+          },
+        ],
+      });
+
+      const result = await pollBatchRequestResult({
+        ...this.getBatchClientOptions(signal),
+        batchId: batch.batch_id,
+        batchRequestId,
+      });
+      const response = getBatchChatCompletion(result);
+      accumulateUsage(totalUsage, getBatchUsage(response));
+
+      const choice = response.choices[0];
+      if (!choice) {
+        throw new Error("Batch response did not contain any choices.");
+      }
+      const content = choice?.message.content ?? "";
+      if (content) {
+        assistantText += content;
+      }
+
+      const requestMessages = [...childMessages, ...turnMessages];
+      const toolCalls = (choice?.message.tool_calls ?? []).map(toLocalToolCall);
+      const assistantMessage = buildAssistantBatchMessage(content, toolCalls);
+      if (assistantMessage) {
+        turnMessages.push(assistantMessage);
+      }
+
+      if (toolCalls.length === 0) {
+        if (hasUsage(totalUsage)) {
+          this.recordUsage(totalUsage, "task", childRuntime.modelId);
+        }
+        const output = assistantText.trim() || `Task completed. Last action: ${lastActivity}`;
+        return {
+          success: true,
+          output,
+          task: {
+            agent: request.agent,
+            description: request.description,
+            summary: firstLine(output),
+            activity: lastActivity,
+          },
+        };
+      }
+
+      const toolParts: ExecutedBatchTool[] = [];
+      for (const toolCall of toolCalls) {
+        const nextActivity = formatSubagentActivity(
+          toolCall.function.name,
+          parseToolArgumentsOrRaw(toolCall.function.arguments),
+        );
+        lastActivity = nextActivity;
+        onActivity?.(nextActivity);
+
+        const executed = await this.executeBatchToolCall(childTools, toolCall, requestMessages, signal);
+        toolParts.push({
+          toolCall,
+          input: executed.input,
+          toolResult: executed.result,
+        });
+      }
+
+      const toolMessage = buildToolBatchMessage(toolParts);
+      if (toolMessage) {
+        turnMessages.push(toolMessage);
+      }
+    }
+
+    if (hasUsage(totalUsage)) {
+      this.recordUsage(totalUsage, "task", childRuntime.modelId);
+    }
+    const output = assistantText.trim() || `Task stopped after ${maxSteps} batch rounds. Last action: ${lastActivity}`;
+    return {
+      success: false,
+      output,
+      task: {
+        agent: request.agent,
+        description: request.description,
+        summary: output,
+        activity: lastActivity,
+      },
+    };
+  }
+
   async runTaskRequest(
     request: TaskRequest,
     onActivity?: (detail: string) => void,
@@ -767,6 +998,20 @@ export class Agent {
       const childMessages = isVision
         ? await buildVisionUserMessages(request.prompt, childBash.getCwd(), signal)
         : [{ role: "user" as const, content: request.prompt }];
+
+      if (this.batchApi) {
+        return await this.runTaskRequestBatch({
+          request,
+          childMessages,
+          childSystem,
+          childRuntime,
+          childTools,
+          maxSteps: Math.min(this.maxToolRounds, isExplore ? 60 : 120),
+          initialDetail,
+          onActivity,
+          signal,
+        });
+      }
 
       const result = streamText({
         model: childRuntime.model,
@@ -869,6 +1114,7 @@ export class Agent {
         sandboxSettings: this.bash.getSandboxSettings(),
         maxToolRounds: this.maxToolRounds,
         maxTokens: this.maxTokens,
+        batchApi: this.batchApi,
       });
     } catch (err: unknown) {
       if (abortSignal?.aborted) throw err;
@@ -956,6 +1202,218 @@ export class Agent {
     return true;
   }
 
+  private async *processMessageBatchTurn(args: {
+    userModelMessage: ModelMessage;
+    observer?: ProcessMessageObserver;
+    provider: XaiProvider;
+    subagents: CustomSubagentConfig[];
+    system: string;
+    runtime: ReturnType<typeof resolveModelRuntime>;
+    modelInfo: ReturnType<typeof getModelInfo>;
+    signal: AbortSignal;
+  }): AsyncGenerator<StreamChunk, void, unknown> {
+    const { userModelMessage, observer, provider, subagents, system, runtime, modelInfo, signal } = args;
+    let attemptedOverflowRecovery = false;
+
+    while (true) {
+      let closeMcp: (() => Promise<void>) | undefined;
+      const turnMessages: ModelMessage[] = [];
+      const totalUsage: ProcessMessageUsage = {};
+
+      try {
+        const settings = attemptedOverflowRecovery
+          ? relaxCompactionSettings(this.getCompactionSettings())
+          : this.getCompactionSettings();
+        if (modelInfo) {
+          await this.compactForContext(
+            provider,
+            system,
+            modelInfo.contextWindow,
+            signal,
+            settings,
+            attemptedOverflowRecovery,
+          );
+        }
+
+        if (runtime.modelInfo?.responsesOnly) {
+          throw new Error("Batch mode currently supports chat-completions models only.");
+        }
+
+        const baseTools = createTools(this.bash, provider, this.mode, {
+          runTask: (request, abortSignal) => this.runTask(request, combineAbortSignals(signal, abortSignal)),
+          runDelegation: (request, abortSignal) =>
+            this.runDelegation(request, combineAbortSignals(signal, abortSignal)),
+          readDelegation: (id) => this.readDelegation(id),
+          listDelegations: () => this.listDelegations(),
+          scheduleManager: this.schedules,
+          subagents,
+          sendTelegramFile: this.sendTelegramFile ?? undefined,
+        });
+        let tools: ToolSet = runtime.modelInfo?.supportsClientTools === false ? {} : baseTools;
+        if (this.mode === "agent" && runtime.modelInfo?.supportsClientTools !== false) {
+          const mcpBundle = await buildMcpToolSet(loadMcpServers());
+          closeMcp = mcpBundle.close;
+          tools = { ...baseTools, ...mcpBundle.tools };
+          if (mcpBundle.errors.length > 0) {
+            yield { type: "content", content: `MCP unavailable: ${mcpBundle.errors.join(" | ")}\n\n` };
+          }
+        }
+
+        const batchTools = runtime.modelInfo?.supportsClientTools === false ? [] : await toolSetToBatchTools(tools);
+        const batch = await createBatch({
+          ...this.getBatchClientOptions(signal),
+          name: buildBatchName("session", this.getSessionId() || runtime.modelId),
+        });
+
+        for (let round = 0; round < this.maxToolRounds; round++) {
+          const stepNumber = round + 1;
+          notifyObserver(observer?.onStepStart, {
+            stepNumber,
+            timestamp: Date.now(),
+          });
+
+          const batchRequestId = `turn-${Date.now()}-${stepNumber}`;
+          await addBatchRequests({
+            ...this.getBatchClientOptions(signal),
+            batchId: batch.batch_id,
+            batchRequests: [
+              {
+                batch_request_id: batchRequestId,
+                batch_request: {
+                  chat_get_completion: buildBatchChatCompletionRequest({
+                    modelId: runtime.modelId,
+                    system,
+                    messages: [...this.messages, ...turnMessages],
+                    temperature: 0.7,
+                    maxOutputTokens: runtime.modelInfo?.supportsMaxOutputTokens === false ? undefined : this.maxTokens,
+                    reasoningEffort: runtime.providerOptions?.xai.reasoningEffort,
+                    tools: batchTools,
+                  }),
+                },
+              },
+            ],
+          });
+
+          const result = await pollBatchRequestResult({
+            ...this.getBatchClientOptions(signal),
+            batchId: batch.batch_id,
+            batchRequestId,
+          });
+          const response = getBatchChatCompletion(result);
+          const choice = response.choices[0];
+          if (!choice) {
+            throw new Error("Batch response did not contain any choices.");
+          }
+
+          const usage = getBatchUsage(response);
+          accumulateUsage(totalUsage, usage);
+          const finishReason = getBatchFinishReason(choice.finish_reason);
+
+          const content = choice.message.content ?? "";
+          if (content) {
+            yield { type: "content", content };
+          }
+
+          const requestMessages = [...this.messages, ...turnMessages];
+          const toolCalls = (choice.message.tool_calls ?? []).map(toLocalToolCall);
+          const assistantMessage = buildAssistantBatchMessage(content, toolCalls);
+          if (assistantMessage) {
+            turnMessages.push(assistantMessage);
+          }
+
+          if (toolCalls.length === 0) {
+            notifyObserver(observer?.onStepFinish, {
+              stepNumber,
+              timestamp: Date.now(),
+              finishReason,
+              usage,
+            });
+            if (hasUsage(totalUsage)) {
+              this.recordUsage(totalUsage, "message", runtime.modelId);
+            }
+            this.appendCompletedTurn(userModelMessage, turnMessages);
+            yield { type: "done" };
+            return;
+          }
+
+          yield { type: "tool_calls", toolCalls };
+
+          const toolParts: ExecutedBatchTool[] = [];
+          for (const toolCall of toolCalls) {
+            notifyObserver(observer?.onToolStart, {
+              toolCall,
+              timestamp: Date.now(),
+            });
+
+            const executed = await this.executeBatchToolCall(tools, toolCall, requestMessages, signal);
+            notifyObserver(observer?.onToolFinish, {
+              toolCall,
+              toolResult: executed.result,
+              timestamp: Date.now(),
+            });
+            yield { type: "tool_result", toolCall, toolResult: executed.result };
+            toolParts.push({
+              toolCall,
+              input: executed.input,
+              toolResult: executed.result,
+            });
+          }
+
+          const toolMessage = buildToolBatchMessage(toolParts);
+          if (toolMessage) {
+            turnMessages.push(toolMessage);
+          }
+          notifyObserver(observer?.onStepFinish, {
+            stepNumber,
+            timestamp: Date.now(),
+            finishReason,
+            usage,
+          });
+        }
+
+        const message = `Error: Reached max tool rounds (${this.maxToolRounds}) in batch mode.`;
+        notifyObserver(observer?.onError, {
+          message,
+          timestamp: Date.now(),
+        });
+        if (hasUsage(totalUsage)) {
+          this.recordUsage(totalUsage, "message", runtime.modelId);
+        }
+        this.appendCompletedTurn(userModelMessage, turnMessages);
+        yield { type: "error", content: message };
+        yield { type: "done" };
+        return;
+      } catch (err: unknown) {
+        if (signal.aborted) {
+          this.discardAbortedTurn(userModelMessage);
+          yield { type: "content", content: "\n\n[Cancelled]" };
+          yield { type: "done" };
+          return;
+        }
+
+        if (!attemptedOverflowRecovery && turnMessages.length === 0 && modelInfo && isContextLimitError(err)) {
+          attemptedOverflowRecovery = true;
+          continue;
+        }
+
+        const msg = err instanceof Error ? err.message : String(err);
+        notifyObserver(observer?.onError, {
+          message: `Error: ${msg}`,
+          timestamp: Date.now(),
+        });
+        if (hasUsage(totalUsage)) {
+          this.recordUsage(totalUsage, "message", runtime.modelId);
+        }
+        this.appendCompletedTurn(userModelMessage, turnMessages);
+        yield { type: "error", content: `Error: ${msg}` };
+        yield { type: "done" };
+        return;
+      } finally {
+        await closeMcp?.().catch(() => {});
+      }
+    }
+  }
+
   private appendCompletedTurn(userMessage: ModelMessage, newMessages: ModelMessage[]): void {
     if (newMessages.length === 0) return;
 
@@ -1009,6 +1467,26 @@ export class Agent {
     const modelInfo = runtime.modelInfo;
     this.planContext = null;
     let attemptedOverflowRecovery = false;
+
+    if (this.batchApi) {
+      try {
+        yield* this.processMessageBatchTurn({
+          userModelMessage,
+          observer,
+          provider,
+          subagents,
+          system,
+          runtime,
+          modelInfo,
+          signal,
+        });
+      } finally {
+        if (this.abortController?.signal === signal) {
+          this.abortController = null;
+        }
+      }
+      return;
+    }
 
     try {
       while (true) {
@@ -1253,11 +1731,309 @@ export class Agent {
   }
 }
 
+interface ExecutedBatchTool {
+  toolCall: ToolCall;
+  input: unknown;
+  toolResult: ToolResult;
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 function extractJsonObject(text: string): string | null {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) return null;
   return text.slice(start, end + 1);
+}
+
+function buildBatchName(prefix: string, label: string): string {
+  const compact =
+    label
+      .replace(/\s+/g, "-")
+      .replace(/[^a-zA-Z0-9._-]+/g, "")
+      .slice(0, 48) || "run";
+  return `grok-cli-${prefix}-${compact}`;
+}
+
+function buildBatchChatCompletionRequest(args: {
+  modelId: string;
+  system: string;
+  messages: ModelMessage[];
+  temperature: number;
+  maxOutputTokens?: number;
+  reasoningEffort?: BatchChatCompletionRequest["reasoning_effort"];
+  tools: BatchFunctionTool[];
+}): BatchChatCompletionRequest {
+  return {
+    model: args.modelId,
+    messages: toBatchChatMessages(args.system, args.messages),
+    temperature: args.temperature,
+    ...(args.maxOutputTokens != null ? { max_completion_tokens: args.maxOutputTokens } : {}),
+    ...(args.reasoningEffort ? { reasoning_effort: args.reasoningEffort } : {}),
+    ...(args.tools.length > 0 ? { tools: args.tools } : {}),
+  };
+}
+
+function toBatchChatMessages(system: string, messages: ModelMessage[]): BatchChatMessage[] {
+  const batchMessages: BatchChatMessage[] = [{ role: "system", content: system }];
+
+  for (const message of messages) {
+    const { role, content } = message;
+
+    switch (role) {
+      case "system":
+        batchMessages.push({ role: "system", content });
+        break;
+
+      case "user": {
+        if (typeof content === "string") {
+          batchMessages.push({ role: "user", content });
+          break;
+        }
+
+        if (!Array.isArray(content)) {
+          break;
+        }
+
+        if (content.length === 1 && content[0]?.type === "text") {
+          batchMessages.push({ role: "user", content: content[0].text });
+          break;
+        }
+
+        const userContent: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> =
+          [];
+        for (const part of content) {
+          switch (part.type) {
+            case "text":
+              userContent.push({ type: "text", text: part.text });
+              break;
+
+            case "image": {
+              const mediaType = part.mediaType === "image/*" || !part.mediaType ? "image/jpeg" : part.mediaType;
+              const data =
+                part.image instanceof URL
+                  ? part.image.toString()
+                  : `data:${mediaType};base64,${toBase64DataContent(part.image)}`;
+              userContent.push({ type: "image_url", image_url: { url: data } });
+              break;
+            }
+
+            case "file": {
+              if (!part.mediaType.startsWith("image/")) {
+                break;
+              }
+              const mediaType = part.mediaType === "image/*" ? "image/jpeg" : part.mediaType;
+              const data =
+                part.data instanceof URL
+                  ? part.data.toString()
+                  : `data:${mediaType};base64,${toBase64DataContent(part.data)}`;
+              userContent.push({ type: "image_url", image_url: { url: data } });
+              break;
+            }
+          }
+        }
+        batchMessages.push({
+          role: "user",
+          content: userContent,
+        });
+        break;
+      }
+
+      case "assistant": {
+        if (typeof content === "string") {
+          batchMessages.push({ role: "assistant", content });
+          break;
+        }
+
+        if (!Array.isArray(content)) {
+          break;
+        }
+
+        let assistantText = "";
+        const toolCalls: BatchToolCall[] = [];
+        for (const part of content) {
+          if (part.type === "text") {
+            assistantText += part.text;
+          } else if (part.type === "tool-call") {
+            toolCalls.push({
+              id: part.toolCallId,
+              type: "function",
+              function: {
+                name: part.toolName,
+                arguments: JSON.stringify(part.input),
+              },
+            });
+          }
+        }
+
+        if (assistantText || toolCalls.length > 0) {
+          batchMessages.push({
+            role: "assistant",
+            content: assistantText,
+            ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          });
+        }
+        break;
+      }
+
+      case "tool":
+        for (const part of content) {
+          if (part.type === "tool-approval-response") {
+            continue;
+          }
+          batchMessages.push({
+            role: "tool",
+            tool_call_id: part.toolCallId,
+            content: toolOutputToText(part.output),
+          });
+        }
+        break;
+    }
+  }
+
+  return batchMessages;
+}
+
+function toBase64DataContent(value: string | Uint8Array | ArrayBuffer): string {
+  return convertToBase64(value instanceof ArrayBuffer ? new Uint8Array(value) : value);
+}
+
+function toolOutputToText(output: {
+  type: "text" | "json" | "execution-denied" | "error-text" | "error-json" | "content";
+  value?: unknown;
+  reason?: string;
+}): string {
+  switch (output.type) {
+    case "text":
+    case "error-text":
+      return String(output.value ?? "");
+    case "execution-denied":
+      return output.reason ?? "Tool execution denied.";
+    case "json":
+    case "error-json":
+    case "content":
+      return JSON.stringify(output.value ?? null);
+  }
+}
+
+function getBatchUsage(response: BatchChatCompletionResponse): ProcessMessageUsage {
+  const usage = response.usage ?? {};
+  const inputTokens = asNumber(usage.input_tokens) ?? asNumber(usage.prompt_tokens);
+  const outputTokens = asNumber(usage.output_tokens) ?? asNumber(usage.completion_tokens);
+  const totalTokens = asNumber(usage.total_tokens) ?? sumDefined(inputTokens, outputTokens);
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    costUsdTicks: asNumber(usage.cost_in_usd_ticks),
+  };
+}
+
+function accumulateUsage(target: ProcessMessageUsage, usage: ProcessMessageUsage): void {
+  target.inputTokens = (target.inputTokens ?? 0) + (usage.inputTokens ?? 0);
+  target.outputTokens = (target.outputTokens ?? 0) + (usage.outputTokens ?? 0);
+  target.totalTokens = (target.totalTokens ?? 0) + (usage.totalTokens ?? 0);
+  target.costUsdTicks = (target.costUsdTicks ?? 0) + (usage.costUsdTicks ?? 0);
+}
+
+function hasUsage(usage: ProcessMessageUsage): boolean {
+  return Boolean(
+    (usage.inputTokens ?? 0) || (usage.outputTokens ?? 0) || (usage.totalTokens ?? 0) || (usage.costUsdTicks ?? 0),
+  );
+}
+
+function getBatchFinishReason(finishReason: string | null | undefined): ProcessMessageFinishReason {
+  switch (finishReason) {
+    case "stop":
+    case "length":
+    case "content-filter":
+    case "tool-calls":
+    case "error":
+    case "other":
+      return finishReason;
+    case "tool_calls":
+      return "tool-calls";
+    default:
+      return "other";
+  }
+}
+
+function toLocalToolCall(toolCall: BatchToolCall): ToolCall {
+  return {
+    id: toolCall.id,
+    type: "function",
+    function: {
+      name: toolCall.function.name,
+      arguments: toolCall.function.arguments,
+    },
+  };
+}
+
+function buildAssistantBatchMessage(content: string, toolCalls: ToolCall[]): ModelMessage | null {
+  if (toolCalls.length === 0) {
+    return content ? { role: "assistant", content } : null;
+  }
+
+  const parts: Array<
+    { type: "text"; text: string } | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+  > = [];
+  if (content) {
+    parts.push({ type: "text", text: content });
+  }
+  for (const toolCall of toolCalls) {
+    parts.push({
+      type: "tool-call",
+      toolCallId: toolCall.id,
+      toolName: toolCall.function.name,
+      input: parseToolArgumentsOrRaw(toolCall.function.arguments),
+    });
+  }
+  return { role: "assistant", content: parts };
+}
+
+function buildToolBatchMessage(toolParts: ExecutedBatchTool[]): ModelMessage | null {
+  if (toolParts.length === 0) {
+    return null;
+  }
+
+  return {
+    role: "tool",
+    content: toolParts.map((part) => ({
+      type: "tool-result" as const,
+      toolCallId: part.toolCall.id,
+      toolName: part.toolCall.function.name,
+      output: part.toolResult.success
+        ? ({ type: "json", value: toSerializableValue(part.toolResult) } as const)
+        : ({ type: "error-json", value: toSerializableValue(part.toolResult) } as const),
+    })),
+  };
+}
+
+function parseToolArgumentsOrRaw(raw: string): unknown {
+  try {
+    return raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    return raw;
+  }
+}
+
+function toSerializableValue(value: unknown): JsonValue {
+  try {
+    return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
+  } catch {
+    return String(value);
+  }
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function sumDefined(left?: number, right?: number): number | undefined {
+  if (left == null && right == null) {
+    return undefined;
+  }
+  return (left ?? 0) + (right ?? 0);
 }
 
 function toToolCall(part: { toolCallId: string; toolName: string; args?: unknown; input?: unknown }): ToolCall {

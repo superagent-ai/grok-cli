@@ -23,6 +23,7 @@ export interface StoredDelegation {
   sandboxSettings?: SandboxSettings;
   maxToolRounds: number;
   maxTokens: number;
+  batchApi?: boolean;
   status: DelegationStatus;
   startedAt: string;
   completedAt?: string;
@@ -45,6 +46,7 @@ interface StartDelegationOptions {
   sandboxSettings?: SandboxSettings;
   maxToolRounds: number;
   maxTokens: number;
+  batchApi?: boolean;
 }
 
 export class DelegationManager {
@@ -83,6 +85,7 @@ export class DelegationManager {
       sandboxSettings: options.sandboxSettings,
       maxToolRounds: options.maxToolRounds,
       maxTokens: options.maxTokens,
+      batchApi: options.batchApi,
       status: "running",
       startedAt: new Date().toISOString(),
       outputPath,
@@ -92,7 +95,14 @@ export class DelegationManager {
 
     const child = spawn(
       process.execPath,
-      [...resolveCliArgs(), "--directory", cwd, "--background-task-file", jobPath],
+      [
+        ...resolveCliArgs(),
+        "--directory",
+        cwd,
+        "--background-task-file",
+        jobPath,
+        ...(options.batchApi ? ["--batch-api"] : []),
+      ],
       {
         cwd,
         detached: true,

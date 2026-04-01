@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
+const originalHome = process.env.HOME;
 
 function makeTempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -11,19 +12,22 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
+function readStoredDelegationRecord(home: string): Record<string, unknown> {
+  const delegationsRoot = path.join(home, ".grok", "delegations");
+  const projectDirs = fs.readdirSync(delegationsRoot);
+  expect(projectDirs).toHaveLength(1);
+  const projectDir = path.join(delegationsRoot, projectDirs[0] as string);
+  const files = fs.readdirSync(projectDir).filter((file) => file.endsWith(".json"));
+  expect(files).toHaveLength(1);
+  return JSON.parse(fs.readFileSync(path.join(projectDir, files[0] as string), "utf8")) as Record<string, unknown>;
+}
+
 async function importDelegationsModule(options: { home?: string; spawnMock?: ReturnType<typeof vi.fn> } = {}) {
   vi.resetModules();
-  vi.doUnmock("os");
   vi.doUnmock("child_process");
 
   if (options.home) {
-    vi.doMock("os", async () => {
-      const actual = await vi.importActual<typeof import("os")>("os");
-      return {
-        ...actual,
-        homedir: () => options.home!,
-      };
-    });
+    process.env.HOME = options.home;
   }
 
   if (options.spawnMock) {
@@ -43,9 +47,9 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  process.env.HOME = originalHome;
   vi.restoreAllMocks();
   vi.resetModules();
-  vi.doUnmock("os");
   vi.doUnmock("child_process");
 });
 
@@ -81,9 +85,7 @@ describe("DelegationManager sandbox propagation", () => {
       expect.objectContaining({ cwd }),
     );
 
-    const cliArgs = (spawnMock.mock.calls[0] as unknown[])?.[1] as string[];
-    const jobPath = cliArgs[cliArgs.indexOf("--background-task-file") + 1] as string;
-    const record = JSON.parse(fs.readFileSync(jobPath, "utf8")) as {
+    const record = readStoredDelegationRecord(home) as {
       sandboxMode: string;
       pid: number;
     };
@@ -124,9 +126,7 @@ describe("DelegationManager sandbox propagation", () => {
       },
     );
 
-    const cliArgs = (spawnMock.mock.calls[0] as unknown[])?.[1] as string[];
-    const jobPath = cliArgs[cliArgs.indexOf("--background-task-file") + 1] as string;
-    const record = JSON.parse(fs.readFileSync(jobPath, "utf8")) as {
+    const record = readStoredDelegationRecord(home) as {
       sandboxMode: string;
       sandboxSettings?: {
         allowNet: boolean;

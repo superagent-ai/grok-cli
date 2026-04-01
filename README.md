@@ -60,8 +60,13 @@ grok --prompt "run the test suite and summarize failures"
 grok -p "show me package.json" --directory /path/to/project
 grok --prompt "refactor X" --max-tool-rounds 30
 grok --prompt "summarize the repo state" --format json
+grok --prompt "review the repo overnight" --batch-api
 grok --verify
 ```
+
+`--batch-api` uses xAI's Batch API for lower-cost unattended runs. It is a good
+fit for scripts, CI, schedules, and other non-interactive workflows where a
+delayed result is fine.
 
 **Continue a saved session:**
 
