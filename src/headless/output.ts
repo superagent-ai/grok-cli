@@ -47,6 +47,7 @@ export type HeadlessJsonEvent =
         inputTokens?: number;
         outputTokens?: number;
         totalTokens?: number;
+        costUsdTicks?: number;
       };
     }
   | {

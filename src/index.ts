@@ -51,12 +51,13 @@ async function startInteractive(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  batchApi: boolean,
   sandboxMode: SandboxMode,
   sandboxSettings: SandboxSettings,
   session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings, batchApi });
   const { createCliRenderer } = await import("@opentui/core");
   const { createRoot } = await import("@opentui/react");
   const { createElement } = await import("react");
@@ -100,12 +101,18 @@ async function runHeadless(
   baseURL: string,
   model: string,
   maxToolRounds: number,
+  batchApi: boolean,
   sandboxMode: SandboxMode,
   sandboxSettings: SandboxSettings,
   format: HeadlessOutputFormat,
   session?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
+    session,
+    sandboxMode,
+    sandboxSettings,
+    batchApi,
+  });
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
@@ -180,6 +187,7 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
       persistSession: false,
       sandboxMode,
       sandboxSettings,
+      batchApi: Boolean(delegation.batchApi ?? options.batchApi === true),
     });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
@@ -271,6 +279,7 @@ program
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
+  .option("--batch-api", "Use xAI Batch API for model calls (async, lower cost)")
   .option("--update", "Update grok to the latest version and exit")
   .action(async (message: string[], options) => {
     if (options.update) {
@@ -302,6 +311,7 @@ program
         config.baseURL,
         config.model,
         config.maxToolRounds,
+        options.batchApi === true,
         config.sandboxMode,
         config.sandboxSettings,
         options.format,
@@ -317,6 +327,7 @@ program
         config.baseURL,
         config.model,
         config.maxToolRounds,
+        options.batchApi === true,
         config.sandboxMode,
         config.sandboxSettings,
         options.format,
@@ -331,6 +342,7 @@ program
       config.baseURL,
       config.model,
       config.maxToolRounds,
+      options.batchApi === true,
       config.sandboxMode,
       config.sandboxSettings,
       options.session,
