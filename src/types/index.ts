@@ -29,7 +29,14 @@ export interface Plan {
   questions?: PlanQuestion[];
 }
 
-export type BuiltinSubagentId = "general" | "explore" | "vision" | "verify" | "verify-detect" | "computer";
+export type BuiltinSubagentId =
+  | "general"
+  | "explore"
+  | "vision"
+  | "verify"
+  | "verify-detect"
+  | "verify-manifest"
+  | "computer";
 
 export interface TaskRequest {
   agent: BuiltinSubagentId | string;
@@ -102,6 +109,58 @@ export interface VerifyRecipe {
   smokeTarget?: string;
   evidence: string[];
   notes: string[];
+}
+
+export interface VerifyEnvironmentManifest {
+  ecosystem?: string;
+  appKind?: string;
+  appLabel?: string;
+  shellInit?: string[] | string;
+  shellInitCommands?: string[] | string;
+  bootstrap?: string[] | string;
+  bootstrapCommands?: string[] | string;
+  install?: string[] | string;
+  installCommands?: string[] | string;
+  build?: string[] | string;
+  buildCommands?: string[] | string;
+  test?: string[] | string;
+  testCommands?: string[] | string;
+  start?: string;
+  startCommand?: string;
+  startPort?: string;
+  smokeKind?: "http" | "cli" | "none";
+  smokeTarget?: string;
+  evidence?: string[] | string;
+  notes?: string[] | string;
+  sandbox?: {
+    allowNet?: boolean;
+    allowedHosts?: string[];
+    ports?: string[];
+    cpus?: number;
+    memory?: number;
+    diskSize?: number;
+    secrets?: Array<{ name: string; fromEnv: string; hosts: string[] }>;
+    from?: string;
+    verifyBaseFrom?: string;
+    guestWorkdir?: string;
+    syncHostWorkspace?: boolean;
+    shellInit?: string[];
+    hostBrowserCommandsOnHost?: boolean;
+  };
+  recipe?: Partial<VerifyRecipe> & Record<string, unknown>;
+}
+
+export interface VerifyRetryStrategy {
+  id: string;
+  when: string;
+  reason: string;
+  commands: string[];
+}
+
+export interface VerifyArtifact {
+  kind: "log" | "screenshot" | "video";
+  path: string;
+  description: string;
 }
 
 export interface ToolResult {

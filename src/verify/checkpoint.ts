@@ -1,10 +1,10 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import type { VerifyRecipe } from "../types/index";
 import type { SandboxSettings } from "../utils/settings";
-import type { VerifyProjectProfile } from "./entrypoint";
+import type { VerifyProjectProfile } from "./recipes";
 
 const DEFAULT_VERIFY_GUEST_WORKDIR = "/grok/verify/worktree";
 
@@ -22,6 +22,51 @@ function execFileAsync(command: string, args: string[], cwd: string): Promise<{ 
         resolve({ stdout, stderr });
       },
     );
+  });
+}
+
+function spawnWithProgress(
+  command: string,
+  args: string[],
+  cwd: string,
+  onLine?: (line: string) => void,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: { ...process.env, FORCE_COLOR: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (onLine) {
+        for (const line of text.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed) onLine(trimmed);
+        }
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (onLine) {
+        for (const line of text.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed) onLine(trimmed);
+        }
+      }
+    });
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error((stderr || stdout || `Process exited with code ${code}`).trim()));
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
   });
 }
 
@@ -168,6 +213,7 @@ export async function ensureVerifyCheckpoint(
   cwd: string,
   profile: VerifyProjectProfile,
   settings: SandboxSettings,
+  onProgress?: (detail: string) => void,
 ): Promise<PreparedVerifyCheckpoint> {
   if (profile.recipe.installCommands.length === 0) {
     return { created: false };
@@ -177,8 +223,9 @@ export async function ensureVerifyCheckpoint(
   const checkpoints: string[] = await listCheckpoints(cwd).catch((): string[] => []);
   if (!checkpoints.includes(checkpointName)) {
     const args = buildCheckpointCreateArgs(cwd, checkpointName, DEFAULT_VERIFY_GUEST_WORKDIR, profile.recipe, settings);
+    onProgress?.(`Creating checkpoint: ${checkpointName}`);
     try {
-      await execFileAsync("shuru", args, cwd);
+      await spawnWithProgress("shuru", args, cwd, onProgress);
     } catch (error) {
       await deleteCheckpoint(cwd, checkpointName).catch(() => {});
       const message = error instanceof Error ? error.message : String(error);
@@ -187,5 +234,6 @@ export async function ensureVerifyCheckpoint(
     return { checkpointName, guestWorkdir: DEFAULT_VERIFY_GUEST_WORKDIR, created: true };
   }
 
+  onProgress?.(`Reusing checkpoint: ${checkpointName}`);
   return { checkpointName, guestWorkdir: DEFAULT_VERIFY_GUEST_WORKDIR, created: false };
 }

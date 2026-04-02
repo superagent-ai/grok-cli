@@ -55,7 +55,8 @@ import {
   type SandboxSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
-import { buildVerifyDetectPrompt, normalizeVerifyRecipe } from "../verify/entrypoint";
+import { buildVerifyDetectPrompt, normalizeVerifyRecipe, prepareVerifySandbox } from "../verify/entrypoint";
+import { runVerifyOrchestration } from "../verify/orchestrator";
 import {
   type CompactionSettings,
   createCompactionSummaryMessage,
@@ -322,6 +323,7 @@ function buildSubagentPrompt(
   const isVision = request.agent === "vision";
   const isVerify = request.agent === "verify";
   const isVerifyDetect = request.agent === "verify-detect";
+  const isVerifyManifest = request.agent === "verify-manifest";
   const isComputer = request.agent === "computer";
   const mode: AgentMode = isExplore || isVerifyDetect ? "ask" : "agent";
   const role = custom
@@ -332,11 +334,13 @@ function buildSubagentPrompt(
         ? "You are the Vision sub-agent."
         : isVerifyDetect
           ? "You are the Verify Detect sub-agent. You inspect a repository to produce a structured verification recipe. You are read-only."
-          : isVerify
-            ? "You are the Verify sub-agent. You specialize in sandbox-aware local verification using builds, tests, app boot checks, and optional browser smoke tests."
-            : isComputer
-              ? "You are the Computer sub-agent. You specialize in host desktop automation using accessibility snapshots, semantic element refs, screenshots, and careful mouse and keyboard actions."
-              : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
+          : isVerifyManifest
+            ? "You are the Verify Manifest sub-agent. You inspect a repository and create or update .grok/environment.json so verification can run reproducibly."
+            : isVerify
+              ? "You are the Verify sub-agent. You specialize in sandbox-aware local verification using builds, tests, app boot checks, and optional browser smoke tests."
+              : isComputer
+                ? "You are the Computer sub-agent. You specialize in host desktop automation using accessibility snapshots, semantic element refs, screenshots, and careful mouse and keyboard actions."
+                : "You are the General sub-agent. You can investigate, edit files, and run commands to complete delegated work.";
 
   const rules = isExplore
     ? [
@@ -350,31 +354,76 @@ function buildSubagentPrompt(
           "Read config files, package manifests, scripts, and source layout to understand the project.",
           "Return ONLY a valid JSON object with the VerifyRecipe schema. No markdown, no prose, no explanation outside the JSON.",
         ]
-      : isVision
-        ? ["Validate the image."]
-        : isComputer
-          ? [
-              "Operate carefully on the HOST desktop, not inside the shell sandbox.",
-              "Start with `computer_snapshot` when possible. It returns stable refs like @e1 that remain valid until the next snapshot.",
-              "Prefer accessibility refs over coordinates. Use `computer_click`, `computer_type`, `computer_scroll`, and `computer_get` with refs from the latest snapshot.",
-              "After any meaningful UI transition, launch, dialog open, or menu change, take another `computer_snapshot` before reusing old refs.",
-              "Use `computer_launch`, `computer_list_windows`, `computer_focus_window`, and `computer_wait` to manage apps and window state.",
-              "Use `computer_press` for shortcuts like Enter or cmd+k. Use `computer_screenshot` only for visual confirmation or when the accessibility tree is insufficient.",
-              "If `agent-desktop` is unavailable, permissions are missing, refs go stale, or the state is ambiguous, stop and return the blocker clearly to the parent agent.",
-              "Do not perform destructive or high-risk desktop actions unless the delegated task explicitly requires them.",
-            ]
-          : isVerify
+      : isVerifyManifest
+        ? [
+            "Focus on creating or updating .grok/environment.json as the primary verification contract for this repository.",
+            "Read package.json and key config files to understand the project, then write .grok/environment.json.",
+            "Prefer editing only .grok/environment.json unless the delegated task explicitly requires something else.",
+            "",
+            "SANDBOX ENVIRONMENT (Shuru):",
+            "- OS: Debian GNU/Linux 13 (trixie)",
+            "- Architecture: aarch64 (ARM64)",
+            "- Pre-installed: NOTHING. No node, npm, npx, bun, python3, pip, go, cargo, java, or any runtime.",
+            "- Only basic system tools exist (sh, apt-get, curl, etc).",
+            "- Network access is available during bootstrap and install.",
+            "- The workspace is mounted at /workspace.",
+            "",
+            "MANIFEST REQUIREMENTS:",
+            "- bootstrapCommands: MUST install every runtime and build tool the project needs from scratch via apt-get or curl.",
+            "- For Node.js/Next.js/Vite/etc: `apt-get update && apt-get install -y curl unzip ca-certificates git python3 make g++ pkg-config nodejs npm`",
+            "- For Bun projects: also `curl -fsSL https://bun.sh/install | bash` and shellInitCommands with BUN_INSTALL/PATH exports.",
+            "- For Python: `apt-get update && apt-get install -y python3 python3-pip python3-venv ca-certificates git`",
+            "- For Go: `apt-get update && apt-get install -y golang ca-certificates git`",
+            "- For Rust: `apt-get update && apt-get install -y curl ca-certificates git build-essential && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`",
+            "- installCommands: The package install command (npm install, pip install, etc).",
+            "- buildCommands: Build commands if applicable.",
+            "- testCommands: Test/lint commands if applicable.",
+            "- startCommand + startPort: How to start the app for smoke testing.",
+            "- smokeKind: 'http' if the app has a web UI, 'cli' for CLI tools, 'none' otherwise.",
+            "- Do NOT leave bootstrapCommands empty. The sandbox has nothing.",
+            "",
+            "Return a concise summary of what you wrote and why.",
+          ]
+        : isVision
+          ? ["Validate the image."]
+          : isComputer
             ? [
-                "Focus on verification first. Do not make durable source edits unless the delegated task explicitly asks for fixes.",
-                "Prefer the smallest meaningful set of validation commands and explain any environment blockers clearly.",
-                "IMPORTANT: When the recipe includes a smoke target URL and a forwarded port, you MUST attempt browser smoke testing using agent-browser via the bash tool. The agent-browser command runs on the HOST, not inside the sandbox. It will work even in sandbox mode. Do not skip it or assume it is unavailable. Just run the command.",
-                "Return a concise structured verification report for the parent agent.",
+                "Operate carefully on the HOST desktop, not inside the shell sandbox.",
+                "Start with `computer_snapshot` when possible. It returns stable refs like @e1 that remain valid until the next snapshot.",
+                "Prefer accessibility refs over coordinates. Use `computer_click`, `computer_type`, `computer_scroll`, and `computer_get` with refs from the latest snapshot.",
+                "After any meaningful UI transition, launch, dialog open, or menu change, take another `computer_snapshot` before reusing old refs.",
+                "Use `computer_launch`, `computer_list_windows`, `computer_focus_window`, and `computer_wait` to manage apps and window state.",
+                "Use `computer_press` for shortcuts like Enter or cmd+k. Use `computer_screenshot` only for visual confirmation or when the accessibility tree is insufficient.",
+                "If `agent-desktop` is unavailable, permissions are missing, refs go stale, or the state is ambiguous, stop and return the blocker clearly to the parent agent.",
+                "Do not perform destructive or high-risk desktop actions unless the delegated task explicitly requires them.",
               ]
-            : [
-                "Work only on the delegated task below.",
-                "Use tools directly instead of narrating your intent.",
-                "Return a concise summary for the parent agent with key outcomes and any open risks.",
-              ];
+            : isVerify
+              ? [
+                  "You are a QA engineer. Your job is to prove the app works end-to-end, not just that it builds.",
+                  "Do not make durable source edits unless the delegated task explicitly asks for fixes.",
+                  "",
+                  "MANDATORY VERIFICATION STEPS (do ALL of these in order):",
+                  "1. Install dependencies (run installCommands from the recipe).",
+                  "2. Build the project (run buildCommands from the recipe).",
+                  "3. Run tests/lint if available (run testCommands from the recipe).",
+                  "4. Start the app (run startCommand from the recipe in the background).",
+                  "5. Wait for the app to be ready (curl readiness check or agent-browser wait).",
+                  "6. Run browser smoke tests like a real human QA tester:",
+                  "   - Open the app in the browser, record a video, take screenshots.",
+                  "   - Navigate the app: click links, buttons, menus. Verify pages load.",
+                  "   - Check for JavaScript console errors.",
+                  "   - Spend 3-5 interactions testing the critical path.",
+                  "7. Stop recording, close browser, then stop the dev server.",
+                  "",
+                  "Do NOT stop after build/lint. Starting the app and testing it in the browser is the most important part.",
+                  "agent-browser commands run on the HOST, not inside the sandbox. They WILL work. Do not skip them.",
+                  "Return a concise verification report. Keep it compact but always include Evidence with artifact file paths.",
+                ]
+              : [
+                  "Work only on the delegated task below.",
+                  "Use tools directly instead of narrating your intent.",
+                  "Return a concise summary for the parent agent with key outcomes and any open risks.",
+                ];
 
   const instructionLines = custom?.instruction.trim() ? ["", "SUB-AGENT INSTRUCTIONS:", custom.instruction.trim()] : [];
 
@@ -952,15 +1001,25 @@ export class Agent {
     const isVision = agentKey === "vision";
     const isVerify = agentKey === "verify";
     const isVerifyDetect = agentKey === "verify-detect";
+    const isVerifyManifest = agentKey === "verify-manifest";
     const isComputer = agentKey === "computer";
     const subagents = loadValidSubAgents();
     const custom =
-      !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isComputer
+      !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isVerifyManifest && !isComputer
         ? findCustomSubagent(agentKey, subagents)
         : undefined;
 
-    if (!isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isComputer && !custom) {
-      const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, verify, computer, or a configured name from ~/.grok/user-settings.json.`;
+    if (
+      !isExplore &&
+      !isGeneral &&
+      !isVision &&
+      !isVerify &&
+      !isVerifyDetect &&
+      !isVerifyManifest &&
+      !isComputer &&
+      !custom
+    ) {
+      const message = `Unknown sub-agent "${agentKey}". Use general, explore, vision, verify, verify-detect, verify-manifest, computer, or a configured name from ~/.grok/user-settings.json.`;
       return {
         success: false,
         output: message,
@@ -976,10 +1035,22 @@ export class Agent {
     const verifySandboxOverrides: SandboxSettings = isVerify
       ? { allowNet: true, allowedHosts: undefined, allowEphemeralInstall: true, hostBrowserCommandsOnHost: true }
       : {};
+    let verifyPreparedSettings: SandboxSettings | null = null;
+    let verifyPreparedRecipe: VerifyRecipe | null = null;
+    if (isVerify) {
+      const prepared = await prepareVerifySandbox(
+        this.bash.getCwd(),
+        { ...this.bash.getSandboxSettings(), ...verifySandboxOverrides },
+        undefined,
+        onActivity,
+      );
+      verifyPreparedSettings = prepared.sandboxSettings;
+      verifyPreparedRecipe = prepared.profile.recipe;
+    }
     const childBash = new BashTool(this.bash.getCwd(), {
       sandboxMode: isVerify ? "shuru" : this.bash.getSandboxMode(),
       sandboxSettings: isVerify
-        ? { ...this.bash.getSandboxSettings(), ...verifySandboxOverrides }
+        ? (verifyPreparedSettings ?? { ...this.bash.getSandboxSettings(), ...verifySandboxOverrides })
         : this.bash.getSandboxSettings(),
     });
     const childBaseTools = createTools(childBash, provider, childMode);
@@ -987,11 +1058,13 @@ export class Agent {
       ? "Scanning the codebase"
       : isVerifyDetect
         ? "Detecting verification recipe"
-        : isVerify
-          ? "Preparing verification pass"
-          : isComputer
-            ? "Preparing computer control pass"
-            : "Planning delegated work";
+        : isVerifyManifest
+          ? "Creating verification manifest"
+          : isVerify
+            ? "Preparing verification pass"
+            : isComputer
+              ? "Preparing computer control pass"
+              : "Planning delegated work";
     let assistantText = "";
     let lastActivity = initialDetail;
     let childTools: ToolSet = childBaseTools;
@@ -1047,9 +1120,14 @@ export class Agent {
         }
       }
 
+      const childPrompt =
+        isVerify && verifyPreparedRecipe
+          ? `${request.prompt}\n\nPrepared verify recipe JSON (use this as the primary execution recipe and keep .grok/environment.json aligned with it if present):\n${JSON.stringify(verifyPreparedRecipe, null, 2)}`
+          : request.prompt;
+
       const childMessages = isVision
         ? await buildVisionUserMessages(request.prompt, childBash.getCwd(), signal)
-        : [{ role: "user" as const, content: request.prompt }];
+        : [{ role: "user" as const, content: childPrompt }];
 
       if (this.batchApi) {
         return await this.runTaskRequestBatch({
@@ -1779,6 +1857,31 @@ export class Agent {
       return normalizeVerifyRecipe(JSON.parse(maybeJson));
     } catch {
       return null;
+    }
+  }
+
+  async runVerify(onProgress?: (detail: string) => void, abortSignal?: AbortSignal): Promise<ToolResult> {
+    this.abortController = new AbortController();
+    const signal = abortSignal ?? this.abortController.signal;
+    const userModelMessage: ModelMessage = { role: "user", content: "/verify" };
+    this.messages.push(userModelMessage);
+    this.messageSeqs.push(null);
+
+    try {
+      await this.consumeBackgroundNotifications();
+      const result = await runVerifyOrchestration(this, { onProgress, abortSignal: signal });
+      const assistantText = result.output || result.error || "Verification completed.";
+      this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
+      return result;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const failureText = signal.aborted ? "Verification aborted." : `Verification failed: ${msg}`;
+      this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: failureText }]);
+      return { success: false, output: failureText };
+    } finally {
+      if (this.abortController?.signal === signal) {
+        this.abortController = null;
+      }
     }
   }
 }

@@ -110,6 +110,66 @@ describe("schedule daemon tools", () => {
     expect(result).toEqual({ success: true, output: "verified" });
   });
 
+  it("routes verify-detect task requests through the task tool", async () => {
+    const runTask = vi.fn(async () => ({ success: true, output: "recipe" }));
+    const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
+      runTask,
+      subagents: [],
+    }) as Record<string, { execute: (input: unknown, context?: unknown) => Promise<unknown>; description?: string }>;
+
+    const taskTool = tools.task;
+    expect(taskTool.description).toContain("`verify-detect`");
+
+    const result = (await taskTool.execute(
+      {
+        agent: "verify-detect",
+        description: "Detect verification recipe",
+        prompt: "Inspect the repository and return a VerifyRecipe JSON object.",
+      },
+      { abortSignal: undefined },
+    )) as { success: boolean; output: string };
+
+    expect(runTask).toHaveBeenCalledWith(
+      {
+        agent: "verify-detect",
+        description: "Detect verification recipe",
+        prompt: "Inspect the repository and return a VerifyRecipe JSON object.",
+      },
+      undefined,
+    );
+    expect(result).toEqual({ success: true, output: "recipe" });
+  });
+
+  it("routes verify-manifest task requests through the task tool", async () => {
+    const runTask = vi.fn(async () => ({ success: true, output: "manifest written" }));
+    const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
+      runTask,
+      subagents: [],
+    }) as Record<string, { execute: (input: unknown, context?: unknown) => Promise<unknown>; description?: string }>;
+
+    const taskTool = tools.task;
+    expect(taskTool.description).toContain("`verify-manifest`");
+
+    const result = (await taskTool.execute(
+      {
+        agent: "verify-manifest",
+        description: "Create verify manifest",
+        prompt: "Inspect the repository and write .grok/environment.json.",
+      },
+      { abortSignal: undefined },
+    )) as { success: boolean; output: string };
+
+    expect(runTask).toHaveBeenCalledWith(
+      {
+        agent: "verify-manifest",
+        description: "Create verify manifest",
+        prompt: "Inspect the repository and write .grok/environment.json.",
+      },
+      undefined,
+    );
+    expect(result).toEqual({ success: true, output: "manifest written" });
+  });
+
   it("exposes computer tools and routes computer task requests", async () => {
     const runTask = vi.fn(async () => ({ success: true, output: "computer-ready" }));
     const tools = createTools(new BashTool("/tmp"), {} as never, "agent", {
