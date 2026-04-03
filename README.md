@@ -19,12 +19,37 @@ Community-built and unofficial. This project is not affiliated with or endorsed 
 ## Install
 
 ```bash
-npm i -g grok-dev
+curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh | bash
 ```
 
-The CLI binary is `**grok**` (yes, the package name and the command differ—deal with it).
+The install script downloads a standalone `**grok**` binary for your platform, places it in `**~/.grok/bin**`, and records install metadata so `**grok update**` and `**grok uninstall**` work automatically.
 
-**Prerequisites:** Node 18+ (for the global install), a **Grok API key** from [x.ai](https://x.ai), and a modern terminal emulator for the interactive OpenTUI experience. Headless `--prompt` mode does not depend on terminal UI support. If you want host desktop automation via the built-in computer sub-agent, also enable **Accessibility** permission for your terminal app on macOS.
+Supported targets: macOS Apple Silicon, macOS Intel, Linux x64, and Windows x64.
+
+**Installer flags:**
+
+```bash
+curl -fsSL .../install.sh | bash -s -- --version 1.1.4
+bash install.sh --binary /path/to/local/grok
+bash install.sh --no-modify-path
+```
+
+**Alternative installs** (requires Bun on PATH):
+
+```bash
+bun add -g grok-dev
+```
+
+**Self-management** (script-installed only):
+
+```bash
+grok update
+grok uninstall
+grok uninstall --dry-run
+grok uninstall --keep-config
+```
+
+**Prerequisites:** a **Grok API key** from [x.ai](https://x.ai) and a modern terminal emulator for the interactive OpenTUI experience. Headless `--prompt` mode does not depend on terminal UI support. If you want host desktop automation via the built-in computer sub-agent, also enable **Accessibility** permission for your terminal app on macOS.
 
 ---
 

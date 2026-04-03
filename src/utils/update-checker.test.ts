@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const REGISTRY_URL = "https://registry.npmjs.org/grok-dev/latest";
+const RELEASE_URL = "https://api.github.com/repos/superagent-ai/grok-cli/releases/latest";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
@@ -16,10 +16,10 @@ async function importModule() {
 }
 
 describe("checkForUpdate", () => {
-  it("returns hasUpdate=true when registry version is newer", async () => {
+  it("returns hasUpdate=true when release version is newer", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ version: "2.0.0" }),
+      json: () => Promise.resolve({ tag_name: "v2.0.0", assets: [] }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -31,8 +31,8 @@ describe("checkForUpdate", () => {
     expect(result!.latestVersion).toBe("2.0.0");
     expect(result!.currentVersion).toBe("1.0.0");
     expect(mockFetch).toHaveBeenCalledWith(
-      REGISTRY_URL,
-      expect.objectContaining({ headers: { Accept: "application/json" } }),
+      RELEASE_URL,
+      expect.objectContaining({ headers: { Accept: "application/vnd.github+json" } }),
     );
   });
 
@@ -41,7 +41,7 @@ describe("checkForUpdate", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ version: "1.0.0" }),
+        json: () => Promise.resolve({ tag_name: "v1.0.0", assets: [] }),
       }),
     );
 
@@ -57,7 +57,7 @@ describe("checkForUpdate", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ version: "1.0.0" }),
+        json: () => Promise.resolve({ tag_name: "v1.0.0", assets: [] }),
       }),
     );
 
@@ -75,7 +75,7 @@ describe("checkForUpdate", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ version: "0.9.0" }),
+        json: () => Promise.resolve({ tag_name: "v0.9.0", assets: [] }),
       }),
     );
 
@@ -95,7 +95,7 @@ describe("checkForUpdate", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when the registry returns a non-ok response", async () => {
+  it("returns null when the release API returns a non-ok response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
     const { checkForUpdate } = await importModule();
@@ -104,12 +104,12 @@ describe("checkForUpdate", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when the registry returns an invalid version", async () => {
+  it("returns null when the release API returns an invalid version", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ version: "not-a-version" }),
+        json: () => Promise.resolve({ tag_name: "not-a-version", assets: [] }),
       }),
     );
 
@@ -124,7 +124,7 @@ describe("checkForUpdate", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ version: "2.0.0" }),
+        json: () => Promise.resolve({ tag_name: "v2.0.0", assets: [] }),
       }),
     );
 
@@ -148,37 +148,33 @@ describe("checkForUpdate", () => {
 });
 
 describe("runUpdate", () => {
-  it("calls npm install and returns success on zero exit", async () => {
-    vi.doMock("child_process", async () => {
-      const actual = await vi.importActual<typeof import("child_process")>("child_process");
+  it("returns success when the script-managed updater succeeds", async () => {
+    vi.doMock("./install-manager", async () => {
+      const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
       return {
         ...actual,
-        exec: (_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
-          cb(null, "added 1 package", "");
-        },
+        runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: true, output: "Updated to Grok 2.0.0." }),
       };
     });
 
     const { runUpdate } = await importModule();
-    const result = await runUpdate();
+    const result = await runUpdate("1.0.0");
 
     expect(result.success).toBe(true);
-    expect(result.output).toContain("added 1 package");
+    expect(result.output).toContain("Updated");
   });
 
-  it("returns failure when the command errors", async () => {
-    vi.doMock("child_process", async () => {
-      const actual = await vi.importActual<typeof import("child_process")>("child_process");
+  it("returns failure when the script-managed updater fails", async () => {
+    vi.doMock("./install-manager", async () => {
+      const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
       return {
         ...actual,
-        exec: (_cmd: string, _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
-          cb(new Error("permission denied"), "", "permission denied");
-        },
+        runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: false, output: "permission denied" }),
       };
     });
 
     const { runUpdate } = await importModule();
-    const result = await runUpdate();
+    const result = await runUpdate("1.0.0");
 
     expect(result.success).toBe(false);
     expect(result.output).toContain("permission denied");

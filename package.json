@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "tsc",
+    "build:binary": "bun build --compile --outfile dist/grok-standalone ./src/index.ts",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "bunx vitest run",
