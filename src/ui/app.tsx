@@ -2196,13 +2196,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "update":
           setIsUpdating(true);
           setUpdateOutput(null);
-          runUpdate().then((result) => {
+          runUpdate(startupConfig.version).then((result) => {
             setIsUpdating(false);
-            setUpdateOutput(
-              result.success
-                ? "Update complete! Restart the CLI to use the new version."
-                : `Update failed: ${result.output}`,
-            );
+            setUpdateOutput(result.success ? result.output : `Update failed: ${result.output}`);
           });
           break;
       }
@@ -2216,6 +2212,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openScheduleModal,
       processMessage,
       resetToNewSession,
+      startupConfig.version,
     ],
   );
 
@@ -2426,11 +2423,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         if (key.name === "return") {
           setIsUpdating(true);
           setShowUpdateModal(false);
-          runUpdate().then((result) => {
+          runUpdate(startupConfig.version).then((result) => {
             setIsUpdating(false);
-            setUpdateOutput(
-              result.success ? "Update complete! Restart the CLI to use the new version." : result.output,
-            );
+            setUpdateOutput(result.output);
           });
           return;
         }
@@ -3001,6 +2996,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       copyTuiSelectionToHost,
       toggleSavedMcp,
       messages,
+      startupConfig.version,
     ],
   );
   useKeyboard(handleKey);

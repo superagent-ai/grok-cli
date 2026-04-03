@@ -15,6 +15,7 @@ import {
 import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
 import { startScheduleDaemon } from "./tools/schedule";
 import { processAtMentions } from "./utils/at-mentions.js";
+import { runScriptManagedUninstall } from "./utils/install-manager";
 import {
   getApiKey,
   getBaseURL,
@@ -287,7 +288,7 @@ program
   .action(async (message: string[], options) => {
     if (options.update) {
       console.log("Checking for updates...");
-      const result = await runUpdate();
+      const result = await runUpdate(packageJson.version);
       console.log(result.output);
       process.exit(result.success ? 0 : 1);
     }
@@ -407,6 +408,34 @@ program
       }
     }
     console.log();
+  });
+
+program
+  .command("update")
+  .description("Update Grok to the latest release")
+  .action(async () => {
+    console.log("Checking for updates...");
+    const result = await runUpdate(packageJson.version);
+    console.log(result.output);
+    process.exit(result.success ? 0 : 1);
+  });
+
+program
+  .command("uninstall")
+  .description("Remove a script-installed Grok binary and optional data")
+  .option("--dry-run", "Show what would be removed without removing it")
+  .option("--force", "Skip the confirmation prompt")
+  .option("--keep-config", "Keep ~/.grok config files")
+  .option("--keep-data", "Keep ~/.grok data files")
+  .action(async (options) => {
+    const result = await runScriptManagedUninstall({
+      dryRun: options.dryRun === true,
+      force: options.force === true,
+      keepConfig: options.keepConfig === true,
+      keepData: options.keepData === true,
+    });
+    console.log(result.output);
+    process.exit(result.success ? 0 : 1);
   });
 
 program
