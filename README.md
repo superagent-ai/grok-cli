@@ -22,18 +22,6 @@ Community-built and unofficial. This project is not affiliated with or endorsed 
 curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh | bash
 ```
 
-The install script downloads a standalone `**grok**` binary for your platform, places it in `**~/.grok/bin**`, and records install metadata so `**grok update**` and `**grok uninstall**` work automatically.
-
-Supported targets: macOS (Apple Silicon), Linux x64, and Windows x64. Intel Macs run the ARM binary via Rosetta 2.
-
-**Installer flags:**
-
-```bash
-curl -fsSL .../install.sh | bash -s -- --version 1.1.4
-bash install.sh --binary /path/to/local/grok
-bash install.sh --no-modify-path
-```
-
 **Alternative installs** (requires Bun on PATH):
 
 ```bash
