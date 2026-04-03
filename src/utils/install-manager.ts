@@ -332,7 +332,10 @@ async function fetchReleaseJson(url: string): Promise<GitHubRelease | null> {
 }
 
 function normalizeReleaseVersion(tagName: string): string | null {
-  return semverValid(tagName.startsWith("v") ? tagName.slice(1) : tagName);
+  let version = tagName;
+  if (version.startsWith("grok-dev@")) version = version.slice("grok-dev@".length);
+  if (version.startsWith("v")) version = version.slice(1);
+  return semverValid(version);
 }
 
 async function downloadBinary(url: string, dest: string): Promise<void> {

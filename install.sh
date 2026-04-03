@@ -227,14 +227,16 @@ maybe_update_path() {
 
 resolve_release_version() {
   if [[ -n "$requested_version" ]]; then
-    RESOLVED_VERSION="${requested_version#v}"
-    RELEASE_BASE_URL="https://github.com/${REPO}/releases/download/v${RESOLVED_VERSION}"
+    RESOLVED_VERSION="${requested_version}"
+    RELEASE_BASE_URL="https://github.com/${REPO}/releases/download/grok-dev@${RESOLVED_VERSION}"
     return
   fi
 
-  RESOLVED_VERSION=$(curl -fsSL "${RELEASES_API}/latest" \
-    | sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' \
+  local tag
+  tag=$(curl -fsSL "${RELEASES_API}/latest" \
+    | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
     | head -n 1)
+  RESOLVED_VERSION="${tag#grok-dev@}"
   if [[ -z "$RESOLVED_VERSION" ]]; then
     echo "Failed to resolve the latest Grok release version." >&2
     exit 1
