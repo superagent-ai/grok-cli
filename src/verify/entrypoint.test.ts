@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { VerifyRecipe } from "../types/index";
 import {
   buildVerifyDetectPrompt,
+  buildVerifyPrompt,
   buildVerifyTaskPrompt,
   createVerifyRuntimeConfig,
   getVerifyCliError,
   inferVerifyProjectProfile,
   inferVerifySmokeUrl,
-  VERIFY_PROMPT,
 } from "./entrypoint";
 
 const tempDirs: string[] = [];
@@ -56,12 +56,15 @@ describe("verify entrypoint helpers", () => {
     expect(profile.packageManager).toBe("npm");
     expect(profile.sandboxSettings.ports).toEqual(["3000:3000"]);
     expect(profile.availableScripts).toEqual(["dev", "build", "lint"]);
-    expect(profile.recipe.bootstrapCommands).toEqual([]);
+    expect(profile.recipe.bootstrapCommands).toEqual([
+      "apt-get update && apt-get install -y curl unzip ca-certificates git python3 make g++ pkg-config nodejs npm",
+    ]);
+    expect(profile.recipe.shellInitCommands).toEqual(["export DEBIAN_FRONTEND=noninteractive"]);
     expect(profile.recipe.startCommand).toBe("npm run dev");
     expect(profile.recipe.testCommands).toContain("npm run lint");
   });
 
-  it("detects bun as package manager without hardcoded bootstrap", () => {
+  it("detects bun as package manager and bootstraps bun plus node tooling for web apps", () => {
     const dir = makeTempDir("grok-verify-bun-");
     fs.writeFileSync(
       path.join(dir, "package.json"),
@@ -71,7 +74,17 @@ describe("verify entrypoint helpers", () => {
 
     const profile = inferVerifyProjectProfile(dir);
     expect(profile.packageManager).toBe("bun");
-    expect(profile.recipe.bootstrapCommands).toEqual([]);
+    expect(profile.recipe.bootstrapCommands).toEqual([
+      "apt-get update && apt-get install -y curl unzip ca-certificates git python3 make g++ pkg-config nodejs npm",
+      "curl -fsSL https://bun.sh/install | bash",
+    ]);
+    expect(profile.recipe.shellInitCommands).toEqual([
+      "export DEBIAN_FRONTEND=noninteractive",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable in test assertion
+      'export BUN_INSTALL="${HOME}/.bun"',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable in test assertion
+      'export PATH="${BUN_INSTALL}/bin:$PATH"',
+    ]);
     expect(profile.recipe.installCommands).toContain("bun install");
   });
 
@@ -188,16 +201,20 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Bootstrap commands:");
     expect(prompt).toContain("Install commands:");
     expect(prompt).toContain("MUST run browser smoke tests");
-    expect(prompt).toContain("--screenshot-dir .grok/verify-artifacts");
-    expect(prompt).toContain("record start .grok/verify-artifacts/verify-smoke.webm");
+    expect(prompt).toContain("record start");
     expect(prompt).toContain("record stop");
-    expect(prompt).toContain("Browser Checks");
+    expect(prompt).toContain("Results");
     expect(prompt).toContain("Evidence");
-    expect(prompt).toContain("Recipe");
-    expect(prompt).toContain("ephemeral dependency installs are allowed inside the sandbox");
-    expect(prompt).toContain("prefer chaining install + build/test/start");
+    expect(prompt).toContain("Blockers");
+    expect(prompt).toContain("Ephemeral installs are allowed");
+    expect(prompt).toContain("Probe the sandbox for runtimes");
+    expect(prompt).toContain("Only install what is missing");
+    expect(prompt).toContain("MANDATORY workflow");
+    expect(prompt).toContain("Phase 4");
+    expect(prompt).toContain("QA tester");
     expect(prompt).toContain(".grok/verify-artifacts");
-    expect(prompt).toContain("markdown links");
+    expect(prompt).toContain("Keep the report compact");
+    expect(prompt).toContain("Evidence is mandatory even on failure");
   });
 
   it("builds a detector prompt that requests JSON output", () => {
@@ -207,6 +224,7 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Return ONLY valid JSON");
     expect(prompt).toContain('"bootstrapCommands": string[]');
     expect(prompt).toContain("Fallback hints from static detection");
+    expect(prompt).toContain("probes for runtimes/tools first");
   });
 
   it("explains ambiguous browser setup when multiple ports exist", () => {
@@ -217,11 +235,24 @@ describe("verify entrypoint helpers", () => {
     expect(prompt).toContain("Skip browser checks unless the user clearly identifies");
   });
 
-  it("VERIFY_PROMPT drives both sub-agents", () => {
-    expect(VERIFY_PROMPT).toContain("verify-detect");
-    expect(VERIFY_PROMPT).toContain("Step 1");
-    expect(VERIFY_PROMPT).toContain("Step 2");
-    expect(VERIFY_PROMPT).toContain("task");
+  it("buildVerifyPrompt drives both sub-agents with a draft recipe", () => {
+    const dir = makeTempDir("grok-verify-prompt-dynamic-");
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ dependencies: { next: "15.0.0" }, scripts: { dev: "next dev", build: "next build" } }, null, 2),
+    );
+    fs.writeFileSync(path.join(dir, "package-lock.json"), "");
+
+    const prompt = buildVerifyPrompt(dir);
+    expect(prompt).toContain("verify-manifest");
+    expect(prompt).toContain("Step 1");
+    expect(prompt).toContain("Step 2");
+    expect(prompt).toContain("task");
+    expect(prompt).toContain(".grok/environment.json");
+    expect(prompt).toContain('"ecosystem"');
+    expect(prompt).toContain('"bootstrapCommands"');
+    expect(prompt).toContain("apt-get");
+    expect(prompt).toContain("nodejs npm");
   });
 
   it("uses an override recipe when creating the runtime config", () => {

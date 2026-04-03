@@ -259,24 +259,30 @@ export function createTools(
 
   if (options.runTask) {
     const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
-    const taskAgentEnum = ["general", "explore", "vision", "verify", "computer", ...customNames] as [
-      string,
-      ...string[],
-    ];
+    const taskAgentEnum = [
+      "general",
+      "explore",
+      "vision",
+      "verify",
+      "verify-detect",
+      "verify-manifest",
+      "computer",
+      ...customNames,
+    ] as [string, ...string[]];
     const customHint =
       customNames.length > 0
         ? ` You may also use these user-defined sub-agents by exact name: ${customNames.join(", ")}.`
         : "";
 
     tools.task = tool({
-      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, code quality work, verification, and computer-use flows instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, \`vision\` for image validation, \`verify\` for sandbox-aware build, test, and smoke validation, and \`computer\` for host desktop screenshot/input workflows.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
+      description: `Delegate a focused foreground task to a sub-agent. Prefer this proactively for review, research, investigation, code quality work, verification, and computer-use flows instead of waiting for the user to request a sub-agent. Use \`general\` for multi-step execution, \`explore\` for fast read-only investigation, \`vision\` for image validation, \`verify\` for sandbox-aware build, test, and smoke validation, \`verify-detect\` for read-only verification recipe detection, \`verify-manifest\` to create or update a verification manifest, and \`computer\` for host desktop screenshot/input workflows.${customHint} Provide a short description plus a detailed prompt for the child agent.`,
       inputSchema: z.object({
         agent: z
           .enum(taskAgentEnum)
           .default("general")
           .describe(
             customNames.length > 0
-              ? "Built-in general, explore, vision, verify, or computer, or a configured custom sub-agent name from user settings"
+              ? "Built-in general, explore, vision, verify, verify-detect, verify-manifest, or computer, or a configured custom sub-agent name from user settings"
               : "Which sub-agent to use",
           ),
         description: z.string().describe("A short label for the delegated task, such as 'Deep code quality analysis'"),

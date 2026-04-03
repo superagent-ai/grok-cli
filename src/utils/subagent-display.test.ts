@@ -8,6 +8,7 @@ describe("formatSubagentName", () => {
     expect(formatSubagentName("vision")).toBe("Vision");
     expect(formatSubagentName("verify")).toBe("Verify");
     expect(formatSubagentName("verify-detect")).toBe("Verify Detect");
+    expect(formatSubagentName("verify-manifest")).toBe("Verify Manifest");
     expect(formatSubagentName("computer")).toBe("Computer");
   });
 

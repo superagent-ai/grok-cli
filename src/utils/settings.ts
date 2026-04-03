@@ -89,7 +89,15 @@ export interface CustomSubagentConfig {
   instruction: string;
 }
 
-const RESERVED_SUBAGENT_NAMES = new Set(["general", "explore", "vision", "verify", "verify-detect", "computer"]);
+const RESERVED_SUBAGENT_NAMES = new Set([
+  "general",
+  "explore",
+  "vision",
+  "verify",
+  "verify-detect",
+  "verify-manifest",
+  "computer",
+]);
 
 export function isReservedSubagentName(name: string): boolean {
   return RESERVED_SUBAGENT_NAMES.has(name.trim().toLowerCase());
@@ -306,6 +314,15 @@ export function normalizeSandboxSettings(raw: unknown): SandboxSettings {
     if (secrets.length > 0) result.secrets = secrets;
   }
   if (typeof raw.from === "string" && raw.from.trim()) result.from = raw.from.trim();
+  if (typeof raw.verifyBaseFrom === "string" && raw.verifyBaseFrom.trim())
+    result.verifyBaseFrom = raw.verifyBaseFrom.trim();
+  if (typeof raw.allowEphemeralInstall === "boolean") result.allowEphemeralInstall = raw.allowEphemeralInstall;
+  if (typeof raw.syncHostWorkspace === "boolean") result.syncHostWorkspace = raw.syncHostWorkspace;
+  if (typeof raw.guestWorkdir === "string" && raw.guestWorkdir.trim()) result.guestWorkdir = raw.guestWorkdir.trim();
+  if (Array.isArray(raw.shellInit)) {
+    const shellInit = raw.shellInit.filter((line): line is string => typeof line === "string" && line.trim() !== "");
+    if (shellInit.length > 0) result.shellInit = shellInit;
+  }
   if (typeof raw.hostBrowserCommandsOnHost === "boolean")
     result.hostBrowserCommandsOnHost = raw.hostBrowserCommandsOnHost;
 

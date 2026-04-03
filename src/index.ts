@@ -27,7 +27,7 @@ import {
   saveUserSettings,
 } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
-import { getVerifyCliError, VERIFY_PROMPT } from "./verify/entrypoint";
+import { buildVerifyPrompt, getVerifyCliError } from "./verify/entrypoint";
 
 dotenv.config();
 
@@ -309,7 +309,7 @@ program
       }
 
       await runHeadless(
-        VERIFY_PROMPT,
+        buildVerifyPrompt(process.cwd()),
         requireApiKey(config.apiKey),
         config.baseURL,
         config.model,

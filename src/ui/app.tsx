@@ -56,7 +56,7 @@ import {
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { formatSubagentName } from "../utils/subagent-display";
 import { checkForUpdate, runUpdate, type UpdateCheckResult } from "../utils/update-checker";
-import { VERIFY_PROMPT } from "../verify/entrypoint";
+import { buildVerifyPrompt } from "../verify/entrypoint";
 import {
   buildSubagentBrowseRows,
   SUBAGENT_EDITOR_FIELDS,
@@ -2088,7 +2088,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return true;
       }
       if (c === "/verify") {
-        processMessage(VERIFY_PROMPT);
+        processMessage(buildVerifyPrompt(agent.getCwd()));
         return true;
       }
       if (c === "/commit-push") {
@@ -2117,6 +2117,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return false;
     },
     [
+      agent,
       handleExit,
       openAgentsModal,
       openMcpModal,
@@ -2184,7 +2185,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           processMessage(REVIEW_PROMPT);
           break;
         case "verify":
-          processMessage(VERIFY_PROMPT);
+          processMessage(buildVerifyPrompt(agent.getCwd()));
           break;
         case "commit-push":
           processMessage(COMMIT_PUSH_PROMPT);

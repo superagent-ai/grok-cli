@@ -7,17 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Built-in `telegram-bridge` command for headless Telegram bridge entrypoint with shared approval persistence (#211)
-- Add CLI update checker (#223)
-- Add verify workflow
+## [1.1.3] - 2026-04-01
 
-### Fixed
-- Issue with schedule modal (#226)
-- Host-side browser smoke tests, skill inheritance, and screenshot paths
+### Added
+- @-mention file autocomplete (#236)
+
+## [1.1.2] - 2026-04-01
+
+### Added
+- Switch computer sub-agent to agent-desktop (#233)
+
+### Removed
+- Tracked telegram pair code from repo (#234)
+
+## [1.1.1] - 2026-04-01
+
+### Added
+- Verify workflow with sandboxed testing and browser smoke checks (#228)
+- Batch mode for headless Grok CLI runs (#231)
+
+## [1.1.0] - 2026-03-26
+
+### Added
+- CLI update checker (#223)
 
 ### Changed
 - Replace commit scan with PR security scan (#224)
+
+### Fixed
+- Issue with schedule modal (#226)
 
 ## [1.0.0-rc7] - 2026-03-26
 
