@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install
 
 The install script downloads a standalone `**grok**` binary for your platform, places it in `**~/.grok/bin**`, and records install metadata so `**grok update**` and `**grok uninstall**` work automatically.
 
-Supported targets: macOS Apple Silicon, macOS Intel, Linux x64, and Windows x64.
+Supported targets: macOS (Apple Silicon), Linux x64, and Windows x64. Intel Macs run the ARM binary via Rosetta 2.
 
 **Installer flags:**
 

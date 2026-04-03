@@ -92,7 +92,7 @@ resolve_target() {
   esac
 
   case "${OS}-${ARCH}" in
-    darwin-arm64|darwin-x64|linux-x64|windows-x64) ;;
+    darwin-arm64|linux-x64|windows-x64) ;;
     *)
       echo "Unsupported platform: ${OS}-${ARCH}" >&2
       exit 1

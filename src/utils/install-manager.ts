@@ -18,7 +18,7 @@ const CONFIG_FILENAMES = ["user-settings.json", "AGENTS.md"];
 const DATA_ENTRIES = ["daemon.pid", "delegations", "grok.db", "models", "schedules"];
 
 export interface ReleaseTarget {
-  key: "darwin-arm64" | "darwin-x64" | "linux-x64" | "windows-x64";
+  key: "darwin-arm64" | "linux-x64" | "windows-x64";
   assetName: string;
   binaryName: string;
 }
@@ -90,10 +90,8 @@ export function getInstallMetadataPath(homeDir = os.homedir()): string {
 }
 
 export function getReleaseTargetForPlatform(platform = process.platform, arch = process.arch): ReleaseTarget | null {
-  if (platform === "darwin" && arch === "arm64")
+  if (platform === "darwin" && (arch === "arm64" || arch === "x64"))
     return { key: "darwin-arm64", assetName: "grok-darwin-arm64", binaryName: "grok" };
-  if (platform === "darwin" && arch === "x64")
-    return { key: "darwin-x64", assetName: "grok-darwin-x64", binaryName: "grok" };
   if (platform === "linux" && arch === "x64")
     return { key: "linux-x64", assetName: "grok-linux-x64", binaryName: "grok" };
   if (platform === "win32" && arch === "x64")
@@ -296,7 +294,7 @@ function getReleaseTargetForPlatformKey(key: string): ReleaseTarget | null {
     case "darwin-arm64":
       return { key, assetName: "grok-darwin-arm64", binaryName: "grok" };
     case "darwin-x64":
-      return { key, assetName: "grok-darwin-x64", binaryName: "grok" };
+      return { key: "darwin-arm64", assetName: "grok-darwin-arm64", binaryName: "grok" };
     case "linux-x64":
       return { key, assetName: "grok-linux-x64", binaryName: "grok" };
     case "windows-x64":

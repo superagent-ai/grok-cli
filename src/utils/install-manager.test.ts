@@ -29,7 +29,7 @@ function createTempDir(prefix: string): string {
 describe("getReleaseTargetForPlatform", () => {
   it("maps supported platforms to release asset names", () => {
     expect(getReleaseTargetForPlatform("darwin", "arm64")?.assetName).toBe("grok-darwin-arm64");
-    expect(getReleaseTargetForPlatform("darwin", "x64")?.assetName).toBe("grok-darwin-x64");
+    expect(getReleaseTargetForPlatform("darwin", "x64")?.assetName).toBe("grok-darwin-arm64");
     expect(getReleaseTargetForPlatform("linux", "x64")?.assetName).toBe("grok-linux-x64");
     expect(getReleaseTargetForPlatform("win32", "x64")?.assetName).toBe("grok-windows-x64.exe");
     expect(getReleaseTargetForPlatform("linux", "arm64")).toBeNull();
