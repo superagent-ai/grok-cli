@@ -247,7 +247,7 @@ resolve_release_version() {
 install_downloaded_release() {
   local tmp_dir binary_file checksum_file
   tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/grok-install.XXXXXX")
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf \"$tmp_dir\"" EXIT
 
   binary_file="${tmp_dir}/${ASSET_NAME}"
   checksum_file="${tmp_dir}/checksums.txt"
