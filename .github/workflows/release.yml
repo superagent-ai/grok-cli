@@ -22,15 +22,19 @@ jobs:
           - runner: ubuntu-latest
             build_output: grok
             asset_name: grok-linux-x64
-          - runner: macos-13
+            target: ""
+          - runner: macos-latest
             build_output: grok
             asset_name: grok-darwin-x64
-          - runner: macos-14
+            target: --target=bun-darwin-x64
+          - runner: macos-latest
             build_output: grok
             asset_name: grok-darwin-arm64
+            target: ""
           - runner: windows-latest
             build_output: grok.exe
             asset_name: grok-windows-x64.exe
+            target: ""
 
     runs-on: ${{ matrix.runner }}
 
@@ -46,7 +50,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Compile standalone binary
-        run: bun build --compile --outfile "release/${{ matrix.build_output }}" ./src/index.ts
+        run: bun build --compile ${{ matrix.target }} --outfile "release/${{ matrix.build_output }}" ./src/index.ts
 
       - name: Compute checksum (unix)
         if: runner.os != 'Windows'
