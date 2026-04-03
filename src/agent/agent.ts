@@ -207,16 +207,7 @@ DEFAULT DELEGATION POLICY:
 EXAMPLES:
 - "review this change" -> delegate to explore first
 - "research how auth works" -> delegate to explore first
-- "investigate why this test fails" -> delegate to explore first, then continue with findings
-- "refactor this module" -> delegate a focused part to general when helpful
 - "verify this feature locally" -> use verify
-- "open the host app and click through it" -> use computer
-- "generate a logo" -> use generate_image
-- "animate this still image" -> use generate_video
-- Recurring specialized workflows -> use the matching custom sub-agent via task
-- "every weekday at 9am run this check" -> use schedule_create with a cron expression
-- "run this once automatically" -> use schedule_create with the right timing
-- "make sure scheduled jobs keep running" -> use schedule_daemon_status and schedule_daemon_start
 
 IMPORTANT:
 - Prefer edit_file for surgical changes to existing files — it shows a clean diff.
