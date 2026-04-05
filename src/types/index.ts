@@ -205,6 +205,7 @@ export interface StreamChunk {
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
+  isAuthError?: boolean;
 }
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";

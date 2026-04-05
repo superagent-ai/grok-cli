@@ -1401,7 +1401,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, []);
 
   const finalizeActiveTurn = useCallback(
-    ({ wasInterrupted = false }: { wasInterrupted?: boolean } = {}) => {
+    ({ wasInterrupted = false, hadError = false }: { wasInterrupted?: boolean; hadError?: boolean } = {}) => {
       const activeTurn = activeTurnRef.current;
       if (!activeTurn) {
         finishTurnProcessing();
@@ -1420,7 +1420,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         ]);
       }
 
-      if (!wasInterrupted) {
+      if (!wasInterrupted && !hadError) {
         if (activeTurn.kind === "local" && activeTurn.agent.getSessionId()) {
           setMessages((prev) => {
             const fresh = activeTurn.agent.getChatEntries();
@@ -1930,6 +1930,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         setMessages((prev) => [...prev, buildUserEntry((displayText ?? text).trim(), { modeColor: color })]);
         setTimeout(scrollToBottom, 50);
         await new Promise((r) => setTimeout(r, 0));
+        let turnHadError = false;
+        let turnHadAuthError = false;
         try {
           for await (const chunk of agent.processMessage(text.trim())) {
             if (isStale()) {
@@ -1954,6 +1956,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 }
                 break;
               case "error":
+                turnHadError = true;
+                if (chunk.isAuthError) {
+                  turnHadAuthError = true;
+                }
                 contentAccRef.current += `\n${chunk.content || "Unknown error"}`;
                 setStreamContent(contentAccRef.current);
                 break;
@@ -1962,6 +1968,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             }
           }
         } catch {
+          turnHadError = true;
           if (!isStale()) {
             contentAccRef.current += "\nAn unexpected error occurred.";
             setStreamContent(contentAccRef.current);
@@ -1973,8 +1980,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
 
+        if (turnHadAuthError) {
+          setApiKeyError("Your API key is invalid or expired. Please enter a new key.");
+          setShowApiKeyModal(true);
+          showApiKeyModalRef.current = true;
+        }
+
         if (!isStale()) {
-          finalizeActiveTurn({ wasInterrupted });
+          finalizeActiveTurn({ wasInterrupted, hadError: turnHadError });
         }
         if (wasInterrupted) {
           interruptedRunIdRef.current = null;

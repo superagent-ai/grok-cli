@@ -1,3 +1,4 @@
+import { APICallError } from "@ai-sdk/provider";
 import { convertToBase64 } from "@ai-sdk/provider-utils";
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
 import {
@@ -1526,16 +1527,21 @@ export class Agent {
           continue;
         }
 
-        const msg = err instanceof Error ? err.message : String(err);
+        const authError = isAuthenticationError(err);
+        const friendly = humanizeApiError(err);
         notifyObserver(observer?.onError, {
-          message: `Error: ${msg}`,
+          message: friendly,
           timestamp: Date.now(),
         });
         if (hasUsage(totalUsage)) {
           this.recordUsage(totalUsage, "message", runtime.modelId);
         }
         this.appendCompletedTurn(userModelMessage, turnMessages);
-        yield { type: "error", content: `Error: ${msg}` };
+        yield {
+          type: "error",
+          content: friendly,
+          isAuthError: authError,
+        };
         yield { type: "done" };
         return;
       } finally {
@@ -1746,12 +1752,17 @@ export class Agent {
               }
 
               case "error": {
-                const message = String(part.error);
+                const authError = isAuthenticationError(part.error);
+                const friendly = humanizeApiError(part.error);
                 notifyObserver(observer?.onError, {
-                  message,
+                  message: friendly,
                   timestamp: Date.now(),
                 });
-                yield { type: "error", content: message };
+                yield {
+                  type: "error",
+                  content: friendly,
+                  isAuthError: authError,
+                };
                 break;
               }
 
@@ -1810,12 +1821,17 @@ export class Agent {
             continue;
           }
 
-          const msg = err instanceof Error ? err.message : String(err);
+          const authError = isAuthenticationError(err);
+          const friendly = humanizeApiError(err);
           notifyObserver(observer?.onError, {
-            message: `Error: ${msg}`,
+            message: friendly,
             timestamp: Date.now(),
           });
-          yield { type: "error", content: `Error: ${msg}` };
+          yield {
+            type: "error",
+            content: friendly,
+            isAuthError: authError,
+          };
           if (assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
           }
@@ -2356,4 +2372,50 @@ function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortS
 function isContextLimitError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /(context|token|prompt).*(limit|length|large|window|overflow)|too many tokens|maximum context/i.test(message);
+}
+
+function isAuthenticationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api[_ ]?key|token|credential)|authentication failed|forbidden|access denied/i.test(
+    message,
+  );
+}
+
+const STATUS_MESSAGES: Record<number, string> = {
+  400: "The request was invalid. This may be caused by an unsupported parameter or model.",
+  401: "Authentication failed. Your API key may be invalid or expired.",
+  403: "Access denied. Your API key does not have permission for this request.",
+  404: "The requested model or endpoint was not found. Check your model name and base URL.",
+  408: "The request timed out. Please try again.",
+  422: "The request could not be processed. Check your message format or parameters.",
+  429: "Rate limit exceeded. Please wait a moment and try again.",
+  500: "The API server encountered an internal error. Please try again later.",
+  502: "The API server is temporarily unavailable. Please try again later.",
+  503: "The API service is temporarily overloaded. Please try again later.",
+  529: "The API service is overloaded. Please try again later.",
+};
+
+function humanizeApiError(error: unknown): string {
+  if (APICallError.isInstance(error)) {
+    const detail = extractResponseDetail(error.responseBody);
+    if (detail) return detail;
+    if (error.statusCode && STATUS_MESSAGES[error.statusCode]) {
+      return STATUS_MESSAGES[error.statusCode];
+    }
+  }
+
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw.replace(/^AI_\w+Error:\s*/i, "").trim() || raw;
+}
+
+function extractResponseDetail(body: string | undefined): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body);
+    const msg = parsed?.error?.message ?? parsed?.message ?? parsed?.detail;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  } catch {
+    /* not JSON */
+  }
+  return null;
 }
