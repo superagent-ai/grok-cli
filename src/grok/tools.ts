@@ -100,15 +100,15 @@ export function createTools(
           ),
       }),
       execute: async ({ command, timeout, background }, { abortSignal }) => {
-        if (background) {
-          return bash.startBackground(command);
-        }
-
         const toolInput = { command, timeout, background };
         const preResult = await executePreToolHooks("bash", toolInput, cwd(), options.sessionId, abortSignal);
         if (preResult.blocked) {
           const reason = preResult.blockingErrors.map((e) => e.stderr).join("; ") || "Blocked by hook";
           return { success: false, output: `[Hook blocked] ${reason}` };
+        }
+
+        if (background) {
+          return bash.startBackground(command);
         }
 
         const result = await bash.execute(command, timeout, abortSignal);
