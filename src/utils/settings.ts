@@ -153,7 +153,6 @@ export interface ProjectSettings {
   model?: string;
   sandboxMode?: SandboxMode;
   sandbox?: SandboxSettings;
-  hooks?: HooksConfig;
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");

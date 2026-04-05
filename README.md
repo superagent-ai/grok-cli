@@ -325,7 +325,7 @@ Treat the bot token like a password.
 
 Hooks execute shell commands at key agent lifecycle events — enforce policies, run linters, trigger tests, or log activity.
 
-Configure in `~/.grok/user-settings.json` (global) or `.grok/settings.json` (project):
+Configure in `~/.grok/user-settings.json`:
 
 ```json
 {
