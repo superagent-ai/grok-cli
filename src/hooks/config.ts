@@ -43,6 +43,6 @@ export function getMatchingHooks(config: HooksConfig, event: HookEvent, matchVal
 
 function matchesPattern(entry: HookMatcher, matchValue?: string): boolean {
   if (!entry.matcher) return true;
-  if (!matchValue) return true;
+  if (!matchValue) return false;
   return matchValue === entry.matcher;
 }
