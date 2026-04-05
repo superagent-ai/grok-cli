@@ -66,7 +66,6 @@ import {
 } from "./agents-modal";
 import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
 import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
-import { InlineImage } from "./inline-image.js";
 import { Markdown } from "./markdown";
 import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
 import { createEmptyMcpEditorDraft, type McpEditorDraft, type McpEditorField } from "./mcp-modal-types";
@@ -3942,6 +3941,9 @@ function MessageView({
       }
 
       if ((entry.toolResult?.media?.length ?? 0) > 0) {
+        if (name === "generate_image" || name === "generate_video") {
+          return <MediaAutoOpenView t={t} label={toolLabel(entry.toolCall!)} toolResult={entry.toolResult!} />;
+        }
         return <MediaToolResultView t={t} label={toolLabel(entry.toolCall!)} toolResult={entry.toolResult!} />;
       }
 
@@ -4379,8 +4381,47 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
   );
 }
 
+function openMediaFile(filePath: string): void {
+  try {
+    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+    require("child_process").exec(`${cmd} ${JSON.stringify(filePath)}`);
+  } catch {}
+}
+
+function MediaAutoOpenView({ t, label, toolResult }: { t: Theme; label: string; toolResult: ToolResult }) {
+  const media = toolResult.media ?? [];
+  const openedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const asset of media) {
+      if (!openedRef.current.has(asset.path)) {
+        openedRef.current.add(asset.path);
+        openMediaFile(asset.path);
+      }
+    }
+  }, [media]);
+
+  return (
+    <box gap={0}>
+      <InlineTool t={t} pending={false}>
+        {label}
+      </InlineTool>
+    </box>
+  );
+}
+
 function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string; toolResult: ToolResult }) {
   const media = toolResult.media ?? [];
+  const openedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const asset of media) {
+      if (!openedRef.current.has(asset.path)) {
+        openedRef.current.add(asset.path);
+        openMediaFile(asset.path);
+      }
+    }
+  }, [media]);
 
   return (
     <box gap={0}>
@@ -4393,13 +4434,12 @@ function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string
         </box>
       ) : null}
       {media.length > 0 ? (
-        <box paddingLeft={5} marginTop={toolResult.output ? 1 : 0} flexDirection="column" gap={1}>
+        <box paddingLeft={5} marginTop={toolResult.output ? 1 : 0} flexDirection="column">
           {media.map((asset) => (
             <box
               key={`${asset.path}-${asset.url ?? ""}-${asset.sourcePath ?? ""}-${asset.sourceUrl ?? ""}`}
               flexDirection="column"
             >
-              <InlineImage path={asset.path} t={t} />
               <text fg={t.text}>{asset.path}</text>
               {asset.url ? <text fg={t.textMuted}>{`url: ${asset.url}`}</text> : null}
               {asset.sourcePath ? <text fg={t.textMuted}>{`source: ${asset.sourcePath}`}</text> : null}
