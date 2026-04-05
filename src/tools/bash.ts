@@ -3,6 +3,8 @@ import { createReadStream, createWriteStream } from "fs";
 import { mkdtemp, rm, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
+import { executeEventHooks } from "../hooks/index";
+import type { CwdChangedHookInput } from "../hooks/types";
 import type { ToolResult } from "../types/index";
 import type { SandboxMode, SandboxSettings } from "../utils/settings";
 
@@ -61,7 +63,17 @@ export class BashTool {
           if (!info.isDirectory()) {
             return { success: false, error: `Cannot change directory: ${nextCwd} is not a directory` };
           }
+          const oldCwd = this.cwd;
           this.cwd = nextCwd;
+
+          const cwdInput: CwdChangedHookInput = {
+            hook_event_name: "CwdChanged",
+            old_cwd: oldCwd,
+            new_cwd: nextCwd,
+            cwd: nextCwd,
+          };
+          executeEventHooks(cwdInput, nextCwd).catch(() => {});
+
           return { success: true, output: `Changed directory to: ${this.cwd}` };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { DEFAULT_MODEL, getEffectiveReasoningEffort, getModelIds, normalizeModelId } from "../grok/models";
+import type { HooksConfig } from "../hooks/types";
 import type { ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
@@ -145,12 +146,14 @@ export interface UserSettings {
   telegram?: TelegramSettings;
   mcp?: McpSettings;
   subAgents?: CustomSubagentConfig[];
+  hooks?: HooksConfig;
 }
 
 export interface ProjectSettings {
   model?: string;
   sandboxMode?: SandboxMode;
   sandbox?: SandboxSettings;
+  hooks?: HooksConfig;
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");

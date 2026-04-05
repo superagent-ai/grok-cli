@@ -321,6 +321,37 @@ Treat the bot token like a password.
 
 ---
 
+## Hooks
+
+Hooks execute shell commands at key agent lifecycle events — enforce policies, run linters, trigger tests, or log activity.
+
+Configure in `~/.grok/user-settings.json` (global) or `.grok/settings.json` (project):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/lint-before-edit.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Hook commands receive JSON on **stdin** (event details) and can return JSON on **stdout**. Exit code `0` = success, `2` = block the action, other = non-blocking error.
+
+**Supported events:** `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `StopFailure`, `SubagentStart`, `SubagentStop`, `TaskCreated`, `TaskCompleted`, `PreCompact`, `PostCompact`, `Notification`, `InstructionsLoaded`, `CwdChanged`.
+
+---
+
 ## Instructions & project brain
 
 - `**AGENTS.md**` — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.

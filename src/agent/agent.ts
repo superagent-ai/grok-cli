@@ -17,6 +17,21 @@ import { createProvider, generateTitle as genTitle, resolveModelRuntime, type Xa
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
 import { createTools } from "../grok/tools";
+import { executeEventHooks } from "../hooks/index";
+import type {
+  NotificationHookInput,
+  PostCompactHookInput,
+  PreCompactHookInput,
+  SessionEndHookInput,
+  SessionStartHookInput,
+  StopFailureHookInput,
+  StopHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
+  TaskCompletedHookInput,
+  TaskCreatedHookInput,
+  UserPromptSubmitHookInput,
+} from "../hooks/types";
 import { buildMcpToolSet } from "../mcp/runtime";
 import {
   appendCompaction,
@@ -514,6 +529,7 @@ export class Agent {
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
   private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
   private batchApi = false;
+  private sessionStartHookFired = false;
 
   constructor(
     apiKey: string | undefined,
@@ -685,6 +701,16 @@ export class Agent {
   }
 
   startNewSession(): SessionSnapshot | null {
+    if (this.sessionStartHookFired) {
+      const endInput: SessionEndHookInput = {
+        hook_event_name: "SessionEnd",
+        session_id: this.session?.id,
+        cwd: this.bash.getCwd(),
+      };
+      this.fireHook(endInput).catch(() => {});
+      this.sessionStartHookFired = false;
+    }
+
     if (!this.sessionStore) {
       this.messages = [];
       this.messageSeqs = [];
@@ -769,6 +795,14 @@ export class Agent {
           seq = appendSystemMessage(this.session.id, notification.message);
         }
         this.messageSeqs.push(seq);
+
+        const notifInput: NotificationHookInput = {
+          hook_event_name: "Notification",
+          message: notification.message,
+          session_id: this.session?.id,
+          cwd: this.bash.getCwd(),
+        };
+        this.fireHook(notifInput).catch(() => {});
       }
       return notifications.map((notification) => notification.message);
     } catch {
@@ -1215,8 +1249,18 @@ export class Agent {
   }
 
   private async runTask(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
+    const startInput: SubagentStartHookInput = {
+      hook_event_name: "SubagentStart",
+      agent_type: request.agent,
+      description: request.description,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(startInput, abortSignal).catch(() => {});
+
+    let result: ToolResult;
     try {
-      return await this.runTaskRequest(
+      result = await this.runTaskRequest(
         request,
         (detail) => {
           if (abortSignal?.aborted) return;
@@ -1231,15 +1275,37 @@ export class Agent {
     } finally {
       this.emitSubagentStatus(null);
     }
+
+    const stopInput: SubagentStopHookInput = {
+      hook_event_name: "SubagentStop",
+      agent_type: request.agent,
+      description: request.description,
+      success: result.success,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(stopInput, abortSignal).catch(() => {});
+
+    return result;
   }
 
   private async runDelegation(request: TaskRequest, abortSignal?: AbortSignal): Promise<ToolResult> {
+    const taskCreatedInput: TaskCreatedHookInput = {
+      hook_event_name: "TaskCreated",
+      agent_type: request.agent,
+      description: request.description,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(taskCreatedInput, abortSignal).catch(() => {});
+
+    let result: ToolResult;
     try {
       if (abortSignal?.aborted) {
         return { success: false, output: "[Cancelled]" };
       }
 
-      return await this.delegations.start(request, {
+      result = await this.delegations.start(request, {
         model: this.modelId,
         sandboxMode: this.bash.getSandboxMode(),
         sandboxSettings: this.bash.getSandboxSettings(),
@@ -1250,11 +1316,23 @@ export class Agent {
     } catch (err: unknown) {
       if (abortSignal?.aborted) throw err;
       const msg = err instanceof Error ? err.message : String(err);
-      return {
+      result = {
         success: false,
         output: `Delegation failed: ${msg}`,
       };
     }
+
+    const taskCompletedInput: TaskCompletedHookInput = {
+      hook_event_name: "TaskCompleted",
+      agent_type: request.agent,
+      description: request.description,
+      success: result.success,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(taskCompletedInput, abortSignal).catch(() => {});
+
+    return result;
   }
 
   private async readDelegation(id: string): Promise<ToolResult> {
@@ -1323,6 +1401,15 @@ export class Agent {
       return false;
     }
 
+    const trigger = force ? "manual" : "auto";
+    const preCompactInput: PreCompactHookInput = {
+      hook_event_name: "PreCompact",
+      trigger,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(preCompactInput, signal).catch(() => {});
+
     const keptSeqs = this.messageSeqs.slice(preparation.firstKeptIndex);
     const firstKeptSeq = keptSeqs.find((seq): seq is number => seq !== null) ?? getNextMessageSequence(this.session.id);
     const summary = await generateCompactionSummary(provider, this.modelId, preparation, undefined, signal);
@@ -1330,6 +1417,15 @@ export class Agent {
     appendCompaction(this.session.id, firstKeptSeq, summary, preparation.tokensBefore);
     this.messages = [createCompactionSummaryMessage(summary), ...preparation.keptMessages];
     this.messageSeqs = [null, ...keptSeqs];
+
+    const postCompactInput: PostCompactHookInput = {
+      hook_event_name: "PostCompact",
+      trigger,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(postCompactInput, signal).catch(() => {});
+
     return true;
   }
 
@@ -1379,6 +1475,7 @@ export class Agent {
           scheduleManager: this.schedules,
           subagents,
           sendTelegramFile: this.sendTelegramFile ?? undefined,
+          sessionId: this.session?.id ?? undefined,
         });
         let tools: ToolSet = runtime.modelInfo?.supportsClientTools === false ? {} : baseTools;
         if (this.mode === "agent" && runtime.modelInfo?.supportsClientTools !== false) {
@@ -1573,6 +1670,13 @@ export class Agent {
     this.session = this.sessionStore.getRequiredSession(this.session.id);
   }
 
+  private fireHook(
+    input: Parameters<typeof executeEventHooks>[0],
+    signal?: AbortSignal,
+  ): Promise<Awaited<ReturnType<typeof executeEventHooks>>> {
+    return executeEventHooks(input, this.bash.getCwd(), signal);
+  }
+
   async *processMessage(
     userMessage: string,
     observer?: ProcessMessageObserver,
@@ -1580,6 +1684,26 @@ export class Agent {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
     this.emitSubagentStatus(null);
+
+    if (!this.sessionStartHookFired) {
+      this.sessionStartHookFired = true;
+      const isResume = this.messages.length > 0;
+      const sessionStartInput: SessionStartHookInput = {
+        hook_event_name: "SessionStart",
+        source: isResume ? "resume" : "startup",
+        session_id: this.session?.id,
+        cwd: this.bash.getCwd(),
+      };
+      await this.fireHook(sessionStartInput, signal).catch(() => {});
+    }
+
+    const promptInput: UserPromptSubmitHookInput = {
+      hook_event_name: "UserPromptSubmit",
+      user_prompt: userMessage,
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    await this.fireHook(promptInput, signal).catch(() => {});
 
     await this.consumeBackgroundNotifications();
     const userModelMessage: ModelMessage = { role: "user", content: userMessage };
@@ -1657,6 +1781,7 @@ export class Agent {
             scheduleManager: this.schedules,
             subagents,
             sendTelegramFile: this.sendTelegramFile ?? undefined,
+            sessionId: this.session?.id ?? undefined,
           });
           let tools: ToolSet = runtime.modelInfo?.supportsClientTools === false ? {} : baseTools;
           if (this.mode === "agent" && runtime.modelInfo?.supportsClientTools !== false) {
@@ -1806,6 +1931,13 @@ export class Agent {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
           }
 
+          const stopInput: StopHookInput = {
+            hook_event_name: "Stop",
+            session_id: this.session?.id,
+            cwd: this.bash.getCwd(),
+          };
+          await this.fireHook(stopInput, signal).catch(() => {});
+
           yield { type: "done" };
           return;
         } catch (err: unknown) {
@@ -1835,6 +1967,15 @@ export class Agent {
           if (assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
           }
+
+          const stopFailureInput: StopFailureHookInput = {
+            hook_event_name: "StopFailure",
+            error: friendly,
+            session_id: this.session?.id,
+            cwd: this.bash.getCwd(),
+          };
+          await this.fireHook(stopFailureInput, signal).catch(() => {});
+
           yield { type: "done" };
           return;
         } finally {
