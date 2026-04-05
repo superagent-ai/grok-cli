@@ -4384,7 +4384,7 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
 function openMediaFile(filePath: string): void {
   try {
     const cmd = process.platform === "darwin" ? "open" : "xdg-open";
-    require("child_process").exec(`${cmd} ${JSON.stringify(filePath)}`);
+    require("child_process").execFile(cmd, [filePath]);
   } catch {}
 }
 
