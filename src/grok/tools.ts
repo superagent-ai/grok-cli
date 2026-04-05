@@ -1,5 +1,6 @@
 import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
+import { executePostToolFailureHooks, executePostToolHooks, executePreToolHooks } from "../hooks/index";
 import type { BashTool } from "../tools/bash";
 import {
   computerClick,
@@ -41,6 +42,7 @@ interface CreateToolsOptions {
   scheduleManager?: ScheduleManager;
   subagents?: CustomSubagentConfig[];
   sendTelegramFile?: (filePath: string) => Promise<ToolResult>;
+  sessionId?: string;
 }
 
 export function createTools(
@@ -98,16 +100,39 @@ export function createTools(
           ),
       }),
       execute: async ({ command, timeout, background }, { abortSignal }) => {
+        const toolInput = { command, timeout, background };
+        const preResult = await executePreToolHooks("bash", toolInput, cwd(), options.sessionId, abortSignal);
+        if (preResult.blocked) {
+          const reason = preResult.blockingErrors.map((e) => e.stderr).join("; ") || "Blocked by hook";
+          return { success: false, output: `[Hook blocked] ${reason}` };
+        }
+
         if (background) {
           return bash.startBackground(command);
         }
+
         const result = await bash.execute(command, timeout, abortSignal);
-        return {
+        const output = {
           success: result.success,
           output: result.success
             ? result.output || "Command executed successfully (no output)"
             : result.error || "Command failed",
         };
+
+        if (result.success) {
+          executePostToolHooks("bash", toolInput, output, cwd(), options.sessionId, abortSignal).catch(() => {});
+        } else {
+          executePostToolFailureHooks(
+            "bash",
+            toolInput,
+            result.error || "Command failed",
+            cwd(),
+            options.sessionId,
+            abortSignal,
+          ).catch(() => {});
+        }
+
+        return output;
       },
     }),
 

@@ -1,7 +1,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { executeEventHooks } from "../hooks/index";
+import type { InstructionsLoadedHookInput } from "../hooks/types";
 import { findGitRoot } from "./git-root";
+
+const instructionsHookFiredFor = new Set<string>();
 
 function readNonEmptyFile(filePath: string): string | null {
   try {
@@ -61,5 +65,16 @@ export function loadCustomInstructions(cwd: string): string | null {
   const parts: string[] = [...loadAgentsSegments(canonical)];
 
   if (parts.length === 0) return null;
+
+  if (parts.length > 0 && !instructionsHookFiredFor.has(canonical)) {
+    instructionsHookFiredFor.add(canonical);
+    const hookInput: InstructionsLoadedHookInput = {
+      hook_event_name: "InstructionsLoaded",
+      files_loaded: parts.length,
+      cwd: canonical,
+    };
+    executeEventHooks(hookInput, canonical).catch(() => {});
+  }
+
   return parts.join("\n\n");
 }
