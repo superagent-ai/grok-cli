@@ -4412,16 +4412,6 @@ function MediaAutoOpenView({ t, label, toolResult }: { t: Theme; label: string; 
 
 function MediaToolResultView({ t, label, toolResult }: { t: Theme; label: string; toolResult: ToolResult }) {
   const media = toolResult.media ?? [];
-  const openedRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    for (const asset of media) {
-      if (!openedRef.current.has(asset.path)) {
-        openedRef.current.add(asset.path);
-        openMediaFile(asset.path);
-      }
-    }
-  }, [media]);
 
   return (
     <box gap={0}>
