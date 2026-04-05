@@ -3941,6 +3941,9 @@ function MessageView({
       }
 
       if ((entry.toolResult?.media?.length ?? 0) > 0) {
+        if (name === "generate_image" || name === "generate_video") {
+          return <MediaAutoOpenView t={t} label={toolLabel(entry.toolCall!)} toolResult={entry.toolResult!} />;
+        }
         return <MediaToolResultView t={t} label={toolLabel(entry.toolCall!)} toolResult={entry.toolResult!} />;
       }
 
@@ -4374,6 +4377,35 @@ function ToolTextOutputView({ t, label, content }: { t: Theme; label: string; co
       <box paddingLeft={5} marginTop={1} flexShrink={0}>
         <Markdown content={content} t={t} />
       </box>
+    </box>
+  );
+}
+
+function openMediaFile(filePath: string): void {
+  try {
+    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+    require("child_process").execFile(cmd, [filePath]);
+  } catch {}
+}
+
+function MediaAutoOpenView({ t, label, toolResult }: { t: Theme; label: string; toolResult: ToolResult }) {
+  const media = toolResult.media ?? [];
+  const openedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const asset of media) {
+      if (!openedRef.current.has(asset.path)) {
+        openedRef.current.add(asset.path);
+        openMediaFile(asset.path);
+      }
+    }
+  }, [media]);
+
+  return (
+    <box gap={0}>
+      <InlineTool t={t} pending={false}>
+        {label}
+      </InlineTool>
     </box>
   );
 }
