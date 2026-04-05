@@ -28,13 +28,15 @@ import type {
 } from "./types.js";
 import { getMatchQuery } from "./types.js";
 
-const EMPTY_RESULT: AggregatedHookResult = {
-  blocked: false,
-  blockingErrors: [],
-  preventContinuation: false,
-  additionalContexts: [],
-  results: [],
-};
+function emptyResult(): AggregatedHookResult {
+  return {
+    blocked: false,
+    blockingErrors: [],
+    preventContinuation: false,
+    additionalContexts: [],
+    results: [],
+  };
+}
 
 /**
  * Fire hooks for a generic event. Loads config, matches, and executes.
@@ -49,10 +51,10 @@ export async function executeEventHooks(
     const config = loadHooksConfig();
     const matchValue = getMatchQuery(input);
     const hooks = getMatchingHooks(config, input.hook_event_name, matchValue);
-    if (hooks.length === 0) return EMPTY_RESULT;
+    if (hooks.length === 0) return emptyResult();
     return await executeHooks(hooks, input, cwd, signal);
   } catch {
-    return EMPTY_RESULT;
+    return emptyResult();
   }
 }
 
