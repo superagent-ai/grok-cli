@@ -42,14 +42,18 @@ import {
   getTelegramBotToken,
   isReservedSubagentName,
   loadMcpServers,
+  loadPaymentSettings,
   loadUserSettings,
   loadValidSubAgents,
   type McpRemoteTransport,
   type McpServerConfig,
+  type PaymentChain,
+  type PaymentSettings,
   type SandboxMode,
   type SandboxSettings,
   saveApprovedTelegramUserId,
   saveMcpServers,
+  savePaymentSettings,
   saveProjectSettings,
   saveUserSettings,
 } from "../utils/settings";
@@ -299,6 +303,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "schedule", label: "schedule", description: "View scheduled runs" },
   { id: "mcp", label: "mcp", description: "Manage MCP servers" },
   { id: "sandbox", label: "sandbox", description: "Select shell sandbox mode" },
+  { id: "wallet", label: "wallet", description: "Wallet and payment settings" },
   { id: "models", label: "models", description: "Select a model" },
   { id: "new", label: "new session", description: "Start a new session" },
   { id: "commit-push", label: "commit & push", description: "Commit and push" },
@@ -364,6 +369,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/verify",
   "/commit-push",
   "/commit-pr",
+  "/wallet",
 ]);
 
 interface SandboxRow {
@@ -465,6 +471,66 @@ function getSandboxVisibleRows(mode: SandboxMode): SandboxRow[] {
   return mode === "shuru" ? SANDBOX_ROWS : SANDBOX_ROWS.slice(0, 1);
 }
 
+interface WalletDisplayInfo {
+  address: string | null;
+  ethBalance: string | null;
+  usdcBalance: string | null;
+}
+
+interface WalletRow {
+  key: string;
+  label: string;
+  type: "toggle" | "readonly";
+  getDisplay: (settings: Required<PaymentSettings>, info: WalletDisplayInfo) => string;
+  getOptions?: () => string[];
+  apply?: (settings: Required<PaymentSettings>, value: string) => Partial<PaymentSettings>;
+}
+
+const WALLET_ROWS: WalletRow[] = [
+  {
+    key: "enabled",
+    label: "Payments",
+    type: "toggle",
+    getDisplay: (s) => (s.enabled ? "enabled" : "disabled"),
+    getOptions: () => ["enabled", "disabled"],
+    apply: (_s, v) => ({ enabled: v === "enabled" }),
+  },
+  {
+    key: "chain",
+    label: "Chain",
+    type: "toggle",
+    getDisplay: (s) => s.chain,
+    getOptions: () => ["base-sepolia", "base"] as PaymentChain[],
+    apply: (_s, v) => ({ chain: v as PaymentChain }),
+  },
+  {
+    key: "autoApprove",
+    label: "Auto-approve",
+    type: "toggle",
+    getDisplay: (s) => (s.approval.autoApprove ? "on" : "off"),
+    getOptions: () => ["off", "on"],
+    apply: (s, v) => ({ approval: { ...s.approval, autoApprove: v === "on" } }),
+  },
+  {
+    key: "address",
+    label: "Address",
+    type: "readonly",
+    getDisplay: (_s, info) => info.address ?? "No wallet",
+  },
+  {
+    key: "eth",
+    label: "ETH",
+    type: "readonly",
+    getDisplay: (_s, info) => info.ethBalance ?? "...",
+  },
+  {
+    key: "usdc",
+    label: "USDC",
+    type: "readonly",
+    getDisplay: (_s, info) => info.usdcBalance ?? "...",
+  },
+];
+
 function parseCustomSubagentSlashCommand(
   cmd: string,
   subagents: CustomSubagentConfig[],
@@ -562,6 +628,22 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [sandboxSettingsFocusIndex, setSandboxSettingsFocusIndex] = useState(0);
   const [sandboxSettingsEditing, setSandboxSettingsEditing] = useState<string | null>(null);
   const [sandboxSettingsEditBuffer, setSandboxSettingsEditBuffer] = useState("");
+  const [showWalletPicker, setShowWalletPicker] = useState(false);
+  const [walletSettings, setWalletSettings] = useState<Required<PaymentSettings>>(() => loadPaymentSettings());
+  const [walletFocusIndex, setWalletFocusIndex] = useState(0);
+  const [walletDisplayInfo, setWalletDisplayInfo] = useState<WalletDisplayInfo>({
+    address: null,
+    ethBalance: null,
+    usdcBalance: null,
+  });
+  const [pendingPaymentApproval, setPendingPaymentApproval] = useState<{
+    url: string;
+    description: string;
+    amount: string;
+    network: string;
+    asset: string;
+    selected: number;
+  } | null>(null);
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
@@ -790,6 +872,35 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setSandboxSettingsEditing(null);
     setSandboxSettingsEditBuffer("");
     setShowSandboxPicker(true);
+  }, []);
+
+  const applyWalletSettings = useCallback((next: Required<PaymentSettings>) => {
+    setWalletSettings(next);
+    savePaymentSettings(next);
+  }, []);
+
+  const openWalletPicker = useCallback(() => {
+    setWalletFocusIndex(0);
+    setWalletSettings(loadPaymentSettings());
+    setShowWalletPicker(true);
+    setWalletDisplayInfo({ address: null, ethBalance: null, usdcBalance: null });
+    import("../wallet/manager")
+      .then(async ({ WalletManager }) => {
+        if (!WalletManager.exists()) {
+          setWalletDisplayInfo({ address: null, ethBalance: null, usdcBalance: null });
+          return;
+        }
+        const wm = new WalletManager();
+        const data = wm.getWalletData();
+        setWalletDisplayInfo({ address: data.address, ethBalance: null, usdcBalance: null });
+        const balance = await wm.getBalance();
+        setWalletDisplayInfo({
+          address: balance.address,
+          ethBalance: balance.nativeBalance,
+          usdcBalance: balance.usdcBalance,
+        });
+      })
+      .catch(() => {});
   }, []);
 
   const setReasoningEfforts = useCallback((next: Record<string, ReasoningEffort>) => {
@@ -1380,6 +1491,27 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       if (toolResult.plan?.questions?.length) {
         setActivePlan(toolResult.plan);
         setPqs(initialPlanQuestionsState());
+      }
+
+      if (
+        toolCall.function.name === "paid_request" &&
+        !toolResult.success &&
+        toolResult.output?.includes("Payment approval required")
+      ) {
+        const lines = (toolResult.output ?? "").split("\n");
+        const get = (prefix: string) =>
+          lines
+            .find((l) => l.startsWith(prefix))
+            ?.slice(prefix.length)
+            .trim() ?? "";
+        setPendingPaymentApproval({
+          url: get("Payment approval required for ").replace(/\.$/, ""),
+          description: get("Description: "),
+          amount: get("Amount: "),
+          network: get("Network: "),
+          asset: get("Asset: "),
+          selected: 0,
+        });
       }
 
       setActiveToolCalls([]);
@@ -2075,6 +2207,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openSandboxPicker();
         return true;
       }
+      if (c === "/wallet") {
+        openWalletPicker();
+        return true;
+      }
       if (c === "/remote-control") {
         setConnectModalIndex(0);
         setShowConnectModal(true);
@@ -2135,6 +2271,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openAgentsModal,
       openMcpModal,
       openSandboxPicker,
+      openWalletPicker,
       openScheduleModal,
       processMessage,
       resetToNewSession,
@@ -2157,6 +2294,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "sandbox":
           openSandboxPicker();
+          break;
+        case "wallet":
+          openWalletPicker();
           break;
         case "remote-control":
           setConnectModalIndex(0);
@@ -2222,6 +2362,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openAgentsModal,
       openMcpModal,
       openSandboxPicker,
+      openWalletPicker,
       openScheduleModal,
       processMessage,
       resetToNewSession,
@@ -2235,6 +2376,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showTelegramPairModal ||
     showMcpModal ||
     showSandboxPicker ||
+    showWalletPicker ||
+    !!pendingPaymentApproval ||
     showScheduleModal ||
     showAgentsModal ||
     showAgentsEditor ||
@@ -2768,6 +2911,69 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (pendingPaymentApproval) {
+        if (isEscapeKey(key)) {
+          setPendingPaymentApproval(null);
+          return;
+        }
+        if (key.name === "up" || key.name === "down") {
+          setPendingPaymentApproval((p) => (p ? { ...p, selected: p.selected === 0 ? 1 : 0 } : p));
+          return;
+        }
+        if (key.name === "return") {
+          const approved = pendingPaymentApproval.selected === 0;
+          const url = pendingPaymentApproval.url;
+          setPendingPaymentApproval(null);
+          if (approved) {
+            processMessage(`Approve the payment: use paid_request with approve=true for ${url}`);
+          }
+          return;
+        }
+        return;
+      }
+      if (showWalletPicker) {
+        if (isEscapeKey(key)) {
+          setShowWalletPicker(false);
+          return;
+        }
+        if (key.name === "up") {
+          setWalletFocusIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setWalletFocusIndex((i) => Math.min(WALLET_ROWS.length - 1, i + 1));
+          return;
+        }
+
+        const focusedWalletRow = WALLET_ROWS[walletFocusIndex];
+        if (!focusedWalletRow || focusedWalletRow.type === "readonly") return;
+
+        if (key.name === "left" || key.name === "right") {
+          const options = focusedWalletRow.getOptions!();
+          const current = focusedWalletRow.getDisplay(walletSettings, walletDisplayInfo);
+          const idx = options.indexOf(current);
+          const next =
+            key.name === "right" ? options[Math.min(options.length - 1, idx + 1)] : options[Math.max(0, idx - 1)];
+          if (next && next !== current && focusedWalletRow.apply) {
+            const patch = focusedWalletRow.apply(walletSettings, next);
+            applyWalletSettings({ ...walletSettings, ...patch });
+          }
+          return;
+        }
+
+        if (key.name === "return") {
+          const options = focusedWalletRow.getOptions!();
+          const current = focusedWalletRow.getDisplay(walletSettings, walletDisplayInfo);
+          const idx = options.indexOf(current);
+          const next = options[(idx + 1) % options.length];
+          if (next && focusedWalletRow.apply) {
+            const patch = focusedWalletRow.apply(walletSettings, next);
+            applyWalletSettings({ ...walletSettings, ...patch });
+          }
+          return;
+        }
+        return;
+      }
       if (showSandboxPicker) {
         const visibleRows = getSandboxVisibleRows(sandboxMode);
 
@@ -3002,6 +3208,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showModelPicker,
       showPlanPanel,
       showSandboxPicker,
+      pendingPaymentApproval,
+      processMessage,
+      showWalletPicker,
+      walletSettings,
+      walletFocusIndex,
+      walletDisplayInfo,
+      applyWalletSettings,
       showSlashMenu,
       slashMenuIndex,
       submitApiKey,
@@ -3156,6 +3369,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
               )}
               {/* Plan questions panel — inline, OpenCode-style */}
               {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
+              {pendingPaymentApproval && <PaymentApprovalPanel t={t} payment={pendingPaymentApproval} />}
             </scrollbox>
             {/* Prompt */}
             <box flexShrink={0}>
@@ -3165,6 +3379,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 isProcessing={isProcessing}
                 showModelPicker={showModelPicker}
                 showSandboxPicker={showSandboxPicker}
+                showWalletPicker={showWalletPicker}
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
                 showApiKeyModal={showApiKeyModal}
@@ -3204,6 +3419,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 isProcessing={isProcessing}
                 showModelPicker={showModelPicker}
                 showSandboxPicker={showSandboxPicker}
+                showWalletPicker={showWalletPicker}
                 showSlashMenu={showSlashMenu}
                 showPlanQuestions={showPlanPanel}
                 showApiKeyModal={showApiKeyModal}
@@ -3362,6 +3578,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           reasoningEffortByModel={reasoningEffortByModel}
         />
       )}
+      {showWalletPicker && (
+        <WalletPickerModal
+          t={t}
+          settings={walletSettings}
+          walletInfo={walletDisplayInfo}
+          focusIndex={walletFocusIndex}
+          width={width}
+          height={height}
+        />
+      )}
       {showSandboxPicker && (
         <SandboxPickerModal
           t={t}
@@ -3471,6 +3697,7 @@ function PromptBox({
   isProcessing,
   showModelPicker,
   showSandboxPicker,
+  showWalletPicker,
   showSlashMenu,
   showPlanQuestions,
   showApiKeyModal,
@@ -3492,6 +3719,7 @@ function PromptBox({
   isProcessing: boolean;
   showModelPicker: boolean;
   showSandboxPicker: boolean;
+  showWalletPicker: boolean;
   showSlashMenu: boolean;
   showPlanQuestions: boolean;
   showApiKeyModal: boolean;
@@ -3564,6 +3792,7 @@ function PromptBox({
               focused={
                 !showModelPicker &&
                 !showSandboxPicker &&
+                !showWalletPicker &&
                 !showSlashMenu &&
                 !showPlanQuestions &&
                 !showApiKeyModal &&
@@ -5054,6 +5283,169 @@ function SandboxPickerModal({
               ? "type value  enter confirm  esc cancel"
               : "arrows navigate  left/right toggle  enter edit  esc close"}
           </text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function PaymentApprovalPanel({
+  t,
+  payment,
+}: {
+  t: Theme;
+  payment: { url: string; description: string; amount: string; network: string; asset: string; selected: number };
+}) {
+  const options = ["Approve payment", "Reject"];
+  return (
+    <box
+      flexDirection="column"
+      border={["left"]}
+      customBorderChars={{
+        topLeft: "",
+        bottomLeft: "",
+        vertical: "┃",
+        topRight: "",
+        bottomRight: "",
+        horizontal: " ",
+        bottomT: "",
+        topT: "",
+        cross: "",
+        leftT: "",
+        rightT: "",
+      }}
+      borderColor="#e5c07b"
+      marginTop={1}
+      paddingLeft={2}
+      paddingRight={2}
+      paddingTop={1}
+      paddingBottom={1}
+      backgroundColor={t.backgroundPanel}
+    >
+      <text>
+        <span style={{ fg: t.planTitle ?? t.primary }}>
+          <b>{"Payment required"}</b>
+        </span>
+      </text>
+      <box marginTop={1} flexDirection="column">
+        <text>
+          <span style={{ fg: t.text }}>{payment.url}</span>
+        </text>
+        {payment.description ? (
+          <text>
+            <span style={{ fg: t.textMuted }}>{payment.description}</span>
+          </text>
+        ) : null}
+        <text>
+          <span style={{ fg: "#22c55e" }}>
+            <b>{`${payment.amount} USDC`}</b>
+          </span>
+          <span style={{ fg: t.textMuted }}>{` on ${payment.network}`}</span>
+        </text>
+      </box>
+      <box marginTop={1} flexDirection="column">
+        {options.map((label, i) => {
+          const isSel = i === payment.selected;
+          return (
+            <text key={label}>
+              <span style={{ fg: isSel ? "#22c55e" : t.textMuted }}>{isSel ? "> " : "  "}</span>
+              <span style={{ fg: isSel ? t.text : t.textMuted }}>{isSel ? <b>{label}</b> : label}</span>
+            </text>
+          );
+        })}
+      </box>
+      <box flexDirection="row" gap={3} marginTop={1} flexShrink={0}>
+        <text>
+          <span style={{ fg: t.text }}>{"↑↓"}</span>
+          <span style={{ fg: t.textMuted }}>{" select"}</span>
+        </text>
+        <text>
+          <span style={{ fg: t.text }}>{"enter"}</span>
+          <span style={{ fg: t.textMuted }}>{" confirm"}</span>
+        </text>
+        <text>
+          <span style={{ fg: t.text }}>{"esc"}</span>
+          <span style={{ fg: t.textMuted }}>{" reject"}</span>
+        </text>
+      </box>
+    </box>
+  );
+}
+
+function WalletPickerModal({
+  t,
+  settings,
+  walletInfo,
+  focusIndex,
+  width,
+  height,
+}: {
+  t: Theme;
+  settings: Required<PaymentSettings>;
+  walletInfo: WalletDisplayInfo;
+  focusIndex: number;
+  width: number;
+  height: number;
+}) {
+  const panelHeight = Math.min(WALLET_ROWS.length + 6, Math.floor(height * 0.6));
+  const top = bottomAlignedModalTop(height, panelHeight);
+  const overlayBg = "#000000cc" as string;
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={Math.min(64, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Wallet & Payments"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <scrollbox flexGrow={1} minHeight={0}>
+          {WALLET_ROWS.map((row, idx) => {
+            const focused = idx === focusIndex;
+            const display = row.getDisplay(settings, walletInfo);
+            return (
+              <box
+                key={row.key}
+                backgroundColor={focused ? t.selectedBg : undefined}
+                paddingLeft={2}
+                paddingRight={2}
+                width="100%"
+              >
+                <box width="100%" flexDirection="row" justifyContent="space-between">
+                  <text fg={focused ? t.selected : t.text}>{row.label}</text>
+                  {row.type === "toggle" ? (
+                    <text fg={focused ? t.primary : t.textMuted}>
+                      {"< "}
+                      {display}
+                      {" >"}
+                    </text>
+                  ) : (
+                    <text fg={focused ? t.primary : t.textMuted}>{display}</text>
+                  )}
+                </box>
+              </box>
+            );
+          })}
+        </scrollbox>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>{"arrows navigate  left/right toggle  esc close"}</text>
         </box>
       </box>
     </box>

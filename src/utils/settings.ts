@@ -8,6 +8,25 @@ import type { ReasoningEffort } from "../types/index";
 export type TelegramStreamingMode = "off" | "partial";
 export type TelegramAudioInputEngine = "whisper.cpp";
 export type SandboxMode = "off" | "shuru";
+export type PaymentChain = "base" | "base-sepolia";
+
+export interface PaymentApprovalSettings {
+  autoApprove?: boolean;
+}
+
+export interface PaymentSettings {
+  enabled?: boolean;
+  chain?: PaymentChain;
+  approval?: PaymentApprovalSettings;
+}
+
+const DEFAULT_PAYMENT_SETTINGS: Required<PaymentSettings> = {
+  enabled: false,
+  chain: "base-sepolia",
+  approval: {
+    autoApprove: false,
+  },
+};
 
 export interface SandboxSecretConfig {
   name: string;
@@ -147,6 +166,7 @@ export interface UserSettings {
   mcp?: McpSettings;
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;
+  payments?: PaymentSettings;
 }
 
 export interface ProjectSettings {
@@ -235,6 +255,18 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
       : {}),
     ...(partial.sandbox !== undefined
       ? { sandbox: normalizeSandboxSettings({ ...current.sandbox, ...partial.sandbox }) }
+      : {}),
+    ...(partial.payments !== undefined
+      ? {
+          payments: {
+            ...current.payments,
+            ...partial.payments,
+            approval: {
+              ...current.payments?.approval,
+              ...partial.payments?.approval,
+            },
+          },
+        }
       : {}),
   };
 
@@ -435,4 +467,22 @@ export function loadMcpServers(): McpServerConfig[] {
 
 export function saveMcpServers(servers: McpServerConfig[]): void {
   saveUserSettings({ mcp: { servers } });
+}
+
+export function loadPaymentSettings(): Required<PaymentSettings> {
+  const payments = loadUserSettings().payments;
+  return {
+    enabled: payments?.enabled ?? DEFAULT_PAYMENT_SETTINGS.enabled,
+    chain:
+      payments?.chain === "base" || payments?.chain === "base-sepolia"
+        ? payments.chain
+        : DEFAULT_PAYMENT_SETTINGS.chain,
+    approval: {
+      autoApprove: payments?.approval?.autoApprove ?? DEFAULT_PAYMENT_SETTINGS.approval.autoApprove,
+    },
+  };
+}
+
+export function savePaymentSettings(partial: PaymentSettings): void {
+  saveUserSettings({ payments: partial });
 }
