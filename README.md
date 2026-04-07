@@ -1,4 +1,4 @@
-# There are many coding agents. **This is Grok’s.**
+# There are many coding agents. **This one is powered by Grok.**
 
 [![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
 [![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
