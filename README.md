@@ -1,10 +1,10 @@
 # There are many coding agents. **This is Grok’s.**
 
-[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
-[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
+[CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
+[npm](https://www.npmjs.com/package/grok-dev)
+[License: MIT](./LICENSE)
+[TypeScript](https://www.typescriptlang.org/)
+[Bun](https://bun.sh/)
 
 The rest borrowed from each other. We borrowed from *all of them*, then wired it to **Grok**—real-time **X search**, **web search**, `grok-code-fast-1` and the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI that doesn’t feel like it was assembled in a hurry.
 
@@ -175,27 +175,22 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 | Thing                             | What it means                                                                                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Grok-native**                   | Defaults tuned for Grok; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning**`, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
-| **X + web search**                | `**search_x`** and `**search_web**` tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
-| **Media generation**              | Built-in `**generate_image`** and `**generate_video**` tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
-| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate**` for read-only deep dives—parallelize like you mean it.                                                                |
-| **Verify**                        | `**/verify`** or `**--verify**` — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
-| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop**`. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
-| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json**` and manage them from the TUI with `**/agents**`.                                                                                              |
+| **Grok-native**                   | Defaults tuned for Grok; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning`**, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
+| **X + web search**                | `**search_x`** and `**search_web`** tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
+| **Media generation**              | Built-in `**generate_image`** and `**generate_video`** tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
+| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate`** for read-only deep dives—parallelize like you mean it.                                                                |
+| **Verify**                        | `**/verify`** or `**--verify`** — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
+| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop`**. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/`** when requested.     |
+| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json`** and manage them from the TUI with `**/agents`**.                                                                                              |
 | **Remote control**                | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, `**/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone.                                             |
 | **No “mystery meat” UI**          | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of.                                                                                                                            |
-| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/**` (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
-| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json**` (`mcpServers`).                                                                                               |
+| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/`** (user). Use `**/skills`** in the TUI to list what’s installed.                                                                |
+| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json`** (`mcpServers`).                                                                                               |
 | **Sessions**                      | Conversations persist; `**--session latest`** picks up where you left off.                                                                                                                                                 |
-| **Headless**                      | `**--prompt`** / `**-p**` for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
+| **Headless**                      | `**--prompt`** / `**-p`** for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
+| **x402 payments**                 | Built-in wallet and `**paid_request`** tool—the agent can autonomously pay for x402-protected APIs with USDC. Inline approval UI when auto-approve is off.                                                                 |
 | **Hackable**                      | TypeScript, clear agent loop, bash-first tools—fork it, shamelessly.                                                                                                                                                       |
 
-
-### Coming soon
-
-**Deeper autonomous agent testing** — persistent sandbox sessions, richer browser workflows, and stronger "prove it works" evidence.
-
----
 
 ## API key (pick one)
 
@@ -354,7 +349,7 @@ Hook commands receive JSON on **stdin** (event details) and can return JSON on *
 
 ## Instructions & project brain
 
-- `**AGENTS.md**` — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.
+- `**AGENTS.md`** — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md`** wins per directory when present.
 
 ---
 
@@ -384,7 +379,7 @@ All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/setting
 
 ### Verify
 
-Run `**/verify`** in the TUI or `**--verify**` on the CLI to verify your app locally:
+Run `**/verify`** in the TUI or `**--verify`** on the CLI to verify your app locally:
 
 ```bash
 grok --verify
@@ -392,6 +387,68 @@ grok -d /path/to/your/app --verify
 ```
 
 The agent inspects your project, figures out how to build and run it, spins up a sandbox, and produces a verification report with screenshots and video evidence. Works with any app type.
+
+---
+
+## x402 Payments
+
+Grok CLI can autonomously pay for [x402](https://www.x402.org/)-protected APIs and resources using a local crypto wallet. When the agent hits a `402 Payment Required` response, it can inspect the payment terms and complete the transaction with USDC stablecoins.
+
+### Setup
+
+```bash
+grok wallet init --chain base-sepolia
+```
+
+This generates a keypair, stores it at `~/.grok/wallet.json`, and enables payments in your settings. Fund the displayed address with testnet ETH (for gas) and USDC.
+
+### Wallet commands
+
+```bash
+grok wallet init              # generate keypair, enable payments
+grok wallet balance           # show ETH and USDC balances
+grok wallet history           # show payment audit log
+```
+
+### Agent tools
+
+The agent gets four payment-related tools:
+
+
+| Tool                 | Purpose                                                       |
+| -------------------- | ------------------------------------------------------------- |
+| `wallet_info`        | Check wallet address and balances                             |
+| `wallet_history`     | View recent payment audit log                                 |
+| `fetch_payment_info` | Inspect x402 payment requirements for a URL without paying    |
+| `paid_request`       | Access an x402-protected URL and handle payment automatically |
+
+
+### Payment settings
+
+Toggle from the TUI with `/wallet`, or edit `~/.grok/user-settings.json`:
+
+```json
+{
+  "payments": {
+    "enabled": true,
+    "chain": "base-sepolia",
+    "approval": {
+      "autoApprove": false
+    }
+  }
+}
+```
+
+When `autoApprove` is `false`, the TUI shows an inline approval panel before any payment is made. When `true`, payments proceed automatically within the agent's tool loop.
+
+### Supported chains
+
+- **Base Sepolia** (testnet) — for development and testing
+- **Base** (mainnet) — for production use
+
+### Audit trail
+
+All payment attempts are logged to `~/.grok/payment_log.jsonl` — one JSON object per line with URL, amount, network, status, and transaction hash.
 
 ---
 
