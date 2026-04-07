@@ -1,4 +1,5 @@
 import type { PaymentChain } from "../utils/settings";
+import type { BrinScanResult } from "./brin";
 
 export interface PaymentOption {
   scheme: string;
@@ -21,7 +22,7 @@ export interface PaymentAuditRecord {
   asset: string;
   amount: string;
   txHash?: string | null;
-  status: "success" | "failed" | "requires_approval";
+  status: "success" | "failed" | "requires_approval" | "blocked_by_brin";
   createdAt: string;
 }
 
@@ -33,4 +34,5 @@ export interface PaymentInspectionResult {
   options: PaymentOption[];
   description?: string;
   data?: unknown;
+  brin?: BrinScanResult | null;
 }

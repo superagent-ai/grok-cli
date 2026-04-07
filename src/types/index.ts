@@ -199,12 +199,24 @@ export interface ChatEntry {
   toolResult?: ToolResult;
 }
 
+export interface PaymentPrecheck {
+  security?: string;
+  securityLabel?: string;
+  securityUrl?: string;
+  amount?: string;
+  network?: string;
+  asset?: string;
+  description?: string;
+}
+
 export interface StreamChunk {
-  type: "content" | "tool_calls" | "tool_result" | "done" | "error" | "reasoning";
+  type: "content" | "tool_calls" | "tool_result" | "tool_approval_request" | "done" | "error" | "reasoning";
   content?: string;
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
+  approvalId?: string;
+  paymentPrecheck?: PaymentPrecheck;
   isAuthError?: boolean;
 }
 

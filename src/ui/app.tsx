@@ -639,9 +639,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [pendingPaymentApproval, setPendingPaymentApproval] = useState<{
     url: string;
     description: string;
+    security: string;
+    securityLabel: string;
+    securityUrl: string;
     amount: string;
     network: string;
     asset: string;
+    approvalId?: string;
     selected: number;
   } | null>(null);
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
@@ -1493,27 +1497,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         setPqs(initialPlanQuestionsState());
       }
 
-      if (
-        toolCall.function.name === "paid_request" &&
-        !toolResult.success &&
-        toolResult.output?.includes("Payment approval required")
-      ) {
-        const lines = (toolResult.output ?? "").split("\n");
-        const get = (prefix: string) =>
-          lines
-            .find((l) => l.startsWith(prefix))
-            ?.slice(prefix.length)
-            .trim() ?? "";
-        setPendingPaymentApproval({
-          url: get("Payment approval required for ").replace(/\.$/, ""),
-          description: get("Description: "),
-          amount: get("Amount: "),
-          network: get("Network: "),
-          asset: get("Asset: "),
-          selected: 0,
-        });
-      }
-
       setActiveToolCalls([]);
       setTimeout(scrollToBottom, 10);
     },
@@ -2085,6 +2068,29 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
               case "tool_result":
                 if (chunk.toolCall && chunk.toolResult) {
                   appendLiveToolResult(chunk.toolCall, chunk.toolResult);
+                }
+                break;
+              case "tool_approval_request":
+                if (chunk.toolCall && chunk.approvalId) {
+                  let args: Record<string, string> = {};
+                  try {
+                    args = JSON.parse(chunk.toolCall.function.arguments);
+                  } catch {
+                    /* ignore */
+                  }
+                  const pc = chunk.paymentPrecheck;
+                  setPendingPaymentApproval({
+                    url: args?.url ?? "",
+                    description: pc?.description ?? "",
+                    security: pc?.security ?? "",
+                    securityLabel: pc?.securityLabel ?? "",
+                    securityUrl: pc?.securityUrl ?? "",
+                    amount: pc?.amount ?? "",
+                    network: pc?.network ?? "",
+                    asset: pc?.asset ?? "",
+                    approvalId: chunk.approvalId,
+                    selected: 0,
+                  });
                 }
                 break;
               case "error":
@@ -2922,10 +2928,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         if (key.name === "return") {
           const approved = pendingPaymentApproval.selected === 0;
-          const url = pendingPaymentApproval.url;
+          const aid = pendingPaymentApproval.approvalId;
           setPendingPaymentApproval(null);
-          if (approved) {
-            processMessage(`Approve the payment: use paid_request with approve=true for ${url}`);
+          if (aid) {
+            agent.respondToToolApproval(aid, approved);
+            if (approved) {
+              processMessage("[Payment approved]");
+            }
           }
           return;
         }
@@ -5294,7 +5303,18 @@ function PaymentApprovalPanel({
   payment,
 }: {
   t: Theme;
-  payment: { url: string; description: string; amount: string; network: string; asset: string; selected: number };
+  payment: {
+    url: string;
+    description: string;
+    security: string;
+    securityLabel: string;
+    securityUrl: string;
+    amount: string;
+    network: string;
+    asset: string;
+    approvalId?: string;
+    selected: number;
+  };
 }) {
   const options = ["Approve payment", "Reject"];
   return (
@@ -5336,7 +5356,14 @@ function PaymentApprovalPanel({
             <span style={{ fg: t.textMuted }}>{payment.description}</span>
           </text>
         ) : null}
+        {payment.security ? (
+          <text>
+            <span style={{ fg: t.textMuted }}>{"Security: "}</span>
+            <span style={{ fg: "#60a5fa" }}>{payment.securityLabel}</span>
+          </text>
+        ) : null}
         <text>
+          <span style={{ fg: t.textMuted }}>{"Price: "}</span>
           <span style={{ fg: "#22c55e" }}>
             <b>{`${payment.amount} USDC`}</b>
           </span>
