@@ -22,9 +22,11 @@ import {
   getCurrentModel,
   getCurrentSandboxMode,
   getCurrentSandboxSettings,
+  loadPaymentSettings,
   mergeSandboxSettings,
   type SandboxMode,
   type SandboxSettings,
+  savePaymentSettings,
   saveUserSettings,
 } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
@@ -436,6 +438,68 @@ program
     });
     console.log(result.output);
     process.exit(result.success ? 0 : 1);
+  });
+
+const walletCommand = program.command("wallet").description("Manage the local x402 wallet and payment settings");
+
+walletCommand
+  .command("init")
+  .description("Generate a new wallet keypair and enable payments for the selected chain")
+  .option("--chain <chain>", "Wallet chain: base or base-sepolia", "base-sepolia")
+  .action(async (options) => {
+    const { WalletManager } = await import("./wallet/manager");
+    const selectedChain = options.chain === "base" ? "base" : "base-sepolia";
+    const wallet = new WalletManager();
+    const data = wallet.init(selectedChain);
+    const current = loadPaymentSettings();
+    savePaymentSettings({
+      enabled: true,
+      chain: data.chain,
+      approval: current.approval,
+    });
+
+    console.log("\nWallet initialized.");
+    console.log(`  Address: ${data.address}`);
+    console.log(`  Chain:   ${data.chain}`);
+    console.log(`  Created: ${data.createdAt}`);
+    console.log("\nPayments have been enabled in ~/.grok/user-settings.json.");
+  });
+
+walletCommand
+  .command("balance")
+  .description("Show the current wallet balance")
+  .action(async () => {
+    const { WalletManager } = await import("./wallet/manager");
+    const wallet = new WalletManager();
+    const balance = await wallet.getBalance();
+    console.log(`\nAddress: ${balance.address}`);
+    console.log(`Chain:   ${balance.chain}`);
+    console.log(`${balance.nativeSymbol}:     ${balance.nativeBalance}`);
+    console.log(`USDC:    ${balance.usdcBalance}\n`);
+  });
+
+walletCommand
+  .command("history")
+  .description("Show recent x402 payment attempts")
+  .option("--limit <n>", "Number of records to show", "20")
+  .action(async (options) => {
+    const { PaymentHistory } = await import("./payments/history");
+    const limit = Number.parseInt(options.limit, 10) || 20;
+    const history = new PaymentHistory().list(limit);
+
+    if (history.length === 0) {
+      console.log("\nNo payment history yet.\n");
+      return;
+    }
+
+    console.log();
+    for (const row of history) {
+      console.log(`${row.createdAt}  ${row.status}`);
+      console.log(`  ${row.method} ${row.url}`);
+      console.log(`  ${row.amount} ${row.asset} on ${row.network}`);
+      if (row.txHash) console.log(`  tx: ${row.txHash}`);
+      console.log();
+    }
   });
 
 program

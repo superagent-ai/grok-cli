@@ -167,6 +167,10 @@ TOOLS:
 - process_logs: View recent output from a background process by ID.
 - process_stop: Stop a background process by ID.
 - process_list: List all background processes with status and uptime.
+- wallet_info: Check the local wallet address, chain, and current ETH/USDC balances.
+- wallet_history: Show recent x402 payment history from the audit log.
+- fetch_payment_info: Check whether a URL requires x402 payment and inspect the available payment options without paying.
+- paid_request: Access an x402-protected URL using the local wallet. When auto-approve is disabled, wait for the user to approve via the UI before retrying.
 - task: Delegate a focused foreground task to a sub-agent. Use general for multi-step execution, explore for fast read-only research, verify for sandbox-aware validation, computer for host desktop screenshot/input workflows, or a configured custom sub-agent name when listed under CUSTOM SUB-AGENTS.
 - delegate: Launch a read-only background agent for longer research while you continue working.
 - delegation_read: Retrieve a completed background delegation result by ID.

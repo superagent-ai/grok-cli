@@ -738,6 +738,121 @@ export function createTools(
     }
   }
 
+  tools.wallet_info = tool({
+    description:
+      "Get the local wallet address, chain, and current balances (ETH and USDC). Use this to check available funds before making a payment.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const { WalletManager } = await import("../wallet/manager");
+        if (!WalletManager.exists()) {
+          return { success: false, output: "No wallet found. Run `grok wallet init` to create one." };
+        }
+        const wm = new WalletManager();
+        const balance = await wm.getBalance();
+        return {
+          success: true,
+          output: [
+            `Address: ${balance.address}`,
+            `Chain: ${balance.chain}`,
+            `ETH: ${balance.nativeBalance}`,
+            `USDC: ${balance.usdcBalance}`,
+          ].join("\n"),
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, output: `Failed to get wallet info: ${msg}` };
+      }
+    },
+  });
+
+  tools.wallet_history = tool({
+    description:
+      "Show recent x402 payment history from the local audit log. Returns the most recent payment attempts with status, URL, amount, and transaction hash.",
+    inputSchema: z.object({
+      limit: z.number().optional().describe("Number of recent entries to return (default: 10)"),
+    }),
+    execute: async ({ limit }) => {
+      try {
+        const { PaymentHistory } = await import("../payments/history");
+        const history = new PaymentHistory();
+        const entries = history.list(limit ?? 10);
+        if (entries.length === 0) {
+          return { success: true, output: "No payment history yet." };
+        }
+        const lines = entries.map((e) => {
+          const parts = [
+            `${e.createdAt}  ${e.status}`,
+            `  ${e.method} ${e.url}`,
+            `  ${e.amount} ${e.asset} on ${e.network}`,
+          ];
+          if (e.txHash) parts.push(`  tx: ${e.txHash}`);
+          return parts.join("\n");
+        });
+        return { success: true, output: lines.join("\n\n") };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, output: `Failed to read payment history: ${msg}` };
+      }
+    },
+  });
+
+  tools.fetch_payment_info = tool({
+    description:
+      "Inspect a URL for x402 payment requirements without paying. Use this to see whether a URL requires payment and what the payment options are.",
+    inputSchema: z.object({
+      url: z.string().url().describe("The URL to inspect"),
+      method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("HTTP method (default: GET)"),
+      headers: z.record(z.string(), z.string()).optional().describe("Optional HTTP headers"),
+      body: z.string().optional().describe("Optional request body for POST/PUT/PATCH"),
+    }),
+    execute: async ({ url, method, headers, body }) => {
+      try {
+        const { X402Service, formatInspectionOutput } = await import("../payments/service");
+        const service = new X402Service();
+        const inspection = await service.fetchPaymentInfo({ url, method, headers, body });
+        return {
+          success: true,
+          output: formatInspectionOutput(inspection),
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          output: `Failed to inspect payment info: ${msg}`,
+        };
+      }
+    },
+  });
+
+  tools.paid_request = tool({
+    description:
+      "Access an x402-protected URL using the local wallet. If auto-approve is disabled, first call returns payment details and requires a second call with approve=true.",
+    inputSchema: z.object({
+      url: z.string().url().describe("The URL to access"),
+      method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("HTTP method (default: GET)"),
+      headers: z.record(z.string(), z.string()).optional().describe("Optional HTTP headers"),
+      body: z.string().optional().describe("Optional request body for POST/PUT/PATCH"),
+      approve: z
+        .boolean()
+        .optional()
+        .describe("Set true to confirm the payment when auto-approve is disabled in settings"),
+    }),
+    execute: async ({ url, method, headers, body, approve }) => {
+      try {
+        const { X402Service } = await import("../payments/service");
+        const service = new X402Service();
+        return await service.paidRequest({ url, method, headers, body, approve }, options.sessionId);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          output: `Failed to access paid URL: ${msg}`,
+        };
+      }
+    },
+  });
+
   if (mode !== "plan") return tools;
 
   tools.generate_plan = tool({
