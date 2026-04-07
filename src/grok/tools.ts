@@ -19,7 +19,7 @@ import {
 import { editFile, readFile, writeFile } from "../tools/file";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
-import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
+import { type CustomSubagentConfig, loadPaymentSettings, loadValidSubAgents } from "../utils/settings";
 import type { XaiProvider } from "./client";
 import {
   type GenerateImageToolInput,
@@ -799,7 +799,7 @@ export function createTools(
 
   tools.fetch_payment_info = tool({
     description:
-      "Inspect a URL for x402 payment requirements without paying. Use this to see whether a URL requires payment and what the payment options are.",
+      "Inspect a URL for x402 payment requirements without paying. Returns payment options and a brin security scan with score, sub-scores (identity, behavior, content, graph), and any detected threats. Use this only when the user wants to inspect without paying — for actual access, call paid_request directly instead.",
     inputSchema: z.object({
       url: z.string().url().describe("The URL to inspect"),
       method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("HTTP method (default: GET)"),
@@ -827,22 +827,25 @@ export function createTools(
 
   tools.paid_request = tool({
     description:
-      "Access an x402-protected URL using the local wallet. If auto-approve is disabled, first call returns payment details and requires a second call with approve=true.",
+      "Access an x402-protected URL using the local wallet. URLs scoring below 25 on brin are automatically blocked. The user will be prompted to approve the payment before it executes.",
     inputSchema: z.object({
       url: z.string().url().describe("The URL to access"),
       method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional().describe("HTTP method (default: GET)"),
       headers: z.record(z.string(), z.string()).optional().describe("Optional HTTP headers"),
       body: z.string().optional().describe("Optional request body for POST/PUT/PATCH"),
-      approve: z
-        .boolean()
-        .optional()
-        .describe("Set true to confirm the payment when auto-approve is disabled in settings"),
     }),
-    execute: async ({ url, method, headers, body, approve }) => {
+    needsApproval: () => {
+      try {
+        return !loadPaymentSettings().approval.autoApprove;
+      } catch {
+        return true;
+      }
+    },
+    execute: async ({ url, method, headers, body }) => {
       try {
         const { X402Service } = await import("../payments/service");
         const service = new X402Service();
-        return await service.paidRequest({ url, method, headers, body, approve }, options.sessionId);
+        return await service.paidRequest({ url, method, headers, body }, options.sessionId);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
