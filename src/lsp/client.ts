@@ -144,6 +144,8 @@ export async function createLspClientSession(options: LspClientOptions): Promise
       const uri = pathToFileURL(normalizedPath).href;
       const version = versions.get(normalizedPath);
 
+      diagnostics.delete(normalizedPath);
+
       if (version === undefined) {
         versions.set(normalizedPath, 0);
         await connection.sendNotification("textDocument/didOpen", {
