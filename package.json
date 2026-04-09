@@ -1,6 +1,6 @@
 {
   "name": "grok-dev",
-  "version": "1.1.5-rc2",
+  "version": "1.1.5-rc3",
   "description": "An open-source AI coding agent powered by Grok, built with Bun and OpenTUI.",
   "type": "module",
   "main": "dist/index.js",
@@ -48,6 +48,7 @@
     "@ai-sdk/xai": "^3.0.67",
     "@coinbase/agentkit": "^0.10.4",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@npmcli/arborist": "^9.4.2",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "agent-desktop": "^0.1.11",
@@ -58,12 +59,15 @@
     "grammy": "^1.41.1",
     "react": "^19.2.4",
     "semver": "^7.7.4",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-types": "^3.17.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
     "@types/diff": "^8.0.0",
     "@types/node": "^22.19.15",
+    "@types/npmcli__arborist": "^6.3.3",
     "@types/react": "^19.2.14",
     "@types/semver": "^7.7.1",
     "husky": "^9.1.7",

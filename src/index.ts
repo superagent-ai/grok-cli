@@ -77,8 +77,10 @@ async function startInteractive(
   });
 
   const onExit = () => {
-    renderer.destroy();
-    process.exit(0);
+    void agent.cleanup().finally(() => {
+      renderer.destroy();
+      process.exit(0);
+    });
   };
 
   createRoot(renderer).render(
@@ -121,25 +123,29 @@ async function runHeadless(
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
 
-  const { enhancedMessage } = processAtMentions(prompt, process.cwd());
+  try {
+    const { enhancedMessage } = processAtMentions(prompt, process.cwd());
 
-  if (format === "json") {
-    const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
-    for await (const chunk of agent.processMessage(enhancedMessage, observer)) {
-      const writes = consumeChunk(chunk);
-      if (writes.stdout) process.stdout.write(writes.stdout);
-      if (writes.stderr) process.stderr.write(writes.stderr ?? "");
+    if (format === "json") {
+      const { observer, consumeChunk, flush } = createHeadlessJsonlEmitter(agent.getSessionId() || undefined);
+      for await (const chunk of agent.processMessage(enhancedMessage, observer)) {
+        const writes = consumeChunk(chunk);
+        if (writes.stdout) process.stdout.write(writes.stdout);
+        if (writes.stderr) process.stderr.write(writes.stderr ?? "");
+      }
+      const tail = flush();
+      if (tail.stdout) process.stdout.write(tail.stdout);
+      if (tail.stderr) process.stderr.write(tail.stderr ?? "");
+      return;
     }
-    const tail = flush();
-    if (tail.stdout) process.stdout.write(tail.stdout);
-    if (tail.stderr) process.stderr.write(tail.stderr ?? "");
-    return;
-  }
 
-  for await (const chunk of agent.processMessage(enhancedMessage)) {
-    const writes = renderHeadlessChunk(chunk);
-    if (writes.stdout) process.stdout.write(writes.stdout);
-    if (writes.stderr) process.stderr.write(writes.stderr);
+    for await (const chunk of agent.processMessage(enhancedMessage)) {
+      const writes = renderHeadlessChunk(chunk);
+      if (writes.stdout) process.stdout.write(writes.stdout);
+      if (writes.stderr) process.stderr.write(writes.stderr);
+    }
+  } finally {
+    await agent.cleanup();
   }
 }
 
@@ -175,6 +181,7 @@ function resolveCliSandboxMode(value: string | boolean | undefined): SandboxMode
 
 async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
   let output = "";
+  let agent: Agent | undefined;
 
   try {
     const delegation = await loadDelegation(jobPath);
@@ -189,7 +196,7 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
       parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
     const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), delegation.sandboxSettings);
-    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
+    agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
       persistSession: false,
       sandboxMode,
       sandboxSettings,
@@ -217,6 +224,8 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
       // Best effort — background tasks should fail silently if persistence is unavailable.
     }
     process.exit(1);
+  } finally {
+    await agent?.cleanup();
   }
 }
 

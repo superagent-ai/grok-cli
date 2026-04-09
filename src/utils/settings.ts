@@ -3,6 +3,13 @@ import * as os from "os";
 import * as path from "path";
 import { DEFAULT_MODEL, getEffectiveReasoningEffort, getModelIds, normalizeModelId } from "../grok/models";
 import type { HooksConfig } from "../hooks/types";
+import type {
+  LspBuiltInServerId,
+  LspBuiltInServerSettings,
+  LspCustomServerConfig,
+  LspSettings,
+  NormalizedLspSettings,
+} from "../lsp/types";
 import type { ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
@@ -26,6 +33,16 @@ const DEFAULT_PAYMENT_SETTINGS: Required<PaymentSettings> = {
   approval: {
     autoApprove: false,
   },
+};
+
+const DEFAULT_LSP_SETTINGS: NormalizedLspSettings = {
+  enabled: true,
+  tool: true,
+  autoInstall: false,
+  startupTimeoutMs: 30_000,
+  diagnosticsDebounceMs: 200,
+  builtins: {},
+  servers: [],
 };
 
 export interface SandboxSecretConfig {
@@ -161,6 +178,7 @@ export interface UserSettings {
   defaultModel?: string;
   sandboxMode?: SandboxMode;
   sandbox?: SandboxSettings;
+  lsp?: LspSettings;
   reasoningEffortByModel?: Record<string, ReasoningEffort>;
   telegram?: TelegramSettings;
   mcp?: McpSettings;
@@ -173,6 +191,7 @@ export interface ProjectSettings {
   model?: string;
   sandboxMode?: SandboxMode;
   sandbox?: SandboxSettings;
+  lsp?: LspSettings;
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");
@@ -256,6 +275,11 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
     ...(partial.sandbox !== undefined
       ? { sandbox: normalizeSandboxSettings({ ...current.sandbox, ...partial.sandbox }) }
       : {}),
+    ...(partial.lsp !== undefined
+      ? {
+          lsp: mergeLspSettings(current.lsp, partial.lsp),
+        }
+      : {}),
     ...(partial.payments !== undefined
       ? {
           payments: {
@@ -288,6 +312,11 @@ export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
     ...(partial.sandboxMode !== undefined ? { sandboxMode: normalizeSandboxMode(partial.sandboxMode) } : {}),
     ...(partial.sandbox !== undefined
       ? { sandbox: normalizeSandboxSettings({ ...current.sandbox, ...partial.sandbox }) }
+      : {}),
+    ...(partial.lsp !== undefined
+      ? {
+          lsp: mergeLspSettings(current.lsp, partial.lsp),
+        }
       : {}),
   });
 }
@@ -388,6 +417,145 @@ export function mergeSandboxSettings(
   };
 }
 
+function normalizeLspBuiltInServerSettings(raw: unknown): LspBuiltInServerSettings | undefined {
+  if (!isNonNullObject(raw)) return undefined;
+  const result: LspBuiltInServerSettings = {};
+
+  if (typeof raw.enabled === "boolean") result.enabled = raw.enabled;
+  if (typeof raw.command === "string" && raw.command.trim()) result.command = raw.command.trim();
+  if (Array.isArray(raw.args)) {
+    const args = raw.args.filter((value): value is string => typeof value === "string");
+    if (args.length > 0) result.args = args;
+  }
+  if (isNonNullObject(raw.env)) {
+    const envEntries = Object.entries(raw.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    );
+    const env = Object.fromEntries(envEntries);
+    if (Object.keys(env).length > 0) result.env = env;
+  }
+  if (isNonNullObject(raw.initialization)) {
+    result.initialization = raw.initialization;
+  }
+  if (Array.isArray(raw.rootMarkers)) {
+    const rootMarkers = raw.rootMarkers.filter(
+      (value): value is string => typeof value === "string" && value.trim() !== "",
+    );
+    if (rootMarkers.length > 0) result.rootMarkers = rootMarkers;
+  }
+  if (Array.isArray(raw.extensions)) {
+    const extensions = raw.extensions.filter(
+      (value): value is string => typeof value === "string" && value.trim() !== "",
+    );
+    if (extensions.length > 0) result.extensions = extensions;
+  }
+
+  return result;
+}
+
+function normalizeLspCustomServerConfig(raw: unknown): LspCustomServerConfig | null {
+  if (!isNonNullObject(raw)) return null;
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  const command = typeof raw.command === "string" ? raw.command.trim() : "";
+  const extensions = Array.isArray(raw.extensions)
+    ? raw.extensions.filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    : [];
+  if (!id || !command || extensions.length === 0) return null;
+
+  const result: LspCustomServerConfig = {
+    id,
+    command,
+    extensions,
+  };
+
+  if (typeof raw.enabled === "boolean") result.enabled = raw.enabled;
+  if (Array.isArray(raw.args)) {
+    result.args = raw.args.filter((value): value is string => typeof value === "string");
+  }
+  if (isNonNullObject(raw.env)) {
+    result.env = Object.fromEntries(
+      Object.entries(raw.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
+  }
+  if (isNonNullObject(raw.initialization)) {
+    result.initialization = raw.initialization;
+  }
+  if (Array.isArray(raw.rootMarkers)) {
+    result.rootMarkers = raw.rootMarkers.filter(
+      (value): value is string => typeof value === "string" && value.trim() !== "",
+    );
+  }
+  if (isNonNullObject(raw.languageIds)) {
+    result.languageIds = Object.fromEntries(
+      Object.entries(raw.languageIds)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[0].trim() !== "")
+        .map(([key, value]) => [key.trim(), value]),
+    );
+  }
+
+  return result;
+}
+
+export function normalizeLspSettings(raw: unknown): NormalizedLspSettings {
+  if (!isNonNullObject(raw)) return { ...DEFAULT_LSP_SETTINGS };
+
+  const builtins: Partial<Record<LspBuiltInServerId, LspBuiltInServerSettings>> = {};
+  if (isNonNullObject(raw.builtins)) {
+    for (const [key, value] of Object.entries(raw.builtins)) {
+      const normalized = normalizeLspBuiltInServerSettings(value);
+      if (!normalized) continue;
+      builtins[key as LspBuiltInServerId] = normalized;
+    }
+  }
+
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_LSP_SETTINGS.enabled,
+    tool: typeof raw.tool === "boolean" ? raw.tool : DEFAULT_LSP_SETTINGS.tool,
+    autoInstall: typeof raw.autoInstall === "boolean" ? raw.autoInstall : DEFAULT_LSP_SETTINGS.autoInstall,
+    startupTimeoutMs:
+      typeof raw.startupTimeoutMs === "number" && raw.startupTimeoutMs > 0
+        ? raw.startupTimeoutMs
+        : DEFAULT_LSP_SETTINGS.startupTimeoutMs,
+    diagnosticsDebounceMs:
+      typeof raw.diagnosticsDebounceMs === "number" && raw.diagnosticsDebounceMs >= 0
+        ? raw.diagnosticsDebounceMs
+        : DEFAULT_LSP_SETTINGS.diagnosticsDebounceMs,
+    builtins,
+    servers: Array.isArray(raw.servers)
+      ? raw.servers
+          .map(normalizeLspCustomServerConfig)
+          .filter((value): value is LspCustomServerConfig => value !== null)
+      : [],
+  };
+}
+
+export function mergeLspSettings(
+  base: LspSettings | undefined,
+  override: LspSettings | undefined,
+): NormalizedLspSettings {
+  const baseNormalized = normalizeLspSettings(base);
+  const overrideNormalized = normalizeLspSettings(override);
+
+  return {
+    enabled: override?.enabled ?? base?.enabled ?? DEFAULT_LSP_SETTINGS.enabled,
+    tool: override?.tool ?? base?.tool ?? DEFAULT_LSP_SETTINGS.tool,
+    autoInstall: override?.autoInstall ?? base?.autoInstall ?? DEFAULT_LSP_SETTINGS.autoInstall,
+    startupTimeoutMs: override?.startupTimeoutMs ?? base?.startupTimeoutMs ?? DEFAULT_LSP_SETTINGS.startupTimeoutMs,
+    diagnosticsDebounceMs:
+      override?.diagnosticsDebounceMs ?? base?.diagnosticsDebounceMs ?? DEFAULT_LSP_SETTINGS.diagnosticsDebounceMs,
+    builtins: {
+      ...baseNormalized.builtins,
+      ...overrideNormalized.builtins,
+    },
+    servers:
+      override?.servers !== undefined
+        ? overrideNormalized.servers
+        : base?.servers !== undefined
+          ? baseNormalized.servers
+          : DEFAULT_LSP_SETTINGS.servers,
+  };
+}
+
 export function getCurrentSandboxMode(): SandboxMode {
   const project = loadProjectSettings();
   if (project.sandboxMode) return normalizeSandboxMode(project.sandboxMode);
@@ -400,6 +568,12 @@ export function getCurrentSandboxSettings(): SandboxSettings {
   const user = loadUserSettings();
   const project = loadProjectSettings();
   return mergeSandboxSettings(user.sandbox, project.sandbox);
+}
+
+export function getCurrentLspSettings(): NormalizedLspSettings {
+  const user = loadUserSettings();
+  const project = loadProjectSettings();
+  return mergeLspSettings(user.lsp, project.lsp);
 }
 
 export function getReasoningEffortForModel(modelId: string): ReasoningEffort | undefined {
