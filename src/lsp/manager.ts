@@ -236,8 +236,8 @@ function getOperationMethod(operation: LspQueryInput["operation"]): string {
 function createOperationParams(input: LspQueryInput, absolutePath: string): Record<string, unknown> {
   const uri = pathToFileURL(absolutePath).href;
   const position = {
-    line: input.line - 1,
-    character: input.character - 1,
+    line: (input.line ?? 1) - 1,
+    character: (input.character ?? 1) - 1,
   };
 
   switch (input.operation) {

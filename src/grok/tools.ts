@@ -276,8 +276,22 @@ export function createTools(
       inputSchema: z.object({
         operation: z.enum(LSP_TOOL_OPERATIONS).describe("The LSP operation to perform"),
         filePath: z.string().describe("The absolute or cwd-relative path to the target file"),
-        line: z.number().int().min(1).describe("The 1-based line number in the file"),
-        character: z.number().int().min(1).describe("The 1-based character offset in the file"),
+        line: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "The 1-based line number. Required for position-based operations (definition, references, hover, implementation, callHierarchy). Not needed for documentSymbol or workspaceSymbol.",
+          ),
+        character: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "The 1-based character offset. Required for position-based operations. Not needed for documentSymbol or workspaceSymbol.",
+          ),
         query: z.string().optional().describe("Optional symbol query. Used primarily with workspaceSymbol."),
       }),
       execute: async ({ operation, filePath, line, character, query }) => {
@@ -285,8 +299,8 @@ export function createTools(
           return await queryLsp(cwd(), {
             operation,
             filePath,
-            line,
-            character,
+            line: line ?? 1,
+            character: character ?? 1,
             query,
           });
         } catch (err: unknown) {

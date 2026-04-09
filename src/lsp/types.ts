@@ -104,8 +104,8 @@ export interface NormalizedLspSettings {
 export interface LspQueryInput {
   operation: LspToolOperation;
   filePath: string;
-  line: number;
-  character: number;
+  line?: number;
+  character?: number;
   query?: string;
 }
 
