@@ -1,4 +1,5 @@
 import type { ModelMessage } from "ai";
+import type { LspDiagnosticFile } from "../lsp/types";
 
 export interface FileDiff {
   filePath: string;
@@ -175,6 +176,7 @@ export interface ToolResult {
   media?: MediaAsset[];
   computer?: ComputerToolMetadata;
   verifyRecipe?: VerifyRecipe;
+  lspDiagnostics?: LspDiagnosticFile[];
 }
 
 export interface ToolCall {

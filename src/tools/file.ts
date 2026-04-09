@@ -1,6 +1,8 @@
 import { createTwoFilesPatch } from "diff";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
+import { summarizeDiagnostics, syncFileWithLsp } from "../lsp/runtime";
+import type { LspDiagnosticFile } from "../lsp/types";
 
 export interface FileDiff {
   filePath: string;
@@ -14,6 +16,7 @@ export interface FileResult {
   success: boolean;
   output: string;
   diff?: FileDiff;
+  lspDiagnostics?: LspDiagnosticFile[];
 }
 
 function resolvePath(filePath: string, cwd: string): string {
@@ -58,7 +61,7 @@ export function readFile(filePath: string, cwd: string, startLine?: number, endL
   }
 }
 
-export function writeFile(filePath: string, content: string, cwd: string): FileResult {
+export async function writeFile(filePath: string, content: string, cwd: string): Promise<FileResult> {
   try {
     const full = resolvePath(filePath, cwd);
     const before = existsSync(full) ? readFileSync(full, "utf-8") : "";
@@ -68,10 +71,13 @@ export function writeFile(filePath: string, content: string, cwd: string): FileR
 
     const diff = computeDiff(filePath, before, content);
     const verb = before === "" ? "Created" : "Updated";
+    const lspDiagnostics = await syncFileWithLsp(cwd, full, content, true, true).catch(() => [] as LspDiagnosticFile[]);
+    const lspSummary = summarizeDiagnostics(lspDiagnostics);
     return {
       success: true,
-      output: `${verb} ${filePath} (+${diff.additions} -${diff.removals})`,
+      output: `${verb} ${filePath} (+${diff.additions} -${diff.removals})${lspSummary ? `\n${lspSummary}` : ""}`,
       diff,
+      lspDiagnostics,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -79,7 +85,12 @@ export function writeFile(filePath: string, content: string, cwd: string): FileR
   }
 }
 
-export function editFile(filePath: string, oldString: string, newString: string, cwd: string): FileResult {
+export async function editFile(
+  filePath: string,
+  oldString: string,
+  newString: string,
+  cwd: string,
+): Promise<FileResult> {
   try {
     const full = resolvePath(filePath, cwd);
     if (!existsSync(full)) {
@@ -102,10 +113,13 @@ export function editFile(filePath: string, oldString: string, newString: string,
     writeFileSync(full, after, "utf-8");
 
     const diff = computeDiff(filePath, before, after);
+    const lspDiagnostics = await syncFileWithLsp(cwd, full, after, true, true).catch(() => [] as LspDiagnosticFile[]);
+    const lspSummary = summarizeDiagnostics(lspDiagnostics);
     return {
       success: true,
-      output: `Edited ${filePath} (+${diff.additions} -${diff.removals})`,
+      output: `Edited ${filePath} (+${diff.additions} -${diff.removals})${lspSummary ? `\n${lspSummary}` : ""}`,
       diff,
+      lspDiagnostics,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

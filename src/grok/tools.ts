@@ -1,6 +1,8 @@
 import { generateText, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { executePostToolFailureHooks, executePostToolHooks, executePreToolHooks } from "../hooks/index";
+import { isLspToolEnabled, queryLsp } from "../lsp/runtime";
+import { LSP_TOOL_OPERATIONS } from "../lsp/types";
 import type { BashTool } from "../tools/bash";
 import {
   computerClick,
@@ -266,6 +268,37 @@ export function createTools(
   };
 
   const tools: ToolSet = { ...base };
+
+  if (isLspToolEnabled(cwd())) {
+    tools.lsp = tool({
+      description:
+        "Experimental Language Server Protocol access for semantic code intelligence. Use for go-to-definition, references, hover, symbols, implementations, and call hierarchy when a matching LSP server is available.",
+      inputSchema: z.object({
+        operation: z.enum(LSP_TOOL_OPERATIONS).describe("The LSP operation to perform"),
+        filePath: z.string().describe("The absolute or cwd-relative path to the target file"),
+        line: z.number().int().min(1).describe("The 1-based line number in the file"),
+        character: z.number().int().min(1).describe("The 1-based character offset in the file"),
+        query: z.string().optional().describe("Optional symbol query. Used primarily with workspaceSymbol."),
+      }),
+      execute: async ({ operation, filePath, line, character, query }) => {
+        try {
+          return await queryLsp(cwd(), {
+            operation,
+            filePath,
+            line,
+            character,
+            query,
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return {
+            success: false,
+            output: `LSP query failed: ${msg}`,
+          };
+        }
+      },
+    });
+  }
 
   if (options.sendTelegramFile) {
     const sendFile = options.sendTelegramFile;

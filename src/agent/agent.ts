@@ -32,6 +32,7 @@ import type {
   TaskCreatedHookInput,
   UserPromptSubmitHookInput,
 } from "../hooks/types";
+import { shutdownWorkspaceLspManager } from "../lsp/runtime";
 import { buildMcpToolSet } from "../mcp/runtime";
 import {
   appendCompaction,
@@ -161,6 +162,7 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents with start_line/end_line for iterative reading. Use for examining code.
+- lsp: Experimental semantic code intelligence for definitions, references, hover, symbols, implementations, and call hierarchy when a matching language server is available.
 - write_file: Create new files or overwrite existing ones with full content.
 - edit_file: Replace a unique string in a file with new content. The old_string must be unique — include enough context lines.
 - bash: Execute shell commands. Set background=true for long-running processes (dev servers, watchers, builds). Returns a process ID immediately.
@@ -203,7 +205,7 @@ TOOLS:
 WORKFLOW:
 1. Understand the request
 2. Decide whether a sub-agent should handle the first investigation pass
-3. Use read_file and bash to explore the codebase directly when the task is small or tightly scoped
+3. Use read_file, lsp, and bash to explore the codebase directly when the task is small or tightly scoped
 4. Use bash with background=true for dev servers, watchers, or any long-running process — then continue working
 5. Use delegate for read-only work that can run in parallel, then continue productive work
 6. Use edit_file for targeted changes, write_file for new files or full rewrites
@@ -240,6 +242,7 @@ EXAMPLES:
 
 IMPORTANT:
 - Prefer edit_file for surgical changes to existing files — it shows a clean diff.
+- Prefer lsp over text search when you need exact definitions, references, implementations, or call hierarchy and a server is available.
 - Use write_file only for new files or when most of the file is changing.
 - Use read_file instead of cat/head/tail for reading files.
 - When the user asks for an automated recurring or one-time run, use the schedule tools instead of only describing the setup.
@@ -253,12 +256,14 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents for analysis.
+- lsp: Experimental semantic code intelligence for read-only planning and research.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify files.
 - task: Delegate a focused task to a sub-agent when deeper research or specialized analysis would help.
 - generate_plan: ALWAYS use this to present your plan. Creates an interactive UI with steps and questions.
 
 BEHAVIOR:
 - Explore the codebase first using read_file and bash to understand the current state
+- Prefer lsp for exact symbol navigation when a matching server is available
 - ALWAYS call generate_plan to present your plan — never just describe it in text
 - Include clear, ordered steps with affected file paths
 - Include questions when you need user input on approach, trade-offs, or preferences
@@ -272,12 +277,13 @@ ${ENVIRONMENT}
 
 TOOLS:
 - read_file: Read file contents for context.
+- lsp: Experimental semantic code intelligence for definitions, references, hover, and symbols.
 - bash: ONLY for searching (find, grep, ls) — NEVER modify.
 - task: Delegate a focused task to a sub-agent when specialized analysis or deeper investigation would help.
 
 BEHAVIOR:
 - Answer the user's question directly and thoroughly
-- Use tools to gather context when needed
+- Use tools to gather context when needed, preferring lsp for exact symbol questions when available
 - Provide code examples when helpful
 - NEVER create, modify, or delete files
 - Focus on explanation, not execution`,
@@ -507,7 +513,7 @@ function applyModelConstraints(system: string, modelId: string): string {
     "",
     "MODEL CONSTRAINTS:",
     "- The selected model does not support client-side CLI tool calls in this environment.",
-    "- Do not call bash, read_file, write_file, edit_file, task, delegate, delegation, or MCP tools.",
+    "- Do not call bash, read_file, lsp, write_file, edit_file, task, delegate, delegation, or MCP tools.",
     "- Answer directly using only the conversation context already provided.",
   ].join("\n");
 }
@@ -698,6 +704,10 @@ export class Agent {
   abort(): void {
     this.abortController?.abort();
     this.emitSubagentStatus(null);
+  }
+
+  async cleanup(): Promise<void> {
+    await Promise.allSettled([this.bash.cleanup(), shutdownWorkspaceLspManager(this.bash.getCwd())]);
   }
 
   respondToToolApproval(approvalId: string, approved: boolean): void {
@@ -2516,6 +2526,7 @@ function toToolResult(output: unknown): ToolResult {
       backgroundProcess?: ToolResult["backgroundProcess"];
       media?: ToolResult["media"];
       computer?: ToolResult["computer"];
+      lspDiagnostics?: ToolResult["lspDiagnostics"];
     };
     return {
       success: r.success,
@@ -2528,6 +2539,7 @@ function toToolResult(output: unknown): ToolResult {
       backgroundProcess: r.backgroundProcess,
       media: r.media,
       computer: r.computer,
+      lspDiagnostics: r.lspDiagnostics,
     };
   }
   return { success: true, output: String(output) };
@@ -2536,6 +2548,7 @@ function toToolResult(output: unknown): ToolResult {
 function formatSubagentActivity(toolName: string, args?: unknown): string {
   const parsed = parseToolArgs(args);
   if (toolName === "read_file") return `Read ${parsed.path || "file"}`;
+  if (toolName === "lsp") return `LSP ${parsed.operation || "query"} ${parsed.filePath || ""}`.trim();
   if (toolName === "write_file") return `Write ${parsed.path || "file"}`;
   if (toolName === "edit_file") return `Edit ${parsed.path || "file"}`;
   if (toolName === "search_web") return `Web search "${truncate(parsed.query || "", 50)}"`;
