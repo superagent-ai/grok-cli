@@ -66,6 +66,7 @@ import type {
 import { loadCustomInstructions } from "../utils/instructions";
 import {
   type CustomSubagentConfig,
+  getCurrentModel,
   loadMcpServers,
   loadValidSubAgents,
   type SandboxMode,
@@ -557,7 +558,11 @@ export class Agent {
       sandboxSettings: options.sandboxSettings,
     });
     this.delegations = new DelegationManager(() => this.bash.getCwd());
-    this.modelId = normalizeModelId(model || DEFAULT_MODEL);
+
+    // Default to "agent" mode for model selection if not yet set
+    const initialMode: AgentMode = "agent";
+    // Use mode-specific model if available, otherwise fall back to provided model or default
+    this.modelId = normalizeModelId(model || getCurrentModel(initialMode));
     this.schedules = new ScheduleManager(
       () => this.bash.getCwd(),
       () => this.modelId,

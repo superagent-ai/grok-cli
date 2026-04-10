@@ -10,7 +10,7 @@ import type {
   LspSettings,
   NormalizedLspSettings,
 } from "../lsp/types";
-import type { ReasoningEffort } from "../types/index";
+import type { AgentMode, ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type TelegramAudioInputEngine = "whisper.cpp";
@@ -185,6 +185,7 @@ export interface UserSettings {
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;
   payments?: PaymentSettings;
+  modeModels?: Partial<Record<AgentMode, string>>;
 }
 
 export interface ProjectSettings {
@@ -329,12 +330,39 @@ export function getBaseURL(): string {
   return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
 }
 
-export function getCurrentModel(): string {
+export function getCurrentModel(mode?: AgentMode): string {
   if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
+
+  // If a mode is specified, check for mode-specific model first
+  if (mode) {
+    const user = loadUserSettings();
+    const modeModel = user.modeModels?.[mode];
+    if (modeModel) {
+      return normalizeModelId(modeModel);
+    }
+  }
+
   const project = loadProjectSettings();
   if (project.model) return normalizeModelId(project.model);
   const user = loadUserSettings();
   return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
+}
+
+/**
+ * Returns the configured model for a specific mode (agent/plan/ask).
+ * Falls back to getCurrentModel() if no mode-specific model is configured.
+ */
+export function getModelForMode(mode: AgentMode): string {
+  if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
+
+  const user = loadUserSettings();
+  const modeModel = user.modeModels?.[mode];
+
+  if (modeModel) {
+    return normalizeModelId(modeModel);
+  }
+
+  return getCurrentModel();
 }
 
 export function normalizeSandboxMode(value: unknown): SandboxMode {
