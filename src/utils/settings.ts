@@ -10,7 +10,7 @@ import type {
   LspSettings,
   NormalizedLspSettings,
 } from "../lsp/types";
-import type { ReasoningEffort } from "../types/index";
+import type { AgentMode, ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type TelegramAudioInputEngine = "whisper.cpp";
@@ -185,6 +185,7 @@ export interface UserSettings {
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;
   payments?: PaymentSettings;
+  modeModels?: Partial<Record<AgentMode, string>>;
 }
 
 export interface ProjectSettings {
@@ -329,12 +330,35 @@ export function getBaseURL(): string {
   return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
 }
 
-export function getCurrentModel(): string {
+export function getCurrentModel(mode?: AgentMode): string {
   if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
+
   const project = loadProjectSettings();
   if (project.model) return normalizeModelId(project.model);
+
+  if (mode) {
+    const user = loadUserSettings();
+    const modeModel = user.modeModels?.[mode];
+    if (modeModel) {
+      return normalizeModelId(modeModel);
+    }
+  }
+
   const user = loadUserSettings();
   return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
+}
+
+/**
+ * Returns the explicitly configured model for a mode, or undefined if none is set.
+ * Only GROK_MODEL env var suppresses this (absolute override). Project-level model
+ * does NOT suppress — modeModels is an explicit per-mode config that applies on mode switch.
+ */
+export function getModeSpecificModel(mode: AgentMode): string | undefined {
+  if (process.env.GROK_MODEL) return undefined;
+
+  const user = loadUserSettings();
+  const modeModel = user.modeModels?.[mode];
+  return modeModel ? normalizeModelId(modeModel) : undefined;
 }
 
 export function normalizeSandboxMode(value: unknown): SandboxMode {

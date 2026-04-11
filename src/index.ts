@@ -19,7 +19,6 @@ import { runScriptManagedUninstall } from "./utils/install-manager";
 import {
   getApiKey,
   getBaseURL,
-  getCurrentModel,
   getCurrentSandboxMode,
   getCurrentSandboxSettings,
   loadPaymentSettings,
@@ -53,7 +52,7 @@ process.on("unhandledRejection", (reason) => {
 async function startInteractive(
   apiKey: string | undefined,
   baseURL: string,
-  model: string,
+  model: string | undefined,
   maxToolRounds: number,
   batchApi: boolean,
   sandboxMode: SandboxMode,
@@ -89,7 +88,7 @@ async function startInteractive(
       startupConfig: {
         apiKey,
         baseURL,
-        model,
+        model: agent.getModel(),
         maxToolRounds,
         sandboxMode,
         sandboxSettings,
@@ -105,7 +104,7 @@ async function runHeadless(
   prompt: string,
   apiKey: string,
   baseURL: string,
-  model: string,
+  model: string | undefined,
   maxToolRounds: number,
   batchApi: boolean,
   sandboxMode: SandboxMode,
@@ -191,7 +190,8 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
     }
 
     const baseURL = stringOption(options.baseUrl) || getBaseURL();
-    const model = normalizeModelId(stringOption(options.model) || delegation.model || getCurrentModel());
+    const explicitModel = stringOption(options.model) || delegation.model;
+    const model = explicitModel ? normalizeModelId(explicitModel) : undefined;
     const maxToolRounds =
       parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
@@ -232,7 +232,8 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
 function resolveConfig(options: CliOptions) {
   const apiKey = stringOption(options.apiKey) || getApiKey();
   const baseURL = stringOption(options.baseUrl) || getBaseURL();
-  const model = normalizeModelId(stringOption(options.model) || getCurrentModel());
+  const explicitModel = stringOption(options.model);
+  const model = explicitModel ? normalizeModelId(explicitModel) : undefined;
   const maxToolRounds = parseInt(stringOption(options.maxToolRounds) || "400", 10) || 400;
   const sandboxMode = resolveCliSandboxMode(options.sandbox) || getCurrentSandboxMode();
 
