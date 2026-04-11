@@ -801,6 +801,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       agent.setMode(m);
       setModeState(m);
+      setModel(agent.getModel());
     },
     [agent, mode, activePlan],
   );
@@ -3834,9 +3835,9 @@ function PromptBox({
           <text fg={t.text}>{modelInfo?.name || model}</text>
           {contextStats ? <ContextMeter t={t} stats={contextStats} /> : null}
         </box>
-        <box flexDirection="row" gap={3} alignItems="center" height={1}>
+        <box flexDirection="row" gap={1} alignItems="center" height={1}>
           {isProcessing ? (
-            <box flexDirection="row" gap={3}>
+            <box flexDirection="row" gap={1}>
               <text fg={t.text}>
                 {"enter "}
                 <span style={{ fg: t.textMuted }}>{"queue"}</span>
@@ -3847,7 +3848,7 @@ function PromptBox({
               </text>
             </box>
           ) : showSuggestions ? (
-            <box flexDirection="row" gap={3}>
+            <box flexDirection="row" gap={1}>
               <text fg={t.text}>
                 {"tab "}
                 <span style={{ fg: t.textMuted }}>{"accept"}</span>

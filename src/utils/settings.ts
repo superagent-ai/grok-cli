@@ -333,7 +333,9 @@ export function getBaseURL(): string {
 export function getCurrentModel(mode?: AgentMode): string {
   if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
 
-  // If a mode is specified, check for mode-specific model first
+  const project = loadProjectSettings();
+  if (project.model) return normalizeModelId(project.model);
+
   if (mode) {
     const user = loadUserSettings();
     const modeModel = user.modeModels?.[mode];
@@ -342,27 +344,21 @@ export function getCurrentModel(mode?: AgentMode): string {
     }
   }
 
-  const project = loadProjectSettings();
-  if (project.model) return normalizeModelId(project.model);
   const user = loadUserSettings();
   return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
 }
 
 /**
- * Returns the configured model for a specific mode (agent/plan/ask).
- * Falls back to getCurrentModel() if no mode-specific model is configured.
+ * Returns the explicitly configured model for a mode, or undefined if none is set.
+ * Only GROK_MODEL env var suppresses this (absolute override). Project-level model
+ * does NOT suppress — modeModels is an explicit per-mode config that applies on mode switch.
  */
-export function getModelForMode(mode: AgentMode): string {
-  if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
+export function getModeSpecificModel(mode: AgentMode): string | undefined {
+  if (process.env.GROK_MODEL) return undefined;
 
   const user = loadUserSettings();
   const modeModel = user.modeModels?.[mode];
-
-  if (modeModel) {
-    return normalizeModelId(modeModel);
-  }
-
-  return getCurrentModel();
+  return modeModel ? normalizeModelId(modeModel) : undefined;
 }
 
 export function normalizeSandboxMode(value: unknown): SandboxMode {
