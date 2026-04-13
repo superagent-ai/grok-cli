@@ -15,6 +15,7 @@ function toTransport(server: McpServerConfig) {
       args: server.args,
       env: server.env,
       cwd: server.cwd,
+      stderr: "pipe",
     });
   }
 
