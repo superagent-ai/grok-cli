@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5-rc5] - 2026-04-15
+
+### Fixed
+- Pipe MCP stdio server stderr to prevent logs bleeding into TUI (#259)
+
+## [1.1.5-rc4] - 2026-04-11
+
+### Added
+- Per-mode default models via `modeModels` in user settings (#258)
+
+## [1.1.5-rc3] - 2026-04-09
+
+### Added
+- LSP support with server catalog and diagnostics (#255)
+
+## [1.1.5-rc2] - 2026-04-07
+
+### Added
+- x402 payment protocol support via AgentKit (#252)
+- Brin.sh security scanning for x402 payments (#253)
+
+## [1.1.5-rc1] - 2026-04-05
+
+### Added
+- Programmable hooks system with 17 lifecycle events (#248)
+
+## [1.1.4] - 2026-04-05
+
+### Added
+- Binary release workflow, install script, and self-management CLI commands (#241)
+- Auto-open generated images and videos in the default OS viewer (#244)
+
+### Changed
+- Verify command (#240)
+
+### Fixed
+- Unbound `tmp_dir` variable error in install script (#242) (#243)
+
 ## [1.1.3] - 2026-04-01
 
 ### Added
