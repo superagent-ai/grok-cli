@@ -132,7 +132,8 @@ export async function executeGrep(params: GrepParams, cwd: string): Promise<Tool
 
     const matches = parseMatches(stdout);
     if (matches.length === 0) {
-      return { success: true, output: "No matches found." };
+      const msg = code === 2 ? "No matches found.\n(Some paths were inaccessible and skipped)" : "No matches found.";
+      return { success: true, output: msg };
     }
 
     const uniqueFiles = [...new Set(matches.map((m) => m.path.text))];
