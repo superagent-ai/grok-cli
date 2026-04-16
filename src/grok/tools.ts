@@ -19,6 +19,7 @@ import {
   computerWait,
 } from "../tools/computer";
 import { editFile, readFile, writeFile } from "../tools/file";
+import { executeGrep } from "../tools/grep";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadPaymentSettings, loadValidSubAgents } from "../utils/settings";
@@ -179,6 +180,22 @@ export function createTools(
       }),
       execute: async ({ path, start_line, end_line }) => {
         return readFile(path, cwd(), start_line, end_line);
+      },
+    }),
+
+    grep: tool({
+      description:
+        'Fast content search tool that works with any codebase size. Searches file contents using regular expressions. Supports full regex syntax (e.g. "log.*Error", "function\\s+\\w+"). Filter files by pattern with the include parameter (e.g. "*.js", "*.{ts,tsx}"). Returns matching file paths and line numbers sorted by modification time. Use this tool when you need to find files containing specific patterns. If you need to count matches within files, use bash with `rg` directly.',
+      inputSchema: z.object({
+        pattern: z.string().describe("The regex pattern to search for in file contents"),
+        path: z
+          .string()
+          .optional()
+          .describe("The directory or file to search in. Defaults to the current working directory."),
+        include: z.string().optional().describe('File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")'),
+      }),
+      execute: async ({ pattern, path, include }) => {
+        return executeGrep({ pattern, path, include }, cwd());
       },
     }),
 

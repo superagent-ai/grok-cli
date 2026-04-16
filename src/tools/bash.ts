@@ -396,9 +396,9 @@ export class BashTool {
       const hostBrowserNote = s.hostBrowserCommandsOnHost
         ? " Commands that invoke agent-browser run on the host instead of inside Shuru so they can interact with forwarded localhost services."
         : "";
-      return `Execute a bash command inside a Shuru sandbox. Use for searching (grep, rg, find), git inspection, build tools, test runners, and other shell commands that should stay isolated. The current workspace is mounted inside the sandbox at /workspace, ${netStatus}, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits.${hostBrowserNote} Set background=true for long-running processes like dev servers or watchers.`;
+      return `Execute a bash command inside a Shuru sandbox. Use for find, ls, git inspection, build tools, test runners, and other shell commands that should stay isolated. For content search, prefer the dedicated grep tool. The current workspace is mounted inside the sandbox at /workspace, ${netStatus}, and shell-side workspace file changes do not persist back to the host in this version, so prefer the dedicated file tools for durable edits.${hostBrowserNote} Set background=true for long-running processes like dev servers or watchers.`;
     }
-    return "Execute a bash command. Use for searching (grep, rg, find), git, build tools, package managers, running tests, and any other shell command. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.";
+    return "Execute a bash command. Use for find, ls, git, build tools, package managers, running tests, and any other shell command. For content search, prefer the dedicated grep tool. Set background=true for long-running processes like dev servers, watchers, or anything that should keep running while you continue working. For file read/write/edit, prefer the dedicated file tools instead.";
   }
 
   private prepareCommand(command: string): { ok: true; command: string } | { ok: false; error: string } {
