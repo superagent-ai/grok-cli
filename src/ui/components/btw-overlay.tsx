@@ -9,15 +9,15 @@ export interface BtwState {
   error?: string;
 }
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
 
-function Spinner() {
+function LoadingSpinner() {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setFrame((n) => (n + 1) % SPINNER_FRAMES.length), 120);
+    const id = setInterval(() => setFrame((n) => (n + 1) % LOADING_SPINNER_FRAMES.length), 120);
     return () => clearInterval(id);
   }, []);
-  return <>{SPINNER_FRAMES[frame]}</>;
+  return <>{LOADING_SPINNER_FRAMES[frame]}</>;
 }
 
 export function BtwOverlay({ state, theme: t }: { state: BtwState; theme: Theme }) {
@@ -42,7 +42,7 @@ export function BtwOverlay({ state, theme: t }: { state: BtwState; theme: Theme 
       {state.status === "loading" && (
         <text>
           <span style={{ fg: t.textMuted }}>
-            <Spinner />
+            <LoadingSpinner />
           </span>
           <span style={{ fg: t.textMuted }}> Answering…</span>
         </text>
