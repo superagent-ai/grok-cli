@@ -68,6 +68,7 @@ import {
   SubagentEditorModal,
   SubagentsBrowserModal,
 } from "./agents-modal";
+import { BtwOverlay, type BtwState } from "./components/btw-overlay.js";
 import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
 import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
 import { Markdown } from "./markdown";
@@ -311,6 +312,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "review", label: "review", description: "Review recent changes" },
   { id: "verify", label: "verify", description: "Run local verification" },
   { id: "skills", label: "skills", description: "Manage skills" },
+  { id: "btw", label: "btw", description: "Ask a side question without interrupting" },
   { id: "update", label: "update", description: "Update grok to the latest version" },
 ];
 
@@ -370,6 +372,7 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/commit-push",
   "/commit-pr",
   "/wallet",
+  "/btw",
 ]);
 
 interface SandboxRow {
@@ -656,6 +659,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [slashSearchQuery, setSlashSearchQuery] = useState("");
+  const [btwState, setBtwState] = useState<BtwState | null>(null);
+  const btwAbortRef = useRef<AbortController | null>(null);
+  const btwStateRef = useRef<BtwState | null>(null);
   const [reasoningEffortByModel, setReasoningEffortByModel] = useState<Record<string, ReasoningEffort>>(() =>
     Object.fromEntries(
       Object.entries(loadUserSettings().reasoningEffortByModel ?? {}).map(([modelId, effort]) => [
@@ -1956,6 +1962,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const interruptActiveRun = useCallback(
     (key?: KeyEvent) => {
+      if (btwStateRef.current) {
+        btwAbortRef.current?.abort();
+        btwAbortRef.current = null;
+        btwStateRef.current = null;
+        setBtwState(null);
+        key?.preventDefault();
+        key?.stopPropagation();
+        return true;
+      }
       if (!isProcessingRef.current) return false;
       key?.preventDefault();
       key?.stopPropagation();
@@ -2255,6 +2270,40 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         processMessage(COMMIT_PR_PROMPT);
         return true;
       }
+      if (c.startsWith("/btw ") || c === "/btw") {
+        const question = cmd.trim().slice(4).trim();
+        if (!question) {
+          setMessages((prev) => [
+            ...prev,
+            buildAssistantEntry("Usage: /btw <question>\nExample: /btw what does useEffect cleanup do?"),
+          ]);
+          return true;
+        }
+        const ac = new AbortController();
+        btwAbortRef.current = ac;
+        const loadingState: BtwState = { status: "loading", question };
+        btwStateRef.current = loadingState;
+        setBtwState(loadingState);
+        agent
+          .askSideQuestion(question, ac.signal)
+          .then((result) => {
+            if (ac.signal.aborted) return;
+            const doneState: BtwState = { status: "done", question, answer: result.response };
+            btwStateRef.current = doneState;
+            setBtwState(doneState);
+          })
+          .catch((err) => {
+            if (ac.signal.aborted) return;
+            const errState: BtwState = {
+              status: "error",
+              question,
+              error: err instanceof Error ? err.message : String(err),
+            };
+            btwStateRef.current = errState;
+            setBtwState(errState);
+          });
+        return true;
+      }
       const customSubagentCommand = parseCustomSubagentSlashCommand(cmd, subAgents);
       if (customSubagentCommand) {
         if (!customSubagentCommand.prompt) {
@@ -2352,6 +2401,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "commit-pr":
           processMessage(COMMIT_PR_PROMPT);
+          break;
+        case "btw":
+          inputRef.current?.clear();
+          inputRef.current?.insertText("/btw ");
           break;
         case "update":
           setIsUpdating(true);
@@ -2451,8 +2504,21 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [pqs, isSinglePlan, submitPlanAnswers],
   );
 
+  const dismissBtw = useCallback(() => {
+    btwAbortRef.current?.abort();
+    btwAbortRef.current = null;
+    btwStateRef.current = null;
+    setBtwState(null);
+  }, []);
+
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (btwState) {
+        if (isEscapeKey(key) || key.name === "return") {
+          dismissBtw();
+        }
+        return;
+      }
       if (showPlanPanel) {
         const q = planQuestions[pqs.tab];
 
@@ -3168,11 +3234,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       agentsEditorField,
       agentsModalIndex,
       beginTelegramFromConnect,
+      btwState,
       closeApiKeyModal,
       connectModalIndex,
       cycleMode,
       cycleMcpEditorTransport,
       deleteSavedMcp,
+      dismissBtw,
       dismissPlan,
       editingSubagent,
       editSavedMcp,
@@ -3381,6 +3449,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
               {showPlanPanel && <PlanQuestionsPanel t={t} questions={planQuestions} state={pqs} />}
               {pendingPaymentApproval && <PaymentApprovalPanel t={t} payment={pendingPaymentApproval} />}
             </scrollbox>
+            {btwState && <BtwOverlay state={btwState} theme={t} />}
             {/* Prompt */}
             <box flexShrink={0}>
               <PromptBox
