@@ -73,6 +73,7 @@ import {
   type SandboxMode,
   type SandboxSettings,
 } from "../utils/settings";
+import { runSideQuestion, type SideQuestionResult } from "../utils/side-question";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
 import { buildVerifyDetectPrompt, normalizeVerifyRecipe, prepareVerifySandbox } from "../verify/entrypoint";
 import { runVerifyOrchestration } from "../verify/orchestrator";
@@ -712,6 +713,37 @@ export class Agent {
       this.session = this.sessionStore.getRequiredSession(this.session.id);
     }
     return generated.title;
+  }
+
+  async askSideQuestion(question: string, signal?: AbortSignal): Promise<SideQuestionResult> {
+    if (!this.provider) {
+      return { response: "No API key configured." };
+    }
+
+    const contextParts: string[] = [];
+    let charBudget = 2000;
+    for (let i = this.messages.length - 1; i >= 0 && charBudget > 0; i--) {
+      const msg = this.messages[i];
+      if (msg.role !== "user" && msg.role !== "assistant") continue;
+      const text =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content
+                .filter((p: { type: string }) => p.type === "text")
+                .map((p: { type: string; text?: string }) => p.text ?? "")
+                .join("")
+            : "";
+      if (!text) continue;
+      const snippet = text.length > 400 ? `${text.slice(0, 400)}…` : text;
+      contextParts.unshift(`[${msg.role}]: ${snippet}`);
+      charBudget -= snippet.length;
+    }
+    const conversationContext = contextParts.join("\n\n");
+
+    const result = await runSideQuestion(question, this.provider, this.modelId, conversationContext, signal);
+    this.recordUsage(result.usage, "other");
+    return result;
   }
 
   abort(): void {
