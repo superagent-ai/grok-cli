@@ -136,15 +136,17 @@ export async function executeGrep(params: GrepParams, cwd: string): Promise<Tool
       return { success: true, output: msg };
     }
 
-    const uniqueFiles = [...new Set(matches.map((m) => m.path.text))];
-    const mtimes = await getFileMtimes(uniqueFiles, searchCwd);
+    const rebase = (file: string) => path.relative(cwd, path.resolve(searchCwd, file));
+
+    const uniqueFiles = [...new Set(matches.map((m) => rebase(m.path.text)))];
+    const mtimes = await getFileMtimes(uniqueFiles, cwd);
 
     const rows = matches
       .map((m) => ({
-        file: m.path.text,
+        file: rebase(m.path.text),
         line: m.line_number,
         text: m.lines.text.replace(/\n$/, ""),
-        mtime: mtimes.get(m.path.text) ?? 0,
+        mtime: mtimes.get(rebase(m.path.text)) ?? 0,
       }))
       .sort((a, b) => b.mtime - a.mtime);
 
