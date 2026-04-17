@@ -395,6 +395,46 @@ The agent inspects your project, figures out how to build and run it, spins up a
 
 ---
 
+## Network behavior
+
+Grok connects to a small, well-defined set of HTTPS endpoints. This section documents what hits the network and when, so you know what to expect — especially useful for network-restricted environments, compliance reviews, or running Grok in sensitive repos.
+
+### Always on
+
+| Host | Purpose | Source |
+| --- | --- | --- |
+| `api.x.ai` | xAI Grok API — the model provider. This is where your prompts and model responses travel. | `src/grok/client.ts` |
+| `api.github.com` | Version resolution for `grok update` and release-manifest checks. | `src/utils/install-manager.ts` |
+
+### Feature-gated (only when the feature is used)
+
+| Host | Triggered by | Source |
+| --- | --- | --- |
+| `api.telegram.org` | Telegram remote-control pairing, headless Telegram bridge (`grok telegram-bridge`), voice/audio messages | `src/telegram/` |
+| `api.brin.sh` | **Autonomous agent payments (x402 protocol)** — scores the payee/target domain before approving a payment operation. Verdicts: `safe` / `caution` / `suspicious` / `dangerous`. Provided by [brin.sh](https://brin.sh), a first-party threat-detection service from the Grok team. Does not see your prompts or code — only the URL being checked. | `src/payments/brin.ts` |
+| `ai-gateway.vercel.sh`, `ai-sdk.dev` | AI Gateway routing when configured as an alternative to direct xAI access | `@ai-sdk/*` dependencies |
+| `mainnet.base.org`, `basescan.org`, `api.basescan.org`, `sepolia.base.org` | Coinbase AgentKit tools — Ethereum/Base wallet operations. Only reached when the agent invokes wallet/on-chain functions. | `@coinbase/agentkit` |
+| `abitype.dev`, `openchain.xyz`, `4byte.sourcify.dev`, `docs.soliditylang.org` | Solidity ABI lookups and contract decoding (Coinbase AgentKit). Only reached when decoding on-chain data. | `@coinbase/agentkit` |
+| `ipfs.io`, `arweave.net` | Decentralized storage for generated media (images, videos) via the built-in `generate_image` / `generate_video` tools | agent tools |
+| `fulcio.sigstore.dev` | Sigstore verification for signed release artifacts | `@npmcli/arborist` |
+| `api.github.com/repos/*`, `raw.githubusercontent.com` | Skill installs, release artifact downloads, MCP server fetches | `@modelcontextprotocol/sdk` and skill subsystem |
+
+### What is not sent
+
+- **No analytics / telemetry pings** in the default configuration. Grok does not emit usage metrics, crash reports, or feature-flag checks to any third party.
+- **Your prompts and code do not leave the provider channel** (`api.x.ai`, or your configured `GROK_BASE_URL`). The helper endpoints above exchange only the minimum data needed for their feature (a URL for brin, a tag name for GitHub, a message for Telegram).
+
+### Network-restricted environments
+
+If you operate behind an allowlist, the minimum viable set is:
+
+- `api.x.ai` (provider)
+- `api.github.com` (if `grok update` is used)
+
+Everything else is feature-gated — only allowlist the hosts above that correspond to features you actually use. The [Sandbox](#sandbox) mode additionally restricts outbound connections at the microVM level (see `--allow-host` and `--allow-net` flags).
+
+---
+
 ## Development
 
 From a clone:
