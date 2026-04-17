@@ -74,12 +74,17 @@ export async function transcribeTelegramAudioMessage(opts: {
     }
 
     const extension = inferTelegramAudioExtension(opts.source, file.file_path);
-    const audioPath = path.join(tempDir, `input${extension}`);
+    const fileName = buildTelegramAudioFileName(opts.source, extension);
+    const audioPath = path.join(tempDir, fileName);
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(audioPath, bytes, { mode: 0o600 });
 
     const engine = createTelegramAudioInputEngine(opts.telegramSettings);
-    const result = await engine.transcribe({ audioPath });
+    const result = await engine.transcribe({
+      audioPath,
+      fileName,
+      mimeType: opts.source.mimeType,
+    });
 
     return {
       promptText: result.text,
@@ -88,6 +93,13 @@ export async function transcribeTelegramAudioMessage(opts: {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+function buildTelegramAudioFileName(source: TelegramAudioSource, extension: string): string {
+  if (source.fileName) {
+    return source.fileName;
+  }
+  return `input${extension}`;
 }
 
 function inferTelegramAudioExtension(source: TelegramAudioSource, filePath?: string): string {
