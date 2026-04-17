@@ -225,6 +225,23 @@ maybe_update_path() {
   add_to_path "$config_file" "$path_command"
 }
 
+warn_if_prerelease() {
+  local version="$1"
+  case "$version" in
+    *-rc*|*-alpha*|*-beta*|*-pre*)
+      cat >&2 <<EOF
+
+Warning: Installing pre-release version ${version}.
+Pre-releases may be unstable. For the latest stable release, re-run with:
+  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- --version STABLE_VERSION
+
+See https://github.com/${REPO}/releases for available versions.
+
+EOF
+      ;;
+  esac
+}
+
 resolve_release_version() {
   if [[ -n "$requested_version" ]]; then
     RESOLVED_VERSION="${requested_version}"
@@ -242,6 +259,7 @@ resolve_release_version() {
     exit 1
   fi
   RELEASE_BASE_URL="https://github.com/${REPO}/releases/latest/download"
+  warn_if_prerelease "$RESOLVED_VERSION"
 }
 
 install_downloaded_release() {
