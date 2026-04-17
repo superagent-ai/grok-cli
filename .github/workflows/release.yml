@@ -31,6 +31,11 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
 
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +66,12 @@ jobs:
           Copy-Item "${{ matrix.build_output }}" "${{ matrix.asset_name }}"
           $hash = (Get-FileHash "${{ matrix.asset_name }}" -Algorithm SHA256).Hash.ToLower()
           "$hash  ${{ matrix.asset_name }}" | Out-File -Encoding ascii "${{ matrix.asset_name }}.sha256"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/${{ matrix.asset_name }}
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
