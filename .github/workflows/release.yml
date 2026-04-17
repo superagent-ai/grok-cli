@@ -102,6 +102,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-rc') || contains(env.RELEASE_TAG, '-alpha') || contains(env.RELEASE_TAG, '-beta') || contains(env.RELEASE_TAG, '-pre') }}
           files: |
             release-assets/**/grok-linux-x64
             release-assets/**/grok-darwin-arm64
