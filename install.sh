@@ -233,7 +233,7 @@ warn_if_prerelease() {
 
 Warning: Installing pre-release version ${version}.
 Pre-releases may be unstable. For the latest stable release, re-run with:
-  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- --version <stable-version>
+  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- --version STABLE_VERSION
 
 See https://github.com/${REPO}/releases for available versions.
 
