@@ -74,12 +74,20 @@ export async function transcribeTelegramAudioMessage(opts: {
     }
 
     const extension = inferTelegramAudioExtension(opts.source, file.file_path);
-    const audioPath = path.join(tempDir, `input${extension}`);
+    const fileName = buildTelegramAudioFileName(opts.source, extension);
+    const audioPath = path.join(tempDir, fileName);
+    if (!isPathInside(audioPath, tempDir)) {
+      throw new Error("Refusing to write Telegram audio outside the temp directory.");
+    }
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(audioPath, bytes, { mode: 0o600 });
 
     const engine = createTelegramAudioInputEngine(opts.telegramSettings);
-    const result = await engine.transcribe({ audioPath });
+    const result = await engine.transcribe({
+      audioPath,
+      fileName,
+      mimeType: opts.source.mimeType,
+    });
 
     return {
       promptText: result.text,
@@ -88,6 +96,28 @@ export async function transcribeTelegramAudioMessage(opts: {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+export function buildTelegramAudioFileName(source: TelegramAudioSource, extension: string): string {
+  const fallback = `input${extension}`;
+  if (!source.fileName) {
+    return fallback;
+  }
+
+  const sanitized = source.fileName.replace(/\0/g, "").split(/[\\/]/u).pop()?.trim();
+
+  if (!sanitized || sanitized === "." || sanitized === "..") {
+    return fallback;
+  }
+
+  return sanitized;
+}
+
+function isPathInside(target: string, parent: string): boolean {
+  const resolvedParent = path.resolve(parent);
+  const resolvedTarget = path.resolve(target);
+  const relative = path.relative(resolvedParent, resolvedTarget);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 function inferTelegramAudioExtension(source: TelegramAudioSource, filePath?: string): string {

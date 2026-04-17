@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Switched Telegram voice/audio transcription from whisper.cpp to Grok STT (`/v1/stt`); removed `whisper-cli`, `ffmpeg`, and model-download requirements (#265)
+
 ## [1.1.5-rc5] - 2026-04-15
 
 ### Fixed

@@ -252,35 +252,11 @@ Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`,
 
 ### Voice & audio messages
 
-Send a voice note or audio attachment in Telegram and Grok will transcribe it locally with **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)** before passing the text to the agent. No cloud STT service is involved — everything runs on your machine.
+Send a voice note or audio attachment in Telegram and Grok will transcribe it with the **Grok Speech-to-Text API** (`POST https://api.x.ai/v1/stt`) before passing the text to the agent. The endpoint accepts Telegram's OGG/Opus voice notes and common audio containers (MP3, WAV, M4A, FLAC, AAC) directly — no local model download, `whisper-cli`, or `ffmpeg` required.
 
 #### Prerequisites
 
-
-| Dependency      | Why                                                             | Install (macOS)            |
-| --------------- | --------------------------------------------------------------- | -------------------------- |
-| **whisper-cli** | Runs the actual speech-to-text inference                        | `brew install whisper-cpp` |
-| **ffmpeg**      | Converts Telegram voice notes (OGG/Opus) to WAV for whisper.cpp | `brew install ffmpeg`      |
-
-
-After installing, verify both are available:
-
-```bash
-whisper-cli -h
-ffmpeg -version
-```
-
-#### Download a Whisper model
-
-Grok CLI auto-downloads the configured model on first use, but you can pre-download it:
-
-```bash
-mkdir -p ~/.grok/models/stt/whisper.cpp
-curl -L https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin \
-  -o ~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin
-```
-
-Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB), `small.en` (466 MB).
+- A valid `GROK_API_KEY` (the same key used for the agent). Transcription reuses the CLI's `apiKey` / `baseURL` resolution, so if the agent can reach xAI, transcription will too.
 
 #### Configure in `~/.grok/user-settings.json`
 
@@ -290,10 +266,6 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
     "botToken": "YOUR_BOT_TOKEN",
     "audioInput": {
       "enabled": true,
-      "binaryPath": "/opt/homebrew/bin/whisper-cli",
-      "model": "tiny.en",
-      "modelPath": "~/.grok/models/stt/whisper.cpp/ggml-tiny.en.bin",
-      "autoDownloadModel": true,
       "language": "en"
     }
   }
@@ -301,14 +273,10 @@ Available models (trade size for accuracy): `tiny.en` (75 MB), `base.en` (142 MB
 ```
 
 
-| Setting             | Default           | Description                                                              |
-| ------------------- | ----------------- | ------------------------------------------------------------------------ |
-| `enabled`           | `true`            | Set to `false` to ignore voice/audio messages entirely.                  |
-| `binaryPath`        | `whisper-cli`     | Absolute path or command name for the whisper.cpp CLI binary.            |
-| `model`             | `tiny.en`         | Model alias used for auto-download resolution.                           |
-| `modelPath`         | *(auto-resolved)* | Explicit path to a `.bin` model file. Overrides `model` + auto-download. |
-| `autoDownloadModel` | `true`            | Download the model into `~/.grok/models/stt/whisper.cpp` on first use.   |
-| `language`          | `en`              | Whisper language code passed to the CLI.                                 |
+| Setting    | Default | Description                                                                                                           |
+| ---------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `enabled`  | `true`  | Set to `false` to ignore voice/audio messages entirely.                                                               |
+| `language` | `en`    | Language code forwarded to `/v1/stt`. Enables Inverse Text Normalization (numbers, currencies, units → written form). |
 
 
 Optional headless flow when you do not want the TUI open:
