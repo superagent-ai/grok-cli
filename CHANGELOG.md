@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5-rc7] - 2026-04-16
+
+### Added
+- Dedicated grep tool powered by npm ripgrep WASM (#263)
+- `/btw` command for side questions (#264)
+
 ## [1.1.5-rc5] - 2026-04-15
 
 ### Fixed
