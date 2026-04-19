@@ -152,3 +152,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-rc1] - 2026-03-20
 
 Initial release.
+
+[Unreleased]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.5...HEAD
+[1.1.5-rc5]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.5-rc4...grok-dev@1.1.5-rc5
+[1.1.5-rc4]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.5-rc3...grok-dev@1.1.5-rc4
+[1.1.5-rc3]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.5-rc2...grok-dev@1.1.5-rc3
+[1.1.5-rc2]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.5-rc1...grok-dev@1.1.5-rc2
+[1.1.5-rc1]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.4...grok-dev@1.1.5-rc1
+[1.1.4]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.3...grok-dev@1.1.4
+[1.1.3]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.2...grok-dev@1.1.3
+[1.1.2]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.1...grok-dev@1.1.2
+[1.1.1]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.1.0...grok-dev@1.1.1
+[1.1.0]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc7...grok-dev@1.1.0
+[1.0.0-rc7]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc6...grok-dev@1.0.0-rc7
+[1.0.0-rc6]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc5...grok-dev@1.0.0-rc6
+[1.0.0-rc5]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc4...grok-dev@1.0.0-rc5
+[1.0.0-rc4]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc3...grok-dev@1.0.0-rc4
+[1.0.0-rc3]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc2...grok-dev@1.0.0-rc3
+[1.0.0-rc2]: https://github.com/superagent-ai/grok-cli/compare/grok-dev@1.0.0-rc1...grok-dev@1.0.0-rc2
+[1.0.0-rc1]: https://github.com/superagent-ai/grok-cli/releases/tag/grok-dev%401.0.0-rc1
