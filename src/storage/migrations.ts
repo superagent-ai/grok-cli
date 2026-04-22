@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from "./db";
 
-const LATEST_DB_VERSION = 2;
+const LATEST_DB_VERSION = 3;
 
 export function applyMigrations(db: SQLiteDatabase): void {
   const version = Number(db.pragma("user_version", { simple: true })) || 0;
@@ -14,6 +14,10 @@ export function applyMigrations(db: SQLiteDatabase): void {
     if (version < 2) {
       createCompactionSchema(db);
       db.pragma("user_version = 2");
+    }
+    if (version < 3) {
+      createSessionRecapSchema(db);
+      db.pragma("user_version = 3");
     }
   });
 
@@ -35,6 +39,9 @@ function createInitialSchema(db: SQLiteDatabase): void {
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
       title TEXT,
+      recap_text TEXT,
+      recap_model TEXT,
+      recap_updated_at TEXT,
       model TEXT NOT NULL,
       mode TEXT NOT NULL,
       cwd_at_start TEXT NOT NULL,
@@ -124,4 +131,18 @@ function createCompactionSchema(db: SQLiteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_compactions_session_created
       ON compactions(session_id, created_at DESC);
   `);
+}
+
+function createSessionRecapSchema(db: SQLiteDatabase): void {
+  addColumnIfMissing(db, "sessions", "recap_text", "TEXT");
+  addColumnIfMissing(db, "sessions", "recap_model", "TEXT");
+  addColumnIfMissing(db, "sessions", "recap_updated_at", "TEXT");
+}
+
+function addColumnIfMissing(db: SQLiteDatabase, table: string, column: string, definition: string): void {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: string }>;
+  if (rows.some((row) => row.name === column)) {
+    return;
+  }
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
 }

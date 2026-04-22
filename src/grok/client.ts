@@ -10,15 +10,23 @@ export type XaiResponsesModel = ReturnType<XaiProvider["responses"]>;
 export type GrokRuntimeModel = XaiChatModel | XaiResponsesModel;
 
 const DEFAULT_TITLE_MODEL = "grok-4-1-fast-non-reasoning";
+const DEFAULT_RECAP_MODEL = "grok-4-1-fast-non-reasoning";
 
-export interface GeneratedTitle {
-  title: string;
+interface GeneratedTextResult {
   modelId: string;
   usage?: {
     totalTokens?: number;
     inputTokens?: number;
     outputTokens?: number;
   };
+}
+
+export interface GeneratedTitle extends GeneratedTextResult {
+  title: string;
+}
+
+export interface GeneratedRecap extends GeneratedTextResult {
+  recap: string;
 }
 
 export interface ResolvedModelRuntime {
@@ -87,4 +95,46 @@ export async function generateTitle(provider: XaiProvider, userMessage: string):
   } catch {
     return { title: "New session", modelId: runtime.modelId };
   }
+}
+
+export async function generateRecap(
+  provider: XaiProvider,
+  transcript: string,
+  signal?: AbortSignal,
+): Promise<GeneratedRecap> {
+  const runtime = resolveModelRuntime(provider, DEFAULT_RECAP_MODEL);
+  try {
+    const { text, usage } = await generateText({
+      model: runtime.model,
+      abortSignal: signal,
+      temperature: 0.3,
+      ...(runtime.modelInfo?.supportsMaxOutputTokens === false ? {} : { maxOutputTokens: 120 }),
+      ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
+      system: [
+        "You write terse coding-session recaps.",
+        "Output ONLY the recap text. No bullets, headings, labels, or preamble.",
+        "Rules:",
+        "- Maximum 3 sentences total",
+        "- Focus on what changed, what remains, and the most useful next step",
+        "- Preserve exact file paths, function names, errors, and technical terms when present",
+        "- Avoid filler, hedging, and repetition",
+        "- Never mention being an AI, assistant, or summarizer",
+      ].join("\n"),
+      prompt: transcript,
+    });
+    return {
+      recap: normalizeRecap(text),
+      modelId: runtime.modelId,
+      usage,
+    };
+  } catch {
+    return { recap: "", modelId: runtime.modelId };
+  }
+}
+
+function normalizeRecap(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, " ");
 }

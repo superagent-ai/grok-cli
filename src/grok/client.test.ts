@@ -1,12 +1,62 @@
 import { createXai } from "@ai-sdk/xai";
+import type { generateText } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as settings from "../utils/settings";
-import { resolveModelRuntime } from "./client";
+import { generateRecap, resolveModelRuntime } from "./client";
+
+const mockGenerateText = vi.fn();
+
+vi.mock("ai", () => {
+  return {
+    generateText: mockGenerateText,
+  };
+});
 
 describe("client", () => {
   const mockProvider = createXai({
     apiKey: "test-key",
     baseURL: "https://api.x.ai/v1",
+  });
+
+  describe("generateRecap", () => {
+    beforeEach(() => {
+      mockGenerateText.mockReset();
+    });
+
+    it("generates a normalized recap with the recap prompt contract", async () => {
+      const signal = new AbortController().signal;
+      mockGenerateText.mockResolvedValue({
+        text: ' "Wrapped up the parser fix. Next step is wiring the new recap banner." ',
+        usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18 },
+      } as Awaited<ReturnType<typeof generateText>>);
+
+      const result = await generateRecap(mockProvider, "transcript body", signal);
+
+      expect(result).toEqual({
+        recap: "Wrapped up the parser fix. Next step is wiring the new recap banner.",
+        modelId: "grok-4-1-fast-non-reasoning",
+        usage: { inputTokens: 11, outputTokens: 7, totalTokens: 18 },
+      });
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          abortSignal: signal,
+          maxOutputTokens: 120,
+          prompt: "transcript body",
+          system: expect.stringContaining("Maximum 3 sentences total"),
+        }),
+      );
+    });
+
+    it("returns an empty recap when generation fails", async () => {
+      mockGenerateText.mockRejectedValue(new Error("boom"));
+
+      const result = await generateRecap(mockProvider, "transcript body");
+
+      expect(result).toEqual({
+        recap: "",
+        modelId: "grok-4-1-fast-non-reasoning",
+      });
+    });
   });
 
   describe("resolveModelRuntime", () => {
@@ -58,7 +108,7 @@ describe("client", () => {
       });
 
       it("includes providerOptions with reasoningEffort for grok-3-mini when effort is configured", () => {
-        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        vi.spyOn(settings, "getReasoningEffortForModel").mockReturnValue("high");
         const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
         expect(runtime.modelId).toBe("grok-3-mini");
         expect(runtime.providerOptions).toEqual({
@@ -69,7 +119,7 @@ describe("client", () => {
       });
 
       it("includes providerOptions with low effort for grok-3-mini when configured", () => {
-        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("low");
+        vi.spyOn(settings, "getReasoningEffortForModel").mockReturnValue("low");
         const runtime = resolveModelRuntime(mockProvider, "grok-3-mini");
         expect(runtime.modelId).toBe("grok-3-mini");
         expect(runtime.providerOptions).toEqual({
@@ -80,21 +130,21 @@ describe("client", () => {
       });
 
       it("does not include providerOptions for grok-4-0709 even when effort is configured", () => {
-        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        vi.spyOn(settings, "getReasoningEffortForModel").mockReturnValue("high");
         const runtime = resolveModelRuntime(mockProvider, "grok-4-0709");
         expect(runtime.modelId).toBe("grok-4-0709");
         expect(runtime.providerOptions).toBeUndefined();
       });
 
       it("does not include providerOptions for grok-code-fast-1 even when effort is configured", () => {
-        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        vi.spyOn(settings, "getReasoningEffortForModel").mockReturnValue("high");
         const runtime = resolveModelRuntime(mockProvider, "grok-code-fast-1");
         expect(runtime.modelId).toBe("grok-code-fast-1");
         expect(runtime.providerOptions).toBeUndefined();
       });
 
       it("does not include providerOptions for grok-4-1-fast-reasoning even when effort is configured", () => {
-        vi.mocked(settings.getReasoningEffortForModel).mockReturnValue("high");
+        vi.spyOn(settings, "getReasoningEffortForModel").mockReturnValue("high");
         const runtime = resolveModelRuntime(mockProvider, "grok-4-1-fast-reasoning");
         expect(runtime.modelId).toBe("grok-4-1-fast-reasoning");
         expect(runtime.providerOptions).toBeUndefined();
