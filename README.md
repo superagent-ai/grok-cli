@@ -1,4 +1,4 @@
-# There are many coding agents. **This one is powered by Grok.**
+# grok-cli — an open-source coding agent for the Grok API
 
 [![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
 [![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
@@ -6,11 +6,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
 
-The rest borrowed from each other. We borrowed from *all of them*, then wired it to **Grok**—real-time **X search**, **web search**, `grok-code-fast-1` and the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI that doesn’t feel like it was assembled in a hurry.
+> **Disclaimer:** This project is community-built, open-source, and **not affiliated with, endorsed by, or sponsored by xAI Corp.** "Grok" is a trademark of xAI Corp. This tool uses the publicly available Grok API.
 
-Open source. Terminal-native. Built with **Bun** and **OpenTUI**. If you want vibes *and* velocity, you’re in the right repo.
-
-Community-built and unofficial. This project is not affiliated with or endorsed by xAI, and it is not the official Grok CLI.
+An open-source terminal coding agent that connects to xAI’s Grok API — real-time **X search**, **web search**, the full Grok model lineup, **sub-agents on by default**, **remote control via Telegram** (pair once, drive the agent from your phone while the CLI runs), and a terminal UI built with **Bun** and **OpenTUI**.
 
 [https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb](https://github.com/user-attachments/assets/7ca4f6df-50ca-4e9c-91b2-d4abad5c66cb)
 
@@ -175,7 +173,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 | Thing                             | What it means                                                                                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Grok-native**                   | Defaults tuned for Grok; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning**`, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
+| **Built for the Grok API**        | Defaults tuned for the xAI API; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning**`, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
 | **X + web search**                | `**search_x`** and `**search_web**` tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
 | **Media generation**              | Built-in `**generate_image`** and `**generate_video**` tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
 | **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate**` for read-only deep dives—parallelize like you mean it.                                                                |
@@ -478,6 +476,12 @@ bun run dev      # run from source (Bun)
 bun run typecheck
 bun run lint
 ```
+
+---
+
+## Trademarks
+
+"Grok" is a registered trademark of xAI Corp. This project is not affiliated with, endorsed by, or sponsored by xAI Corp. All trademarks belong to their respective owners.
 
 ---
 
