@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- README troubleshooting section with common issues and solutions (#277)
 - Dedicated grep tool powered by npm ripgrep WASM (#263)
 - `/btw` command for side questions (#264)
 
 ### Changed
+- README: trademark disclaimer and removal of brand-confusing language (#281)
 - Switched Telegram voice/audio transcription from whisper.cpp to Grok STT (`/v1/stt`); removed `whisper-cli`, `ffmpeg`, and model-download requirements (#266, #265)
 - Install script warns when auto-resolving to a pre-release version (#269)
 - Release workflow publishes Sigstore build-provenance attestations (#271)
