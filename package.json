@@ -15,7 +15,8 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "tsc",
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "bun run clean:dist && tsc",
     "build:binary": "bun build --compile --outfile dist/grok-standalone ./src/index.ts",
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
