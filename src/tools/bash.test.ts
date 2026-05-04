@@ -50,6 +50,39 @@ describe("BashTool git inspection handling", () => {
     expect(result.error).not.toContain("GIT_DISCOVERY_ACROSS_FILESYSTEM");
   });
 
+  it("uses the effective directory for cd before git inspection commands", async () => {
+    const start = makeTempDir("grok-start-");
+    const target = makeTempDir("grok-target-");
+    const bash = new BashTool(start);
+
+    const result = await bash.execute(`cd ${target} && git status --short`);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(`Not a git repository: ${target}`);
+    expect(result.error).not.toContain(`Not a git repository: ${start}`);
+  });
+
+  it("understands git global options before read-only subcommands", () => {
+    const dir = makeTempDir("grok-non-git-");
+
+    expect(getGitInspectionRepositoryError("git -c color.ui=false status", dir)).toContain(
+      `Not a git repository: ${dir}`,
+    );
+    expect(getGitInspectionRepositoryError("git --no-optional-locks status --short", dir)).toContain(
+      `Not a git repository: ${dir}`,
+    );
+    expect(getGitInspectionRepositoryError(`git -C ${dir} status --short`, process.cwd())).toContain(
+      `Not a git repository: ${dir}`,
+    );
+  });
+
+  it("does not treat quoted git inspection text as a git invocation", () => {
+    const dir = makeTempDir("grok-non-git-");
+
+    expect(getGitInspectionRepositoryError('echo "git status"', dir)).toBeNull();
+    expect(getGitInspectionRepositoryError('printf "%s\\n" "git diff"', dir)).toBeNull();
+  });
+
   it("does not block unrelated git commands outside a repository", () => {
     const dir = makeTempDir("grok-non-git-");
 
@@ -249,6 +282,8 @@ describe("getSandboxMutationBlockReason", () => {
     expect(getSandboxMutationBlockReason("git rev-parse HEAD")).toBeNull();
     expect(getSandboxMutationBlockReason("git grep foo")).toBeNull();
     expect(getSandboxMutationBlockReason("git ls-files")).toBeNull();
+    expect(getSandboxMutationBlockReason("git -C /repo status --short")).toBeNull();
+    expect(getSandboxMutationBlockReason("git --no-optional-locks diff")).toBeNull();
   });
 
   it("blocks mutating git commands", () => {
@@ -263,6 +298,10 @@ describe("getSandboxMutationBlockReason", () => {
       "Sandbox mode blocks git commands",
     );
     expect(getSandboxMutationBlockReason('bash -c "git push"')).toContain("Sandbox mode blocks git commands");
+  });
+
+  it("does not block quoted git text in unrelated commands", () => {
+    expect(getSandboxMutationBlockReason('echo "git push"')).toBeNull();
   });
 
   it("blocks git branch since it can mutate", () => {

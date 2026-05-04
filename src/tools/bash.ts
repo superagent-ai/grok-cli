@@ -53,7 +53,7 @@ export class BashTool {
 
   async execute(command: string, timeout = 30_000, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      if (command.startsWith("cd ")) {
+      if (isSimpleCdCommand(command)) {
         const dir = command
           .substring(3)
           .trim()
@@ -582,24 +582,294 @@ function getSandboxUnsupportedReason(): string | null {
   return null;
 }
 
-const READ_ONLY_GIT_INSPECTION_RE =
-  /^\s*(?:env\s+[A-Za-z_][A-Za-z0-9_]*(?:=\S+)?\s+)*(?:command\s+)?git\s+(?:status|diff|log|show|rev-parse|grep|ls-files)\b/;
+const READ_ONLY_GIT_SUBCOMMANDS = new Set(["status", "diff", "log", "show", "rev-parse", "grep", "ls-files"]);
+
+interface ShellWord {
+  type: "word";
+  value: string;
+}
+
+interface ShellOperator {
+  type: "operator";
+  value: string;
+}
+
+type ShellToken = ShellWord | ShellOperator;
+
+interface GitInvocation {
+  subcommand: string;
+  cwd: string;
+  explicitGitDir: boolean;
+}
 
 export function getGitInspectionRepositoryError(command: string, cwd: string): string | null {
-  if (!READ_ONLY_GIT_INSPECTION_RE.test(command.trim())) return null;
-  if (findGitRoot(cwd)) return null;
+  const inspection = findReadOnlyGitInspection(command, cwd);
+  if (!inspection) return null;
+  if (inspection.explicitGitDir) return null;
+  if (findGitRoot(inspection.cwd)) return null;
 
-  return formatGitRepositoryError(cwd);
+  return formatGitRepositoryError(inspection.cwd);
 }
 
 export function getGitRepositoryRuntimeError(command: string, output: string, cwd: string): string | null {
-  if (!containsReadOnlyGitInspection(command)) return null;
+  const inspection = findReadOnlyGitInspection(command, cwd);
+  if (!inspection) return null;
   if (!/fatal:\s+not a git repository/i.test(output)) return null;
-  return formatGitRepositoryError(cwd);
+  return formatGitRepositoryError(inspection.cwd);
 }
 
-function containsReadOnlyGitInspection(command: string): boolean {
-  return /\bgit\s+(?:status|diff|log|show|rev-parse|grep|ls-files)\b/.test(command);
+function findReadOnlyGitInspection(command: string, cwd: string): GitInvocation | null {
+  return findGitInvocation(command, cwd, (subcommand) => READ_ONLY_GIT_SUBCOMMANDS.has(subcommand));
+}
+
+function findGitInvocation(
+  command: string,
+  cwd: string,
+  subcommandMatches: (subcommand: string) => boolean,
+  depth = 0,
+): GitInvocation | null {
+  if (depth > 3) return null;
+
+  let effectiveCwd = cwd;
+  const tokens = tokenizeShell(command);
+
+  for (const segment of splitShellSegments(tokens)) {
+    const words = segment.filter((token): token is ShellWord => token.type === "word").map((token) => token.value);
+    if (words.length === 0) continue;
+
+    const shellCommand = extractShellCommandString(words);
+    if (shellCommand !== null) {
+      const nested = findGitInvocation(shellCommand, effectiveCwd, subcommandMatches, depth + 1);
+      if (nested) return nested;
+      continue;
+    }
+
+    const cdTarget = getSimpleCdTarget(words);
+    if (cdTarget !== null) {
+      effectiveCwd = resolveShellPath(effectiveCwd, cdTarget);
+      continue;
+    }
+
+    const commandIndex = getShellCommandIndex(words);
+    if (commandIndex === null || !isGitExecutable(words[commandIndex])) continue;
+
+    const invocation = parseGitInvocation(words.slice(commandIndex + 1), effectiveCwd);
+    if (invocation && subcommandMatches(invocation.subcommand)) return invocation;
+  }
+
+  return null;
+}
+
+function tokenizeShell(command: string): ShellToken[] {
+  const tokens: ShellToken[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+
+  const pushWord = () => {
+    if (current.length > 0) {
+      tokens.push({ type: "word", value: current });
+      current = "";
+    }
+  };
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else if (quote === '"' && char === "\\" && i + 1 < command.length) {
+        current += command[++i];
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+
+    if (char === "\\" && i + 1 < command.length) {
+      current += command[++i];
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      pushWord();
+      continue;
+    }
+
+    const next = command[i + 1];
+    if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
+      pushWord();
+      tokens.push({ type: "operator", value: `${char}${next}` });
+      i++;
+      continue;
+    }
+
+    if (char === ";" || char === "|") {
+      pushWord();
+      tokens.push({ type: "operator", value: char });
+      continue;
+    }
+
+    current += char;
+  }
+
+  pushWord();
+  return tokens;
+}
+
+function splitShellSegments(tokens: ShellToken[]): ShellToken[][] {
+  const segments: ShellToken[][] = [];
+  let current: ShellToken[] = [];
+
+  for (const token of tokens) {
+    if (token.type === "operator") {
+      if (current.length > 0) {
+        segments.push(current);
+        current = [];
+      }
+    } else {
+      current.push(token);
+    }
+  }
+
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+function extractShellCommandString(words: string[]): string | null {
+  const command = path.basename(words[0] ?? "");
+  if (command !== "sh" && command !== "bash" && command !== "zsh") return null;
+
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i];
+    if (word === "-c" || word.endsWith("c")) {
+      return words[i + 1] ?? null;
+    }
+  }
+
+  return null;
+}
+
+function getSimpleCdTarget(words: string[]): string | null {
+  if (words[0] !== "cd") return null;
+  const target = words[1] ?? os.homedir();
+  if (target.includes("$") || target.includes("*") || target.includes("?")) return null;
+  return target;
+}
+
+function getShellCommandIndex(words: string[]): number | null {
+  let index = 0;
+
+  if (words[index] === "env") {
+    index++;
+    while (index < words.length && (isEnvAssignment(words[index]) || words[index].startsWith("-"))) {
+      index++;
+    }
+  }
+
+  if (words[index] === "command") index++;
+
+  return index < words.length ? index : null;
+}
+
+function isEnvAssignment(word: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*=.*$/u.test(word);
+}
+
+function isGitExecutable(word: string): boolean {
+  return path.basename(word) === "git";
+}
+
+function parseGitInvocation(words: string[], cwd: string): GitInvocation | null {
+  let index = 0;
+  let effectiveCwd = cwd;
+  let explicitGitDir = false;
+
+  while (index < words.length) {
+    const word = words[index];
+
+    if (word === "-C") {
+      const target = words[index + 1];
+      if (!target) return null;
+      effectiveCwd = resolveShellPath(effectiveCwd, target);
+      index += 2;
+      continue;
+    }
+
+    if (word.startsWith("-C") && word.length > 2) {
+      effectiveCwd = resolveShellPath(effectiveCwd, word.slice(2));
+      index++;
+      continue;
+    }
+
+    if (word === "-c") {
+      index += 2;
+      continue;
+    }
+
+    if (word.startsWith("-c") && word.includes("=")) {
+      index++;
+      continue;
+    }
+
+    if (word === "--git-dir") {
+      explicitGitDir = true;
+      index += 2;
+      continue;
+    }
+
+    if (word.startsWith("--git-dir=")) {
+      explicitGitDir = true;
+      index++;
+      continue;
+    }
+
+    if (word === "--work-tree") {
+      const target = words[index + 1];
+      if (!target) return null;
+      effectiveCwd = resolveShellPath(effectiveCwd, target);
+      index += 2;
+      continue;
+    }
+
+    if (word.startsWith("--work-tree=")) {
+      effectiveCwd = resolveShellPath(effectiveCwd, word.slice("--work-tree=".length));
+      index++;
+      continue;
+    }
+
+    if (word.startsWith("--")) {
+      index++;
+      continue;
+    }
+
+    if (word.startsWith("-")) {
+      index++;
+      continue;
+    }
+
+    return { subcommand: word, cwd: effectiveCwd, explicitGitDir };
+  }
+
+  return null;
+}
+
+function resolveShellPath(cwd: string, target: string): string {
+  if (target === "~") return os.homedir();
+  if (target.startsWith("~/")) return path.join(os.homedir(), target.slice(2));
+  return path.resolve(cwd, target);
+}
+
+function isSimpleCdCommand(command: string): boolean {
+  const tokens = tokenizeShell(command);
+  if (tokens.some((token) => token.type === "operator")) return false;
+  const words = tokens.filter((token): token is ShellWord => token.type === "word").map((token) => token.value);
+  return words[0] === "cd" && words.length <= 2;
 }
 
 function formatGitRepositoryError(cwd: string): string {
@@ -613,7 +883,8 @@ export function getSandboxMutationBlockReason(command: string, settings: Sandbox
   const trimmed = command.trim();
   if (!trimmed) return null;
 
-  if (/\bgit\s+/.test(trimmed) && !/\bgit\s+(status|diff|log|show|rev-parse|grep|ls-files)\b/.test(trimmed)) {
+  const gitInvocation = findGitInvocation(trimmed, process.cwd(), () => true);
+  if (gitInvocation && !READ_ONLY_GIT_SUBCOMMANDS.has(gitInvocation.subcommand)) {
     return [
       "Sandbox mode blocks git commands that mutate repository state because Shuru guest-side workspace changes do not persist back to the host.",
       "Disable sandbox mode to run persistent git mutations on the real workspace.",
