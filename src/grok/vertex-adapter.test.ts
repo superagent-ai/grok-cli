@@ -338,6 +338,37 @@ describe("Vertex Grok adapter", () => {
     ]);
   });
 
+  it("numbers stream function calls by function-call order, not part position", () => {
+    const chunks = convertVertexStreamResponseToOpenAIChunks(
+      {
+        candidates: [
+          {
+            index: 0,
+            content: {
+              parts: [
+                { text: "I will use tools." },
+                { functionCall: { name: "read_file", args: { path: "README.md" } } },
+                { text: " Then another." },
+                { functionCall: { name: "grep", args: { pattern: "Vertex" } } },
+              ],
+            },
+          },
+        ],
+      },
+      { id: "chatcmpl-tool-mixed", model: "grok-4-1-fast-reasoning", created: 123 },
+    );
+
+    const toolChunk = chunks.find((chunk) => {
+      const record = chunk as { choices?: Array<{ delta?: { tool_calls?: unknown[] } }> };
+      return Boolean(record.choices?.[0]?.delta?.tool_calls);
+    }) as { choices: Array<{ delta: { tool_calls: Array<{ index: number; id: string }> } }> };
+
+    expect(toolChunk.choices[0].delta.tool_calls).toMatchObject([
+      { index: 0, id: "call_chatcmpl-tool-mixed_0_0" },
+      { index: 1, id: "call_chatcmpl-tool-mixed_0_1" },
+    ]);
+  });
+
   it("fetches Vertex with ADC bearer auth and returns translated chat JSON", async () => {
     process.env.GROK_VERTEX_PROJECT_ID = "project-1";
     process.env.GROK_VERTEX_LOCATION = "europe-west1";

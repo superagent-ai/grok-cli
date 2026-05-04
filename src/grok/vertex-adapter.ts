@@ -892,20 +892,24 @@ function extractFunctionCalls(
   candidateIndex: number,
   includeDeltaIndex: boolean,
 ) {
-  return (candidate.content?.parts ?? [])
-    .map((part, partIndex) => {
-      if (!part.functionCall) return null;
-      return {
-        ...(includeDeltaIndex ? { index: partIndex } : {}),
-        id: `call_${responseId}_${candidateIndex}_${partIndex}`,
-        type: "function",
-        function: {
-          name: part.functionCall.name,
-          arguments: JSON.stringify(part.functionCall.args ?? {}),
-        },
-      };
-    })
-    .filter((toolCall): toolCall is NonNullable<typeof toolCall> => toolCall !== null);
+  const toolCalls = [];
+  let toolCallIndex = 0;
+
+  for (const part of candidate.content?.parts ?? []) {
+    if (!part.functionCall) continue;
+    const index = toolCallIndex++;
+    toolCalls.push({
+      ...(includeDeltaIndex ? { index } : {}),
+      id: `call_${responseId}_${candidateIndex}_${index}`,
+      type: "function",
+      function: {
+        name: part.functionCall.name,
+        arguments: JSON.stringify(part.functionCall.args ?? {}),
+      },
+    });
+  }
+
+  return toolCalls;
 }
 
 function mapVertexFinishReason(reason: string | undefined): string | null {
