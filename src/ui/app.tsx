@@ -38,9 +38,16 @@ import { FileIndex } from "../utils/file-index.js";
 import { copyTextToHostClipboard } from "../utils/host-clipboard";
 import {
   type CustomSubagentConfig,
+  DEFAULT_VERTEX_BASE_URL,
+  DEFAULT_VERTEX_LOCATION,
   getApiKey,
+  getModelAuthStatus,
   getTelegramBotToken,
+  getVertexSettings,
+  hasModelAuthConfigured,
   isReservedSubagentName,
+  isTruthyEnv,
+  isVertexModeEnabled,
   loadMcpServers,
   loadPaymentSettings,
   loadUserSettings,
@@ -56,6 +63,7 @@ import {
   savePaymentSettings,
   saveProjectSettings,
   saveUserSettings,
+  VERTEX_API_KEY_PLACEHOLDER,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
 import { formatSubagentName } from "../utils/subagent-display";
@@ -610,6 +618,53 @@ interface ActiveTurnState {
   flushedAssistantChars: number;
 }
 
+type AuthModalTab = "xai" | "vertex";
+const VERTEX_AUTH_FIELDS = ["projectId", "location", "baseURL"] as const;
+type VertexAuthField = (typeof VERTEX_AUTH_FIELDS)[number];
+
+interface VertexAuthDraft {
+  projectId: string;
+  location: string;
+  baseURL: string;
+}
+
+function getDefaultAuthModalTab(): AuthModalTab {
+  return getModelAuthStatus().activeMode === "vertex" ? "vertex" : "xai";
+}
+
+function getVertexAuthDraft(): VertexAuthDraft {
+  const settings = getVertexSettings();
+  return {
+    projectId: settings.projectId,
+    location: settings.location || DEFAULT_VERTEX_LOCATION,
+    baseURL: settings.baseURL || DEFAULT_VERTEX_BASE_URL,
+  };
+}
+
+function normalizeVertexAuthBaseUrl(value: string): string {
+  return (value.trim() || DEFAULT_VERTEX_BASE_URL).replace(/\/+$/, "");
+}
+
+function isInvalidVertexLocation(value: string): boolean {
+  return value.trim().toLowerCase() === "global";
+}
+
+function isHttpBaseUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function syncTextareaRef(ref: React.RefObject<TextareaRenderable | null>, value: string): void {
+  ref.current?.clear();
+  if (value) {
+    ref.current?.insertText(value);
+  }
+}
+
 export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) {
   const t = dark;
   const renderer = useRenderer();
@@ -655,6 +710,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !initialHasApiKey);
+  const [authModalTab, setAuthModalTab] = useState<AuthModalTab>(() => getDefaultAuthModalTab());
+  const [vertexAuthField, setVertexAuthField] = useState<VertexAuthField>("projectId");
+  const [vertexAuthDraft, setVertexAuthDraft] = useState<VertexAuthDraft>(() => getVertexAuthDraft());
+  const [vertexAuthSyncKey, setVertexAuthSyncKey] = useState(0);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
@@ -680,6 +739,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const pasteCounterRef = useRef(0);
   const pasteBlocksRef = useRef<PasteBlock[]>([]);
   const apiKeyInputRef = useRef<TextareaRenderable>(null);
+  const vertexProjectInputRef = useRef<TextareaRenderable>(null);
+  const vertexLocationInputRef = useRef<TextareaRenderable>(null);
+  const vertexBaseUrlInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width, height } = useTerminalDimensions();
@@ -689,6 +751,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const isProcessingRef = useRef(false);
   const hasApiKeyRef = useRef(initialHasApiKey);
   const showApiKeyModalRef = useRef(!initialHasApiKey);
+  const authModalTabRef = useRef<AuthModalTab>(getDefaultAuthModalTab());
+  const vertexAuthFieldRef = useRef<VertexAuthField>("projectId");
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   const processMessageRef = useRef<(text: string, displayText?: string) => Promise<void> | void>(() => {});
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
@@ -1598,8 +1662,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
 
       const apiKey = getApiKey();
-      if (!apiKey) {
-        throw new Error("Grok API key required. Add it in the CLI or set GROK_API_KEY.");
+      if (!hasModelAuthConfigured()) {
+        throw new Error(
+          "Model authentication required. Set GROK_API_KEY, or configure Vertex with GROK_VERTEX_PROJECT_ID and Application Default Credentials.",
+        );
       }
 
       const u = loadUserSettings();
@@ -1706,7 +1772,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const startTelegramBridge = useCallback(() => {
     const token = getTelegramBotToken();
-    if (!token || !getApiKey()) return;
+    if (!token || !hasModelAuthConfigured()) return;
     if (bridgeRef.current) return;
 
     const bridge = createTelegramBridge({
@@ -1772,11 +1838,52 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     return () => clearTimeout(id);
   }, [copyFlashId]);
 
-  const openApiKeyModal = useCallback(() => {
-    showApiKeyModalRef.current = true;
-    setApiKeyError(null);
-    setShowApiKeyModal(true);
+  const refreshVertexAuthDraft = useCallback(() => {
+    setVertexAuthDraft(getVertexAuthDraft());
+    setVertexAuthSyncKey((n) => n + 1);
   }, []);
+
+  const selectVertexAuthField = useCallback((field: VertexAuthField) => {
+    vertexAuthFieldRef.current = field;
+    setVertexAuthField(field);
+  }, []);
+
+  const moveVertexAuthField = useCallback(
+    (delta: number) => {
+      const index = VERTEX_AUTH_FIELDS.indexOf(vertexAuthFieldRef.current);
+      const nextIndex = (index + delta + VERTEX_AUTH_FIELDS.length) % VERTEX_AUTH_FIELDS.length;
+      selectVertexAuthField(VERTEX_AUTH_FIELDS[nextIndex]);
+    },
+    [selectVertexAuthField],
+  );
+
+  const selectAuthModalTab = useCallback(
+    (tab: AuthModalTab) => {
+      authModalTabRef.current = tab;
+      setAuthModalTab(tab);
+      setApiKeyError(null);
+      if (tab === "vertex") {
+        selectVertexAuthField("projectId");
+        refreshVertexAuthDraft();
+      }
+    },
+    [refreshVertexAuthDraft, selectVertexAuthField],
+  );
+
+  const openApiKeyModal = useCallback(
+    (tab: AuthModalTab = getDefaultAuthModalTab()) => {
+      authModalTabRef.current = tab;
+      setAuthModalTab(tab);
+      showApiKeyModalRef.current = true;
+      setApiKeyError(null);
+      if (tab === "vertex") {
+        selectVertexAuthField("projectId");
+        refreshVertexAuthDraft();
+      }
+      setShowApiKeyModal(true);
+    },
+    [refreshVertexAuthDraft, selectVertexAuthField],
+  );
 
   const closeApiKeyModal = useCallback(() => {
     showApiKeyModalRef.current = false;
@@ -1785,6 +1892,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, []);
 
   const submitApiKey = useCallback(() => {
+    if (isVertexModeEnabled()) {
+      if (isTruthyEnv(process.env.GROK_USE_VERTEX)) {
+        setApiKeyError("GROK_USE_VERTEX is set in this shell. Unset it before using a native xAI API key.");
+        selectAuthModalTab("vertex");
+        return;
+      }
+
+      const current = loadUserSettings();
+      saveUserSettings({ vertex: { ...current.vertex, enabled: false } });
+    }
+
     const apiKey = (apiKeyInputRef.current?.plainText || "").trim();
     if (!apiKey) {
       setApiKeyError("Enter an API key to continue.");
@@ -1806,7 +1924,53 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (getTelegramBotToken()) {
       startTelegramBridge();
     }
-  }, [agent, startTelegramBridge]);
+  }, [agent, selectAuthModalTab, startTelegramBridge]);
+
+  const submitVertexSettings = useCallback(() => {
+    const projectId = (vertexProjectInputRef.current?.plainText || "").trim();
+    const location = (vertexLocationInputRef.current?.plainText || "").trim() || DEFAULT_VERTEX_LOCATION;
+    const baseURL = normalizeVertexAuthBaseUrl(vertexBaseUrlInputRef.current?.plainText || "");
+
+    if (!projectId) {
+      setApiKeyError("Enter GROK_VERTEX_PROJECT_ID for the Google Cloud project with the xAI Vertex model enabled.");
+      selectVertexAuthField("projectId");
+      return;
+    }
+    if (!location) {
+      setApiKeyError("Enter GROK_VERTEX_LOCATION, for example us-central1 or europe-west1.");
+      selectVertexAuthField("location");
+      return;
+    }
+    if (isInvalidVertexLocation(location)) {
+      setApiKeyError("Use us-central1 or europe-west1 for GROK_VERTEX_LOCATION. The host is global, not the location.");
+      selectVertexAuthField("location");
+      return;
+    }
+    if (!isHttpBaseUrl(baseURL)) {
+      setApiKeyError("Enter a valid GROK_VERTEX_BASE_URL, or leave it as https://aiplatform.googleapis.com.");
+      selectVertexAuthField("baseURL");
+      return;
+    }
+
+    saveUserSettings({
+      vertex: {
+        enabled: true,
+        projectId,
+        location,
+        baseURL,
+      },
+    });
+    agent.setApiKey(VERTEX_API_KEY_PLACEHOLDER);
+    hasApiKeyRef.current = true;
+    showApiKeyModalRef.current = false;
+    setHasApiKey(true);
+    setApiKeyError(null);
+    setShowApiKeyModal(false);
+    refreshVertexAuthDraft();
+    if (getTelegramBotToken()) {
+      startTelegramBridge();
+    }
+  }, [agent, refreshVertexAuthDraft, selectVertexAuthField, startTelegramBridge]);
 
   useEffect(() => {
     hasApiKeyRef.current = hasApiKey;
@@ -1869,8 +2033,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setTelegramTokenError("Paste your bot token from @BotFather.");
       return;
     }
-    if (!getApiKey()) {
-      setTelegramTokenError("Add a Grok API key first.");
+    if (!hasModelAuthConfigured()) {
+      setTelegramTokenError("Configure GROK_API_KEY, or configure Vertex with GROK_VERTEX_PROJECT_ID first.");
       return;
     }
     const u = loadUserSettings();
@@ -1924,9 +2088,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const beginTelegramFromConnect = useCallback(() => {
     setShowConnectModal(false);
-    if (!getApiKey()) {
-      setMessages((p) => [...p, { type: "assistant", content: "Add a Grok API key first.", timestamp: new Date() }]);
-      openApiKeyModal();
+    if (!hasModelAuthConfigured()) {
+      setMessages((p) => [
+        ...p,
+        {
+          type: "assistant",
+          content: "Configure GROK_API_KEY, or configure Vertex with GROK_VERTEX_PROJECT_ID first.",
+          timestamp: new Date(),
+        },
+      ]);
+      openApiKeyModal(isVertexModeEnabled() ? "vertex" : "xai");
       return;
     }
     if (!getTelegramBotToken()) {
@@ -2135,9 +2306,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
 
         if (turnHadAuthError) {
-          setApiKeyError("Your API key is invalid or expired. Please enter a new key.");
-          setShowApiKeyModal(true);
-          showApiKeyModalRef.current = true;
+          if (isVertexModeEnabled()) {
+            setApiKeyError("Vertex authentication failed. Check ADC, GROK_VERTEX_PROJECT_ID, and Vertex model access.");
+            openApiKeyModal("vertex");
+          } else {
+            setApiKeyError("Your API key is invalid or expired. Please enter a new key.");
+            openApiKeyModal("xai");
+          }
         }
 
         if (!isStale()) {
@@ -2154,6 +2329,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       applyLocalAssistantDelta,
       beginLiveTurn,
       finalizeActiveTurn,
+      openApiKeyModal,
       scrollToBottom,
       sessionTitle,
       showLiveToolCalls,
@@ -2901,8 +3077,24 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           closeApiKeyModal();
           return;
         }
+        if (key.name === "tab" || key.name === "right" || key.name === "left") {
+          selectAuthModalTab(authModalTabRef.current === "xai" ? "vertex" : "xai");
+          return;
+        }
+        if (authModalTabRef.current === "vertex" && key.name === "down") {
+          moveVertexAuthField(1);
+          return;
+        }
+        if (authModalTabRef.current === "vertex" && key.name === "up") {
+          moveVertexAuthField(-1);
+          return;
+        }
         if (key.name === "return") {
-          submitApiKey();
+          if (authModalTabRef.current === "xai") {
+            submitApiKey();
+          } else {
+            submitVertexSettings();
+          }
         }
         return;
       }
@@ -3257,6 +3449,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       mcpEditorField,
       mcpEditorFields,
       mcpModalIndex,
+      moveVertexAuthField,
       mcpRows,
       modelPickerIndex,
       openApiKeyModal,
@@ -3267,6 +3460,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       removeSchedule,
       scheduleModalIndex,
       scheduleRows,
+      selectAuthModalTab,
       showScheduleDetails,
       submitTelegramPair,
       submitTelegramToken,
@@ -3296,6 +3490,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showSlashMenu,
       slashMenuIndex,
       submitApiKey,
+      submitVertexSettings,
       submitPlanAnswers,
       copyTuiSelectionToHost,
       toggleSavedMcp,
@@ -3550,13 +3745,22 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         </>
       )}
       {showApiKeyModal && (
-        <ApiKeyModal
+        <AuthModal
           t={t}
           width={width}
           height={height}
           inputRef={apiKeyInputRef}
+          selectedTab={authModalTab}
+          vertexProjectRef={vertexProjectInputRef}
+          vertexLocationRef={vertexLocationInputRef}
+          vertexBaseUrlRef={vertexBaseUrlInputRef}
+          vertexDraft={vertexAuthDraft}
+          vertexSyncKey={vertexAuthSyncKey}
+          activeVertexField={vertexAuthField}
+          authStatus={getModelAuthStatus()}
           error={apiKeyError}
           onSubmit={submitApiKey}
+          onSubmitVertex={submitVertexSettings}
         />
       )}
       {showUpdateModal && updateInfo && (
@@ -4056,25 +4260,54 @@ function CopyFlashBanner({ t, width }: { t: Theme; width: number }) {
   );
 }
 
-function ApiKeyModal({
+function AuthModal({
   t,
   width,
   height,
   inputRef,
+  selectedTab,
+  vertexProjectRef,
+  vertexLocationRef,
+  vertexBaseUrlRef,
+  vertexDraft,
+  vertexSyncKey,
+  activeVertexField,
+  authStatus,
   error,
   onSubmit,
+  onSubmitVertex,
 }: {
   t: Theme;
   width: number;
   height: number;
   inputRef: React.RefObject<TextareaRenderable | null>;
+  selectedTab: AuthModalTab;
+  vertexProjectRef: React.RefObject<TextareaRenderable | null>;
+  vertexLocationRef: React.RefObject<TextareaRenderable | null>;
+  vertexBaseUrlRef: React.RefObject<TextareaRenderable | null>;
+  vertexDraft: VertexAuthDraft;
+  vertexSyncKey: number;
+  activeVertexField: VertexAuthField;
+  authStatus: ReturnType<typeof getModelAuthStatus>;
   error: string | null;
   onSubmit: () => void;
+  onSubmitVertex: () => void;
 }) {
+  useEffect(() => {
+    void vertexSyncKey;
+    syncTextareaRef(vertexProjectRef, vertexDraft.projectId);
+    syncTextareaRef(vertexLocationRef, vertexDraft.location);
+    syncTextareaRef(vertexBaseUrlRef, vertexDraft.baseURL);
+  }, [vertexBaseUrlRef, vertexDraft, vertexLocationRef, vertexProjectRef, vertexSyncKey]);
+
   const overlayBg = "#000000cc" as string;
-  const panelWidth = Math.min(68, width - 6);
-  const panelHeight = 13;
+  const panelWidth = Math.min(82, width - 6);
+  const panelHeight = selectedTab === "xai" ? 16 : 25;
   const top = bottomAlignedModalTop(height, panelHeight);
+  const xaiSelected = selectedTab === "xai";
+  const vertexSelected = selectedTab === "vertex";
+  const vertex = authStatus.vertex;
+  const missingVertex = vertex.missing.join(", ");
 
   return (
     <box
@@ -4097,43 +4330,166 @@ function ApiKeyModal({
       >
         <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
           <text fg={t.primary}>
-            <b>{"Add API key"}</b>
+            <b>{"Choose authentication"}</b>
           </text>
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <text fg={t.text}>{"Paste your xAI API key to unlock chat. You can hide this prompt with esc."}</text>
-        </box>
-        <box paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
-            <textarea
-              ref={inputRef}
-              focused={true}
-              placeholder="xai-..."
-              textColor={t.text}
-              backgroundColor={t.backgroundElement}
-              placeholderColor={t.textMuted}
-              minHeight={1}
-              maxHeight={3}
-              wrapMode="word"
-              keyBindings={TEXTAREA_KEYBINDINGS}
-              onSubmit={onSubmit as unknown as () => void}
-            />
+        <box flexShrink={0} flexDirection="row" paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <box
+            backgroundColor={xaiSelected ? t.selectedBg : undefined}
+            paddingLeft={1}
+            paddingRight={1}
+            marginRight={1}
+          >
+            <text fg={xaiSelected ? t.selected : t.text}>{"xAI API key"}</text>
+          </box>
+          <box backgroundColor={vertexSelected ? t.selectedBg : undefined} paddingLeft={1} paddingRight={1}>
+            <text fg={vertexSelected ? t.selected : t.text}>{"Vertex AI"}</text>
           </box>
         </box>
+        {selectedTab === "xai" ? (
+          <>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+              <text fg={t.text}>
+                {authStatus.activeMode === "vertex"
+                  ? isTruthyEnv(process.env.GROK_USE_VERTEX)
+                    ? "GROK_USE_VERTEX is set in this shell. Unset it before using a native xAI API key."
+                    : "Saving an xAI key will disable saved Vertex settings."
+                  : "Paste your xAI API key to unlock chat, or switch to Vertex AI."}
+              </text>
+            </box>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+              <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
+                <textarea
+                  ref={inputRef}
+                  focused={true}
+                  placeholder="xai-..."
+                  textColor={t.text}
+                  backgroundColor={t.backgroundElement}
+                  placeholderColor={t.textMuted}
+                  minHeight={1}
+                  maxHeight={3}
+                  wrapMode="word"
+                  keyBindings={TEXTAREA_KEYBINDINGS}
+                  onSubmit={onSubmit as unknown as () => void}
+                />
+              </box>
+            </box>
+          </>
+        ) : (
+          <>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+              <text fg={vertex.enabled ? (vertex.configured ? t.accent : "#f59e0b") : t.text}>
+                {vertex.enabled
+                  ? vertex.configured
+                    ? `Vertex is active for project ${vertex.projectId}, location ${vertex.location}.`
+                    : `Vertex is active but missing: ${missingVertex || "required settings"}`
+                  : "Save Vertex settings here to use Google ADC instead of an xAI API key."}
+              </text>
+            </box>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+              <text fg={t.textMuted}>
+                {
+                  "ADC still comes from `gcloud auth application-default login`; these Grok-specific values are saved locally."
+                }
+              </text>
+            </box>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1} flexDirection="column" gap={1}>
+              <VertexAuthInput
+                t={t}
+                label="GROK_VERTEX_PROJECT_ID"
+                inputRef={vertexProjectRef}
+                focused={activeVertexField === "projectId"}
+                placeholder="my-gcp-project"
+                onSubmit={onSubmitVertex}
+              />
+              <VertexAuthInput
+                t={t}
+                label="GROK_VERTEX_LOCATION"
+                inputRef={vertexLocationRef}
+                focused={activeVertexField === "location"}
+                placeholder={DEFAULT_VERTEX_LOCATION}
+                onSubmit={onSubmitVertex}
+              />
+              <VertexAuthInput
+                t={t}
+                label="GROK_VERTEX_BASE_URL"
+                inputRef={vertexBaseUrlRef}
+                focused={activeVertexField === "baseURL"}
+                placeholder={DEFAULT_VERTEX_BASE_URL}
+                onSubmit={onSubmitVertex}
+              />
+            </box>
+            <box paddingLeft={2} paddingRight={2} paddingTop={1}>
+              <text fg={t.textMuted}>{"The host remains global; the location field controls the resource path."}</text>
+            </box>
+          </>
+        )}
         <box flexGrow={1} minHeight={0} />
         <box paddingLeft={2} paddingRight={2} paddingTop={2} paddingBottom={1}>
           {error ? (
             <text fg={t.diffRemovedFg}>{error}</text>
           ) : (
             <text>
-              <span style={{ fg: t.primary }}>{"enter "}</span>
-              <span style={{ fg: t.textMuted }}>{"save key  ·  "}</span>
+              {selectedTab === "xai" ? (
+                <>
+                  <span style={{ fg: t.primary }}>{"enter "}</span>
+                  <span style={{ fg: t.textMuted }}>{"save key  ·  "}</span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fg: t.primary }}>{"enter "}</span>
+                  <span style={{ fg: t.textMuted }}>{"save Vertex  ·  "}</span>
+                  <span style={{ fg: t.primary }}>{"↑↓ "}</span>
+                  <span style={{ fg: t.textMuted }}>{"field  ·  "}</span>
+                </>
+              )}
+              <span style={{ fg: t.primary }}>{"tab "}</span>
+              <span style={{ fg: t.textMuted }}>{"switch  ·  "}</span>
               <span style={{ fg: t.primary }}>{"esc "}</span>
               <span style={{ fg: t.textMuted }}>{"hide"}</span>
             </text>
           )}
         </box>
+      </box>
+    </box>
+  );
+}
+
+function VertexAuthInput({
+  t,
+  label,
+  inputRef,
+  focused,
+  placeholder,
+  onSubmit,
+}: {
+  t: Theme;
+  label: string;
+  inputRef: React.RefObject<TextareaRenderable | null>;
+  focused: boolean;
+  placeholder: string;
+  onSubmit: () => void;
+}) {
+  return (
+    <box flexDirection="row" alignItems="center" width="100%">
+      <box width={24}>
+        <text fg={focused ? t.primary : t.textMuted}>{label}</text>
+      </box>
+      <box flexGrow={1} backgroundColor={focused ? t.selectedBg : t.backgroundElement} paddingLeft={1} paddingRight={1}>
+        <textarea
+          ref={inputRef}
+          focused={focused}
+          placeholder={placeholder}
+          textColor={t.text}
+          backgroundColor={focused ? t.selectedBg : t.backgroundElement}
+          placeholderColor={t.textMuted}
+          minHeight={1}
+          maxHeight={2}
+          wrapMode="word"
+          keyBindings={TEXTAREA_KEYBINDINGS}
+          onSubmit={onSubmit as unknown as () => void}
+        />
       </box>
     </box>
   );

@@ -258,6 +258,8 @@ grok --prompt "hello from Vertex"
 
 `GROK_USE_VERTEX=1` bypasses `GROK_API_KEY` validation for chat completions and fetches a short-lived OAuth access token with the `cloud-platform` scope.
 
+In the interactive TUI, choose the **Vertex AI** tab in the authentication modal to save `GROK_VERTEX_PROJECT_ID`, `GROK_VERTEX_LOCATION`, and `GROK_VERTEX_BASE_URL` as Grok-specific user settings in `~/.grok/user-settings.json`. ADC still comes from Google Cloud's normal `gcloud auth application-default login` flow.
+
 Vertex Grok uses the global API host but a normal location path. By default requests go to:
 
 ```text

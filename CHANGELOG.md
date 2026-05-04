@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vertex mode now forwards local CLI tools through sanitized Vertex function declarations, preserving directory/file/bash access while avoiding raw AI SDK schema fields that Vertex rejects.
 - Vertex requests map native xAI model IDs such as `grok-4-1-fast-reasoning` to the corresponding Vertex publisher ID such as `grok-4.1-fast-reasoning`.
 - Vertex ADC refresh failures such as Google `invalid_rapt` reauthentication errors now produce actionable `gcloud auth application-default` recovery guidance instead of raw auth JSON.
+- Interactive Vertex AI authentication setup in the TUI, saving Grok-specific `GROK_VERTEX_PROJECT_ID`, `GROK_VERTEX_LOCATION`, and `GROK_VERTEX_BASE_URL` settings without relying on broad global GCP env names.
 - Dedicated grep tool powered by npm ripgrep WASM (#263)
 - `/btw` command for side questions (#264)
 
