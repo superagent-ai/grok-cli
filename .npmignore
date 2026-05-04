@@ -55,6 +55,7 @@ tests/
 *.spec.ts
 dist/**/*.test.*
 dist/**/*.spec.*
+dist/grok-standalone*
 coverage/
 .nyc_output/
 
