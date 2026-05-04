@@ -76,6 +76,7 @@ import {
   SubagentEditorModal,
   SubagentsBrowserModal,
 } from "./agents-modal";
+import { type AuthModalOpenOptions, getNextAuthModalError } from "./auth-modal-state";
 import { BtwOverlay, type BtwState } from "./components/btw-overlay.js";
 import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
 import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
@@ -1858,10 +1859,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   );
 
   const selectAuthModalTab = useCallback(
-    (tab: AuthModalTab) => {
+    (tab: AuthModalTab, options: AuthModalOpenOptions = {}) => {
       authModalTabRef.current = tab;
       setAuthModalTab(tab);
-      setApiKeyError(null);
+      setApiKeyError((currentError) => getNextAuthModalError(currentError, options));
       if (tab === "vertex") {
         selectVertexAuthField("projectId");
         refreshVertexAuthDraft();
@@ -1871,11 +1872,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   );
 
   const openApiKeyModal = useCallback(
-    (tab: AuthModalTab = getDefaultAuthModalTab()) => {
+    (tab: AuthModalTab = getDefaultAuthModalTab(), options: AuthModalOpenOptions = {}) => {
       authModalTabRef.current = tab;
       setAuthModalTab(tab);
       showApiKeyModalRef.current = true;
-      setApiKeyError(null);
+      setApiKeyError((currentError) => getNextAuthModalError(currentError, options));
       if (tab === "vertex") {
         selectVertexAuthField("projectId");
         refreshVertexAuthDraft();
@@ -1896,7 +1897,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (shouldDisableSavedVertex) {
       if (isTruthyEnv(process.env.GROK_USE_VERTEX)) {
         setApiKeyError("GROK_USE_VERTEX is set in this shell. Unset it before using a native xAI API key.");
-        selectAuthModalTab("vertex");
+        selectAuthModalTab("vertex", { preserveError: true });
         return;
       }
     }
@@ -2311,10 +2312,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         if (turnHadAuthError) {
           if (isVertexModeEnabled()) {
             setApiKeyError("Vertex authentication failed. Check ADC, GROK_VERTEX_PROJECT_ID, and Vertex model access.");
-            openApiKeyModal("vertex");
+            openApiKeyModal("vertex", { preserveError: true });
           } else {
             setApiKeyError("Your API key is invalid or expired. Please enter a new key.");
-            openApiKeyModal("xai");
+            openApiKeyModal("xai", { preserveError: true });
           }
         }
 
