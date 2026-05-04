@@ -6,6 +6,7 @@ import path from "path";
 import { executeEventHooks } from "../hooks/index";
 import type { CwdChangedHookInput } from "../hooks/types";
 import type { ToolResult } from "../types/index";
+import { findGitRoot } from "../utils/git-root";
 import type { SandboxMode, SandboxSettings } from "../utils/settings";
 
 const MAX_TAIL_BYTES = 8_192;
@@ -90,6 +91,11 @@ export class BashTool {
         return { success: false, error: prepared.error };
       }
 
+      const gitRepositoryError = getGitInspectionRepositoryError(command, this.cwd);
+      if (gitRepositoryError) {
+        return { success: false, error: gitRepositoryError };
+      }
+
       return await new Promise<ToolResult>((resolve) => {
         let settled = false;
         let aborted = false;
@@ -119,6 +125,11 @@ export class BashTool {
 
             const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
             if (err) {
+              const gitRepositoryRuntimeError = getGitRepositoryRuntimeError(command, output, this.cwd);
+              if (gitRepositoryRuntimeError) {
+                finish({ success: false, error: gitRepositoryRuntimeError });
+                return;
+              }
               const sandboxError = this.formatSandboxRuntimeError(output, err.message);
               if (sandboxError) {
                 finish({ success: false, error: sandboxError });
@@ -163,6 +174,10 @@ export class BashTool {
       if (err && typeof err === "object" && "stdout" in err) {
         const execErr = err as { stdout?: string; stderr?: string; message: string };
         const output = (execErr.stdout || "") + (execErr.stderr ? `\nSTDERR: ${execErr.stderr}` : "");
+        const gitRepositoryRuntimeError = getGitRepositoryRuntimeError(command, output, this.cwd);
+        if (gitRepositoryRuntimeError) {
+          return { success: false, error: gitRepositoryRuntimeError };
+        }
         if (output.trim()) {
           return { success: false, error: output.trim() };
         }
@@ -565,6 +580,33 @@ function getSandboxUnsupportedReason(): string | null {
     return "Shuru sandbox mode currently requires macOS on Apple Silicon.";
   }
   return null;
+}
+
+const READ_ONLY_GIT_INSPECTION_RE =
+  /^\s*(?:env\s+[A-Za-z_][A-Za-z0-9_]*(?:=\S+)?\s+)*(?:command\s+)?git\s+(?:status|diff|log|show|rev-parse|grep|ls-files)\b/;
+
+export function getGitInspectionRepositoryError(command: string, cwd: string): string | null {
+  if (!READ_ONLY_GIT_INSPECTION_RE.test(command.trim())) return null;
+  if (findGitRoot(cwd)) return null;
+
+  return formatGitRepositoryError(cwd);
+}
+
+export function getGitRepositoryRuntimeError(command: string, output: string, cwd: string): string | null {
+  if (!containsReadOnlyGitInspection(command)) return null;
+  if (!/fatal:\s+not a git repository/i.test(output)) return null;
+  return formatGitRepositoryError(cwd);
+}
+
+function containsReadOnlyGitInspection(command: string): boolean {
+  return /\bgit\s+(?:status|diff|log|show|rev-parse|grep|ls-files)\b/.test(command);
+}
+
+function formatGitRepositoryError(cwd: string): string {
+  return [
+    `Not a git repository: ${cwd}`,
+    "This git inspection command needs a repository checkout. Change into the repo root or a subdirectory before running git status, diff, log, show, rev-parse, grep, or ls-files.",
+  ].join("\n");
 }
 
 export function getSandboxMutationBlockReason(command: string, settings: SandboxSettings = {}): string | null {

@@ -12,6 +12,12 @@ function writeFile(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content);
 }
 
+function writeValidGitDir(root: string): void {
+  fs.mkdirSync(path.join(root, ".git", "objects"), { recursive: true });
+  fs.mkdirSync(path.join(root, ".git", "refs"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+}
+
 async function importLoadCustomInstructions(mockedHome?: string) {
   vi.resetModules();
   vi.doUnmock("os");
@@ -53,7 +59,7 @@ describe("loadCustomInstructions", () => {
     const home = makeTempDir("grok-home-");
     const repoRoot = makeTempDir("grok-repo-");
     const cwd = path.join(repoRoot, "pkg", "feature");
-    fs.mkdirSync(path.join(repoRoot, ".git"));
+    writeValidGitDir(repoRoot);
     fs.mkdirSync(cwd, { recursive: true });
 
     writeFile(path.join(home, ".grok", "AGENTS.md"), "global instructions");
@@ -71,7 +77,7 @@ describe("loadCustomInstructions", () => {
     const home = makeTempDir("grok-home-");
     const repoRoot = makeTempDir("grok-repo-");
     const cwd = path.join(repoRoot, "nested");
-    fs.mkdirSync(path.join(repoRoot, ".git"));
+    writeValidGitDir(repoRoot);
     fs.mkdirSync(cwd, { recursive: true });
 
     writeFile(path.join(repoRoot, "AGENTS.md"), "root instructions");

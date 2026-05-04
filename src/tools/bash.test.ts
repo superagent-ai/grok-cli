@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BashTool,
+  getGitInspectionRepositoryError,
   getSandboxMutationBlockReason,
   shouldRunOnHostInSandboxMode,
   wrapCommandForShuru,
@@ -22,6 +23,49 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("BashTool git inspection handling", () => {
+  it("returns a clean error for git inspection commands outside a repository", async () => {
+    const dir = makeTempDir("grok-non-git-");
+    const bash = new BashTool(dir);
+
+    const result = await bash.execute("git status --short");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(`Not a git repository: ${dir}`);
+    expect(result.error).not.toContain("fatal:");
+    expect(result.error).not.toContain("GIT_DISCOVERY_ACROSS_FILESYSTEM");
+  });
+
+  it("normalizes git repository failures inside compound commands", async () => {
+    const dir = makeTempDir("grok-non-git-");
+    const bash = new BashTool(dir);
+
+    const result = await bash.execute("pwd && git rev-parse --show-toplevel && git status --short");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(`Not a git repository: ${dir}`);
+    expect(result.error).not.toContain("fatal:");
+    expect(result.error).not.toContain("GIT_DISCOVERY_ACROSS_FILESYSTEM");
+  });
+
+  it("does not block unrelated git commands outside a repository", () => {
+    const dir = makeTempDir("grok-non-git-");
+
+    expect(getGitInspectionRepositoryError("git init", dir)).toBeNull();
+  });
+
+  it("does not rewrite unrelated command output that mentions git repository failures", async () => {
+    const dir = makeTempDir("grok-non-git-");
+    const bash = new BashTool(dir);
+
+    const result = await bash.execute('sh -c "echo fatal: not a git repository 1>&2; exit 1"');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("fatal: not a git repository");
+    expect(result.error).not.toContain(`Not a git repository: ${dir}`);
+  });
 });
 
 describe("wrapCommandForShuru", () => {

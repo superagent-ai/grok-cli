@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow publishes Sigstore build-provenance attestations (#271)
 
 ### Fixed
+- Git inspection commands now return an actionable non-repository error instead of raw Git discovery failures when run outside a checkout.
 - RC version tags are published as GitHub prereleases (#268)
 
 ## [1.1.5-rc5] - 2026-04-15

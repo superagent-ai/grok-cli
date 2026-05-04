@@ -22,6 +22,12 @@ function writeSkill(root: string, name: string, description: string): void {
   );
 }
 
+function writeValidGitDir(root: string): void {
+  fs.mkdirSync(path.join(root, ".git", "objects"), { recursive: true });
+  fs.mkdirSync(path.join(root, ".git", "refs"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -31,7 +37,7 @@ afterEach(() => {
 describe("discoverSkills", () => {
   it("discovers project skills from parent directories up to the git root", () => {
     const repoRoot = makeTempDir("grok-skills-root-");
-    fs.mkdirSync(path.join(repoRoot, ".git"));
+    writeValidGitDir(repoRoot);
     const nested = path.join(repoRoot, "tmp", "app");
     fs.mkdirSync(nested, { recursive: true });
 
@@ -44,7 +50,7 @@ describe("discoverSkills", () => {
 
   it("lets nearer project skills override parent project skills", () => {
     const repoRoot = makeTempDir("grok-skills-override-");
-    fs.mkdirSync(path.join(repoRoot, ".git"));
+    writeValidGitDir(repoRoot);
     const nested = path.join(repoRoot, "tmp", "app");
     fs.mkdirSync(nested, { recursive: true });
 
