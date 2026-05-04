@@ -398,7 +398,10 @@ export function hasModelAuthConfigured(): boolean {
 }
 
 export function getVertexSettings(): VertexSettings {
-  const userVertex = loadUserSettings().vertex;
+  return resolveVertexSettings(loadUserSettings().vertex);
+}
+
+function resolveVertexSettings(userVertex: VertexUserSettings | undefined): VertexSettings {
   const projectId =
     process.env.GROK_VERTEX_PROJECT_ID?.trim() ||
     userVertex?.projectId?.trim() ||
@@ -443,11 +446,12 @@ export function requireVertexSettings(): VertexSettings {
 }
 
 export function getModelAuthStatus(): ModelAuthStatus {
-  const vertexSettings = getVertexSettings();
-  const vertexEnabled = isVertexModeEnabled();
+  const userSettings = loadUserSettings();
+  const vertexSettings = resolveVertexSettings(userSettings.vertex);
+  const vertexEnabled = isTruthyEnv(process.env.GROK_USE_VERTEX) || userSettings.vertex?.enabled === true;
   const vertexMissing = vertexSettings.projectId ? [] : ["GROK_VERTEX_PROJECT_ID"];
   const vertexConfigured = vertexEnabled && vertexMissing.length === 0;
-  const xaiConfigured = Boolean(getApiKey());
+  const xaiConfigured = Boolean(process.env.GROK_API_KEY || userSettings.apiKey);
 
   return {
     activeMode: vertexEnabled ? "vertex" : "xai",

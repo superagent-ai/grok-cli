@@ -66,6 +66,9 @@ interface VertexContent {
 
 interface VertexRequest {
   contents: VertexContent[];
+  systemInstruction?: {
+    parts: VertexPart[];
+  };
   generationConfig?: JsonRecord;
   tools?: Array<{
     functionDeclarations: Array<{
@@ -230,9 +233,10 @@ export function buildVertexModelUrl(settings: VertexSettings, modelId: string, i
   const method = isStreaming ? "streamGenerateContent" : "generateContent";
   const baseURL = settings.baseURL.replace(/\/+$/, "");
   const vertexModelId = getVertexModelId(modelId);
-  return `${baseURL}/v1/projects/${encodeURIComponent(settings.projectId)}/locations/${encodeURIComponent(
+  const url = `${baseURL}/v1/projects/${encodeURIComponent(settings.projectId)}/locations/${encodeURIComponent(
     settings.location,
   )}/publishers/xai/models/${encodeURIComponent(vertexModelId)}:${method}`;
+  return isStreaming ? `${url}?alt=sse` : url;
 }
 
 export function getVertexModelId(modelId: string): string {
@@ -240,7 +244,7 @@ export function getVertexModelId(modelId: string): string {
 }
 
 export function convertXaiChatRequestToVertex(request: XaiChatRequest): VertexRequest {
-  const contents = convertMessagesToVertexContents(request.messages ?? []);
+  const conversation = convertMessagesToVertexConversation(request.messages ?? []);
   const generationConfig = removeUndefined({
     maxOutputTokens: request.max_completion_tokens,
     temperature: request.temperature,
@@ -260,7 +264,8 @@ export function convertXaiChatRequestToVertex(request: XaiChatRequest): VertexRe
     : [];
 
   return removeUndefined({
-    contents,
+    contents: conversation.contents,
+    systemInstruction: conversation.systemInstruction,
     generationConfig: Object.keys(generationConfig).length > 0 ? generationConfig : undefined,
     tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined,
     toolConfig:
@@ -464,23 +469,22 @@ function isNullSchema(value: unknown): boolean {
 }
 
 export function convertMessagesToVertexContents(messages: XaiMessage[]): VertexContent[] {
+  return convertMessagesToVertexConversation(messages).contents;
+}
+
+function convertMessagesToVertexConversation(messages: XaiMessage[]): {
+  contents: VertexContent[];
+  systemInstruction?: { parts: VertexPart[] };
+} {
   const contents: VertexContent[] = [];
   const toolNamesById = new Map<string, string>();
-  const systemText = messages
+  const systemParts = messages
     .filter((message) => message.role === "system")
-    .map((message) => extractTextContent(message.content))
-    .filter(Boolean)
-    .join("\n\n");
-  let injectedSystem = false;
+    .flatMap((message) => textPartsFromContent(message.content));
 
   const append = (role: VertexContent["role"], parts: VertexPart[]) => {
     const cleanParts = parts.filter((part) => hasVertexPartValue(part));
     if (cleanParts.length === 0) return;
-
-    if (role === "user" && systemText && !injectedSystem) {
-      cleanParts.unshift({ text: systemText });
-      injectedSystem = true;
-    }
 
     const last = contents[contents.length - 1];
     if (last?.role === role) {
@@ -527,19 +531,24 @@ export function convertMessagesToVertexContents(messages: XaiMessage[]): VertexC
     }
   }
 
-  if (systemText && !injectedSystem) {
-    contents.unshift({ role: "user", parts: [{ text: systemText }] });
-  }
-
   if (contents.length === 0) {
-    throw new Error("Cannot send an empty conversation to Vertex AI.");
+    if (systemParts.length === 0) {
+      throw new Error("Cannot send an empty conversation to Vertex AI.");
+    }
+    contents.push({ role: "user", parts: [{ text: "Continue." }] });
   }
 
   if (contents[0]?.role === "model") {
     contents.unshift({ role: "user", parts: [{ text: "Continue." }] });
   }
 
-  return contents;
+  return removeUndefined({
+    contents,
+    systemInstruction: systemParts.length > 0 ? { parts: systemParts } : undefined,
+  }) as {
+    contents: VertexContent[];
+    systemInstruction?: { parts: VertexPart[] };
+  };
 }
 
 export function convertVertexGenerateResponseToOpenAI(payload: unknown, context: OpenAIContext) {

@@ -62,6 +62,22 @@ describe("Vertex Grok adapter", () => {
     );
   });
 
+  it("requests SSE output from Vertex streaming endpoints", () => {
+    expect(
+      buildVertexModelUrl(
+        {
+          projectId: "project-1",
+          location: "europe-west1",
+          baseURL: "https://aiplatform.googleapis.com/",
+        },
+        "grok-4-1-fast-reasoning",
+        true,
+      ),
+    ).toBe(
+      "https://aiplatform.googleapis.com/v1/projects/project-1/locations/europe-west1/publishers/xai/models/grok-4.1-fast-reasoning:streamGenerateContent?alt=sse",
+    );
+  });
+
   it("maps native xAI model IDs to Vertex xAI publisher IDs", () => {
     expect(getVertexModelId("grok-4-1-fast-reasoning")).toBe("grok-4.1-fast-reasoning");
     expect(getVertexModelId("grok-4-1-fast-non-reasoning")).toBe("grok-4.1-fast-non-reasoning");
@@ -88,13 +104,28 @@ describe("Vertex Grok adapter", () => {
     ]);
 
     expect(contents).toEqual([
-      { role: "user", parts: [{ text: "Follow policy." }, { text: "Hello" }] },
+      { role: "user", parts: [{ text: "Hello" }] },
       {
         role: "model",
         parts: [{ text: "I can help." }, { functionCall: { name: "lookup", args: { query: "docs" } } }],
       },
       { role: "user", parts: [{ functionResponse: { name: "lookup", response: { ok: true } } }] },
     ]);
+  });
+
+  it("sends system prompts through Vertex systemInstruction", () => {
+    const request = convertXaiChatRequestToVertex({
+      model: "grok-4-1-fast-reasoning",
+      messages: [
+        { role: "system", content: "Follow policy." },
+        { role: "user", content: "Hello" },
+      ],
+    });
+
+    expect(request).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: "Hello" }] }],
+      systemInstruction: { parts: [{ text: "Follow policy." }] },
+    });
   });
 
   it("maps and sanitizes function declarations by default", () => {

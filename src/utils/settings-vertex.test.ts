@@ -1,7 +1,8 @@
 import { rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getModelAuthStatus,
   getVertexSettings,
@@ -28,6 +29,8 @@ const originalEnv = {
 };
 
 const testUserSettingsPath = path.join(os.tmpdir(), `grok-settings-vertex-${process.pid}.json`);
+const require = createRequire(import.meta.url);
+const nodeFs = require("node:fs") as typeof import("node:fs");
 
 function restoreEnv(): void {
   rmSync(testUserSettingsPath, { force: true });
@@ -171,5 +174,44 @@ describe("Vertex settings", () => {
         missing: [],
       },
     });
+  });
+
+  it("loads saved user settings once when reporting auth status", async () => {
+    nodeFs.writeFileSync(
+      testUserSettingsPath,
+      JSON.stringify({
+        apiKey: "saved-xai-key",
+        vertex: {
+          enabled: true,
+          projectId: "saved-project",
+        },
+      }),
+    );
+
+    vi.resetModules();
+    const readFileSync = vi.fn(nodeFs.readFileSync as typeof nodeFs.readFileSync);
+    vi.doMock("fs", () => ({
+      ...nodeFs,
+      default: nodeFs,
+      readFileSync,
+    }));
+    try {
+      const { getModelAuthStatus: getFreshModelAuthStatus } = await import("./settings");
+      expect(getFreshModelAuthStatus()).toMatchObject({
+        configured: true,
+        activeMode: "vertex",
+        xaiConfigured: true,
+        vertex: {
+          enabled: true,
+          configured: true,
+          projectId: "saved-project",
+        },
+      });
+      const settingsReads = readFileSync.mock.calls.filter(([filePath]) => filePath === testUserSettingsPath);
+      expect(settingsReads).toHaveLength(1);
+    } finally {
+      vi.doUnmock("fs");
+      vi.resetModules();
+    }
   });
 });
