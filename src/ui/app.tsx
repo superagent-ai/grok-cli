@@ -1892,15 +1892,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, []);
 
   const submitApiKey = useCallback(() => {
-    if (isVertexModeEnabled()) {
+    const shouldDisableSavedVertex = isVertexModeEnabled();
+    if (shouldDisableSavedVertex) {
       if (isTruthyEnv(process.env.GROK_USE_VERTEX)) {
         setApiKeyError("GROK_USE_VERTEX is set in this shell. Unset it before using a native xAI API key.");
         selectAuthModalTab("vertex");
         return;
       }
-
-      const current = loadUserSettings();
-      saveUserSettings({ vertex: { ...current.vertex, enabled: false } });
     }
 
     const apiKey = (apiKeyInputRef.current?.plainText || "").trim();
@@ -1911,6 +1909,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (!apiKey.startsWith("xai-")) {
       setApiKeyError("API keys should start with xai-.");
       return;
+    }
+
+    if (shouldDisableSavedVertex) {
+      const current = loadUserSettings();
+      saveUserSettings({ vertex: { ...current.vertex, enabled: false } });
     }
 
     saveUserSettings({ apiKey });
