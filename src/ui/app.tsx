@@ -3080,7 +3080,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           closeApiKeyModal();
           return;
         }
-        if (key.name === "tab" || key.name === "right" || key.name === "left") {
+        if (key.name === "tab") {
           selectAuthModalTab(authModalTabRef.current === "xai" ? "vertex" : "xai");
           return;
         }
