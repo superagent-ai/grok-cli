@@ -2,19 +2,23 @@ import { GoogleAuth } from "google-auth-library";
 
 const VERTEX_AUTH_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 const fetchImplementation: typeof fetch = (input, init) => globalThis.fetch(input, init);
+let vertexAuth: GoogleAuth | undefined;
 
 export async function getVertexAccessToken(): Promise<string> {
-  const auth = new GoogleAuth({
-    scopes: VERTEX_AUTH_SCOPES,
-    clientOptions: {
-      transporterOptions: {
-        fetchImplementation,
+  if (!vertexAuth) {
+    vertexAuth = new GoogleAuth({
+      scopes: VERTEX_AUTH_SCOPES,
+      clientOptions: {
+        transporterOptions: {
+          fetchImplementation,
+        },
       },
-    },
-  });
+    });
+  }
+
   let token: string | null | undefined;
   try {
-    token = await auth.getAccessToken();
+    token = await vertexAuth.getAccessToken();
   } catch (err: unknown) {
     throw new Error(formatVertexAuthErrorMessage(err));
   }

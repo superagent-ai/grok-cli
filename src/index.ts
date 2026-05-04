@@ -187,7 +187,7 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
   try {
     const delegation = await loadDelegation(jobPath);
     const apiKey = stringOption(options.apiKey) || getApiKey();
-    requireModelAuth(apiKey);
+    requireModelAuth(apiKey, { exitOnError: false });
     const useBatchApi = Boolean(delegation.batchApi ?? options.batchApi === true);
     if (isVertexModeEnabled() && useBatchApi) {
       throw new Error(
@@ -262,12 +262,15 @@ function resolveConfig(options: CliOptions) {
   return { apiKey, baseURL, model, maxToolRounds, sandboxMode, sandboxSettings };
 }
 
-function requireModelAuth(apiKey: string | undefined): string | undefined {
+function requireModelAuth(apiKey: string | undefined, options: { exitOnError?: boolean } = {}): string | undefined {
   if (isVertexModeEnabled()) {
     try {
       requireVertexSettings();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      if (options.exitOnError === false) {
+        throw new Error(message);
+      }
       console.error(`Error: ${message}`);
       process.exit(1);
     }
@@ -275,9 +278,11 @@ function requireModelAuth(apiKey: string | undefined): string | undefined {
   }
 
   if (!apiKey) {
-    console.error(
-      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
-    );
+    const message = "API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json";
+    if (options.exitOnError === false) {
+      throw new Error(message);
+    }
+    console.error(`Error: ${message}`);
     process.exit(1);
   }
 

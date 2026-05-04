@@ -17,6 +17,7 @@ vi.mock("google-auth-library", () => ({
 
 describe("Vertex auth", () => {
   beforeEach(() => {
+    vi.resetModules();
     googleAuthConstructor.mockClear();
     getAccessTokenMock.mockReset();
     getAccessTokenMock.mockResolvedValue("adc-token");
@@ -60,5 +61,15 @@ describe("Vertex auth", () => {
     expect(message).toContain("gcloud auth application-default login");
     expect(message).toContain("gcloud auth application-default revoke");
     expect(message).not.toContain('{"error"');
+  });
+
+  it("reuses the GoogleAuth client so token caching can work", async () => {
+    const { getVertexAccessToken } = await import("./vertex-auth");
+
+    await expect(getVertexAccessToken()).resolves.toBe("adc-token");
+    await expect(getVertexAccessToken()).resolves.toBe("adc-token");
+
+    expect(googleAuthConstructor).toHaveBeenCalledTimes(1);
+    expect(getAccessTokenMock).toHaveBeenCalledTimes(2);
   });
 });

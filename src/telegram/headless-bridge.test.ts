@@ -1,6 +1,21 @@
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { hasTelegramModelAuth } from "./headless-bridge";
 import { resolveTelegramHeadlessBridgePaths } from "./headless-bridge-paths";
+
+vi.mock("../agent/agent", () => ({
+  Agent: class {},
+}));
+
+const originalApiKey = process.env.GROK_API_KEY;
+
+afterEach(() => {
+  if (originalApiKey === undefined) {
+    delete process.env.GROK_API_KEY;
+  } else {
+    process.env.GROK_API_KEY = originalApiKey;
+  }
+});
 
 describe("resolveTelegramHeadlessBridgePaths", () => {
   it("uses default files in the provided cwd", () => {
@@ -24,5 +39,13 @@ describe("resolveTelegramHeadlessBridgePaths", () => {
       logFile: path.resolve(cwd, "logs", "bridge.log"),
       pairCodeFile: path.resolve(cwd, "state", "pair.txt"),
     });
+  });
+});
+
+describe("hasTelegramModelAuth", () => {
+  it("accepts an explicit CLI api key even when saved auth is absent", () => {
+    delete process.env.GROK_API_KEY;
+
+    expect(hasTelegramModelAuth("cli-key")).toBe(true);
   });
 });

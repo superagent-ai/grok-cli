@@ -132,7 +132,7 @@ describe("Vertex Grok adapter", () => {
               type: "OBJECT",
               properties: {
                 query: { type: "STRING" },
-                limit: { type: "INTEGER", description: "Result count" },
+                limit: { type: "INTEGER", description: "Result count", nullable: true },
               },
               required: ["query"],
             },
@@ -215,6 +215,24 @@ describe("Vertex Grok adapter", () => {
         tags: { type: "ARRAY", items: { type: "STRING" } },
       },
       required: ["path"],
+    });
+  });
+
+  it("preserves nullable unions when sanitizing function schemas", () => {
+    expect(
+      sanitizeVertexSchema({
+        type: "object",
+        properties: {
+          maybeText: { oneOf: [{ type: "null" }, { type: "string", description: "Optional text" }] },
+          maybeCount: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        },
+      }),
+    ).toEqual({
+      type: "OBJECT",
+      properties: {
+        maybeText: { type: "STRING", description: "Optional text", nullable: true },
+        maybeCount: { type: "INTEGER", nullable: true },
+      },
     });
   });
 
@@ -379,6 +397,50 @@ describe("Vertex Grok adapter", () => {
       error: {
         message: expect.stringContaining("Google Application Default Credentials need reauthentication."),
         code: "vertex_auth_failed",
+      },
+    });
+  });
+
+  it("returns structured errors for unsupported xAI request shapes", async () => {
+    process.env.GROK_VERTEX_PROJECT_ID = "project-1";
+    const baseFetch = vi.fn<typeof fetch>();
+
+    const response = await createVertexFetch(baseFetch)("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "grok-4-1-fast-reasoning",
+        messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }] }],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(baseFetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        message: expect.stringContaining("image_url message parts are not supported"),
+        code: "vertex_request_invalid",
+      },
+    });
+  });
+
+  it("returns structured errors for empty Vertex conversations", async () => {
+    process.env.GROK_VERTEX_PROJECT_ID = "project-1";
+    const baseFetch = vi.fn<typeof fetch>();
+
+    const response = await createVertexFetch(baseFetch)("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "grok-4-1-fast-reasoning",
+        messages: [],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(baseFetch).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        message: "Cannot send an empty conversation to Vertex AI.",
+        code: "vertex_request_invalid",
       },
     });
   });

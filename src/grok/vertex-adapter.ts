@@ -1,4 +1,4 @@
-import { getVertexSettings, isTruthyEnv, requireVertexSettings, type VertexSettings } from "../utils/settings";
+import { isTruthyEnv, requireVertexSettings, type VertexSettings } from "../utils/settings";
 import { getVertexAccessToken } from "./vertex-auth";
 
 type JsonRecord = Record<string, unknown>;
@@ -166,10 +166,19 @@ export function createVertexFetch(baseFetch: typeof fetch = globalThis.fetch): t
       return unsupportedVertexEndpointResponse(url);
     }
 
-    const xaiRequest = (await readJsonRequest(input, init)) as XaiChatRequest;
-    const vertexSettings = requireVertexSettings();
+    let xaiRequest: XaiChatRequest;
+    let vertexSettings: VertexSettings;
+    let vertexRequest: VertexRequest;
+    try {
+      xaiRequest = (await readJsonRequest(input, init)) as XaiChatRequest;
+      vertexSettings = requireVertexSettings();
+      vertexRequest = convertXaiChatRequestToVertex(xaiRequest);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return vertexErrorResponse(message, 400, "vertex_request_invalid");
+    }
+
     const isStreaming = xaiRequest.stream === true;
-    const vertexRequest = convertXaiChatRequestToVertex(xaiRequest);
     let accessToken: string;
     try {
       accessToken = await getVertexAccessToken();
@@ -414,7 +423,11 @@ function pickUnionSchema(schema: JsonRecord): unknown {
     if (!Array.isArray(variants)) continue;
     const nonNull = variants.find((variant) => !isNullSchema(variant));
     if (nonNull !== undefined) {
-      return nonNull;
+      const picked = isRecord(nonNull) ? { ...nonNull } : nonNull;
+      if (isRecord(picked) && variants.some((variant) => isNullSchema(variant))) {
+        picked.nullable = true;
+      }
+      return picked;
     }
   }
   return undefined;
@@ -934,8 +947,4 @@ function removeUndefined<T extends JsonRecord>(value: T): T {
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function getCurrentVertexModelUrl(modelId: string, isStreaming: boolean): string {
-  return buildVertexModelUrl(getVertexSettings(), modelId, isStreaming);
 }

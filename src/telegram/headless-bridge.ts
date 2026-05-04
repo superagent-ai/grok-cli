@@ -122,7 +122,7 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
   }
 
   const apiKey = options.apiKey ?? getApiKey();
-  if (!hasModelAuthConfigured()) {
+  if (!hasTelegramModelAuth(apiKey)) {
     throw new Error(
       "Missing model authentication. Set GROK_API_KEY, or configure Vertex with GROK_VERTEX_PROJECT_ID and Application Default Credentials.",
     );
@@ -272,4 +272,8 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
 
     await shutdownComplete;
   }
+}
+
+export function hasTelegramModelAuth(apiKey: string | undefined): boolean {
+  return Boolean(apiKey) || hasModelAuthConfigured();
 }
