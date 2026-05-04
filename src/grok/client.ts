@@ -1,8 +1,9 @@
 import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
 import type { ModelInfo, ReasoningEffort } from "../types/index";
-import { getReasoningEffortForModel } from "../utils/settings";
+import { getReasoningEffortForModel, isVertexModeEnabled, VERTEX_API_KEY_PLACEHOLDER } from "../utils/settings";
 import { getEffectiveReasoningEffort, getModelInfo, normalizeModelId } from "./models";
+import { createVertexFetch } from "./vertex-adapter";
 
 export type XaiProvider = ReturnType<typeof createXai>;
 export type XaiChatModel = ReturnType<XaiProvider>;
@@ -33,6 +34,14 @@ export interface ResolvedModelRuntime {
 }
 
 export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
+  if (isVertexModeEnabled()) {
+    return createXai({
+      apiKey: apiKey || VERTEX_API_KEY_PLACEHOLDER,
+      baseURL: "https://api.x.ai/v1",
+      fetch: createVertexFetch(),
+    });
+  }
+
   return createXai({
     apiKey,
     baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
@@ -45,7 +54,7 @@ export function resolveModelRuntime(provider: XaiProvider, requestedModelId: str
   const reasoningEffort = getEffectiveReasoningEffort(modelId, getReasoningEffortForModel(modelId));
 
   return {
-    model: modelInfo?.responsesOnly ? provider.responses(modelId) : provider(modelId),
+    model: !isVertexModeEnabled() && modelInfo?.responsesOnly ? provider.responses(modelId) : provider(modelId),
     modelId,
     modelInfo,
     providerOptions: reasoningEffort

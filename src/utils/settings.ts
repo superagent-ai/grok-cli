@@ -16,6 +16,37 @@ export type TelegramStreamingMode = "off" | "partial";
 export type SandboxMode = "off" | "shuru";
 export type PaymentChain = "base" | "base-sepolia";
 
+export const VERTEX_API_KEY_PLACEHOLDER = "vertex-adc";
+
+export interface VertexSettings {
+  projectId: string;
+  location: string;
+  baseURL: string;
+}
+
+export interface VertexUserSettings {
+  enabled?: boolean;
+  projectId?: string;
+  location?: string;
+  baseURL?: string;
+}
+
+export type ModelAuthMode = "xai" | "vertex";
+
+export interface ModelAuthStatus {
+  configured: boolean;
+  activeMode: ModelAuthMode;
+  xaiConfigured: boolean;
+  vertex: VertexSettings & {
+    enabled: boolean;
+    configured: boolean;
+    missing: string[];
+  };
+}
+
+export const DEFAULT_VERTEX_BASE_URL = "https://aiplatform.googleapis.com";
+export const DEFAULT_VERTEX_LOCATION = "us-central1";
+
 export interface PaymentApprovalSettings {
   autoApprove?: boolean;
 }
@@ -171,6 +202,7 @@ export interface UserSettings {
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;
   payments?: PaymentSettings;
+  vertex?: VertexUserSettings;
   modeModels?: Partial<Record<AgentMode, string>>;
 }
 
@@ -182,7 +214,10 @@ export interface ProjectSettings {
 }
 
 const USER_DIR = path.join(os.homedir(), ".grok");
-const USER_SETTINGS_PATH = path.join(USER_DIR, "user-settings.json");
+
+function getUserSettingsPath(): string {
+  return process.env.GROK_USER_SETTINGS_PATH || path.join(USER_DIR, "user-settings.json");
+}
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -205,7 +240,32 @@ function writeJson(filePath: string, data: unknown): void {
 }
 
 export function loadUserSettings(): UserSettings {
-  return readJson<UserSettings>(USER_SETTINGS_PATH) || {};
+  return readJson<UserSettings>(getUserSettingsPath()) || {};
+}
+
+function normalizeOptionalSetting(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function normalizeVertexLocationSetting(value: unknown): string | undefined {
+  const location = normalizeOptionalSetting(value);
+  if (!location || location.toLowerCase() === "global") return undefined;
+  return location;
+}
+
+function normalizeVertexUserSettings(raw: VertexUserSettings): VertexUserSettings {
+  const projectId = normalizeOptionalSetting(raw.projectId);
+  const location = normalizeVertexLocationSetting(raw.location);
+  const baseURL = normalizeOptionalSetting(raw.baseURL)?.replace(/\/+$/, "");
+
+  return {
+    ...(raw.enabled !== undefined ? { enabled: raw.enabled === true } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(location ? { location } : {}),
+    ...(baseURL ? { baseURL } : {}),
+  };
 }
 
 export function saveUserSettings(partial: Partial<UserSettings>): void {
@@ -279,9 +339,17 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
+    ...(partial.vertex !== undefined
+      ? {
+          vertex: normalizeVertexUserSettings({
+            ...current.vertex,
+            ...partial.vertex,
+          }),
+        }
+      : {}),
   };
 
-  writeJson(USER_SETTINGS_PATH, next);
+  writeJson(getUserSettingsPath(), next);
 }
 
 export function loadProjectSettings(): ProjectSettings {
@@ -314,6 +382,84 @@ export function getApiKey(): string | undefined {
 
 export function getBaseURL(): string {
   return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
+}
+
+export function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+export function isVertexModeEnabled(): boolean {
+  return isTruthyEnv(process.env.GROK_USE_VERTEX) || loadUserSettings().vertex?.enabled === true;
+}
+
+export function hasModelAuthConfigured(): boolean {
+  return getModelAuthStatus().configured;
+}
+
+export function getVertexSettings(): VertexSettings {
+  const userVertex = loadUserSettings().vertex;
+  const projectId =
+    process.env.GROK_VERTEX_PROJECT_ID?.trim() ||
+    userVertex?.projectId?.trim() ||
+    process.env.GCP_PROJECT_ID?.trim() ||
+    process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+    process.env.GCLOUD_PROJECT?.trim() ||
+    "";
+  const location =
+    normalizeVertexLocationSetting(process.env.GROK_VERTEX_LOCATION) ||
+    normalizeVertexLocationSetting(userVertex?.location) ||
+    normalizeVertexLocationSetting(process.env.GCP_VERTEX_LOCATION) ||
+    normalizeVertexLocationSetting(process.env.GCP_REGION) ||
+    normalizeVertexLocationSetting(process.env.GOOGLE_CLOUD_LOCATION) ||
+    DEFAULT_VERTEX_LOCATION;
+  const baseURL = (
+    process.env.GROK_VERTEX_BASE_URL?.trim() ||
+    userVertex?.baseURL?.trim() ||
+    process.env.GCP_VERTEX_BASE_URL?.trim() ||
+    DEFAULT_VERTEX_BASE_URL
+  ).replace(/\/+$/, "");
+
+  return {
+    projectId,
+    location,
+    baseURL,
+  };
+}
+
+export function requireVertexSettings(): VertexSettings {
+  const settings = getVertexSettings();
+  if (!settings.projectId) {
+    throw new Error(
+      "Vertex AI is enabled, but no Google Cloud project is configured. Set GROK_VERTEX_PROJECT_ID, or save vertex.projectId in ~/.grok/user-settings.json.",
+    );
+  }
+  if (!settings.location) {
+    throw new Error(
+      "Vertex AI is enabled, but no Vertex AI location is configured. Set GROK_VERTEX_LOCATION, or save vertex.location in ~/.grok/user-settings.json.",
+    );
+  }
+  return settings;
+}
+
+export function getModelAuthStatus(): ModelAuthStatus {
+  const vertexSettings = getVertexSettings();
+  const vertexEnabled = isVertexModeEnabled();
+  const vertexMissing = vertexSettings.projectId ? [] : ["GROK_VERTEX_PROJECT_ID"];
+  const vertexConfigured = vertexEnabled && vertexMissing.length === 0;
+  const xaiConfigured = Boolean(getApiKey());
+
+  return {
+    activeMode: vertexEnabled ? "vertex" : "xai",
+    configured: vertexEnabled ? vertexConfigured : xaiConfigured,
+    xaiConfigured,
+    vertex: {
+      ...vertexSettings,
+      enabled: vertexEnabled,
+      configured: vertexConfigured,
+      missing: vertexMissing,
+    },
+  };
 }
 
 export function getCurrentModel(mode?: AgentMode): string {

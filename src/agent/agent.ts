@@ -67,11 +67,15 @@ import { loadCustomInstructions } from "../utils/instructions";
 import {
   type CustomSubagentConfig,
   getCurrentModel,
+  getModelAuthStatus,
   getModeSpecificModel,
+  hasModelAuthConfigured,
+  isVertexModeEnabled,
   loadMcpServers,
   loadValidSubAgents,
   type SandboxMode,
   type SandboxSettings,
+  VERTEX_API_KEY_PLACEHOLDER,
 } from "../utils/settings";
 import { runSideQuestion, type SideQuestionResult } from "../utils/side-question";
 import { discoverSkills, formatSkillsForPrompt } from "../utils/skills";
@@ -556,8 +560,9 @@ export class Agent {
     options: AgentOptions = {},
   ) {
     this.baseURL = baseURL || null;
-    if (apiKey) {
-      this.setApiKey(apiKey, baseURL);
+    const authStatus = getModelAuthStatus();
+    if (apiKey || (authStatus.activeMode === "vertex" && authStatus.configured)) {
+      this.setApiKey(apiKey || VERTEX_API_KEY_PLACEHOLDER, baseURL);
     }
     this.bash = new BashTool(process.cwd(), {
       sandboxMode: options.sandboxMode ?? "off",
@@ -644,7 +649,7 @@ export class Agent {
   }
 
   hasApiKey(): boolean {
-    return !!this.apiKey;
+    return hasModelAuthConfigured() && !!this.provider;
   }
 
   setApiKey(apiKey: string, baseURL = this.baseURL ?? undefined): void {
@@ -885,6 +890,12 @@ export class Agent {
   }
 
   private getBatchClientOptions(signal?: AbortSignal): BatchClientOptions {
+    if (isVertexModeEnabled()) {
+      throw new Error(
+        "xAI Batch API is not available when GROK_USE_VERTEX=1. Use normal streaming/headless mode with Vertex AI, or unset GROK_USE_VERTEX and configure GROK_API_KEY for native xAI Batch API.",
+      );
+    }
+
     if (!this.apiKey) {
       throw new Error("API key required. Add an API key to continue.");
     }
@@ -2136,6 +2147,12 @@ export class Agent {
 
   private requireProvider(): XaiProvider {
     if (!this.provider) {
+      const authStatus = getModelAuthStatus();
+      if (authStatus.activeMode === "vertex") {
+        throw new Error(
+          "Vertex AI authentication is not configured. Set GROK_VERTEX_PROJECT_ID, then run `gcloud auth application-default login`.",
+        );
+      }
       throw new Error("API key required. Add an API key to continue.");
     }
 

@@ -21,8 +21,10 @@ import {
   getBaseURL,
   getCurrentSandboxMode,
   getCurrentSandboxSettings,
+  isVertexModeEnabled,
   loadPaymentSettings,
   mergeSandboxSettings,
+  requireVertexSettings,
   type SandboxMode,
   type SandboxSettings,
   savePaymentSettings,
@@ -102,7 +104,7 @@ async function startInteractive(
 
 async function runHeadless(
   prompt: string,
-  apiKey: string,
+  apiKey: string | undefined,
   baseURL: string,
   model: string | undefined,
   maxToolRounds: number,
@@ -185,8 +187,12 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
   try {
     const delegation = await loadDelegation(jobPath);
     const apiKey = stringOption(options.apiKey) || getApiKey();
-    if (!apiKey) {
-      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
+    requireModelAuth(apiKey);
+    const useBatchApi = Boolean(delegation.batchApi ?? options.batchApi === true);
+    if (isVertexModeEnabled() && useBatchApi) {
+      throw new Error(
+        "xAI Batch API is not available when GROK_USE_VERTEX=1. Use normal Vertex AI streaming/headless mode, or unset GROK_USE_VERTEX and configure GROK_API_KEY.",
+      );
     }
 
     const baseURL = stringOption(options.baseUrl) || getBaseURL();
@@ -200,7 +206,7 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
       persistSession: false,
       sandboxMode,
       sandboxSettings,
-      batchApi: Boolean(delegation.batchApi ?? options.batchApi === true),
+      batchApi: useBatchApi,
     });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
@@ -250,13 +256,24 @@ function resolveConfig(options: CliOptions) {
   }
   const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), cliOverrides);
 
-  if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey });
+  if (typeof options.apiKey === "string" && !isVertexModeEnabled()) saveUserSettings({ apiKey: options.apiKey });
   if (typeof options.model === "string") saveUserSettings({ defaultModel: normalizeModelId(options.model) });
 
   return { apiKey, baseURL, model, maxToolRounds, sandboxMode, sandboxSettings };
 }
 
-function requireApiKey(apiKey: string | undefined): string {
+function requireModelAuth(apiKey: string | undefined): string | undefined {
+  if (isVertexModeEnabled()) {
+    try {
+      requireVertexSettings();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Error: ${message}`);
+      process.exit(1);
+    }
+    return apiKey;
+  }
+
   if (!apiKey) {
     console.error(
       "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
@@ -313,6 +330,17 @@ program
     }
 
     const config = resolveConfig(options);
+    if (isVertexModeEnabled() && options.batchApi === true) {
+      console.error(
+        "Error: xAI Batch API is not available when GROK_USE_VERTEX=1. Use normal Vertex AI mode, or unset GROK_USE_VERTEX and configure GROK_API_KEY.",
+      );
+      process.exit(1);
+    }
+
+    const isInteractiveRun = !options.verify && !options.prompt;
+    if (isVertexModeEnabled() && !isInteractiveRun) {
+      requireModelAuth(config.apiKey);
+    }
 
     if (options.verify) {
       const verifyError = getVerifyCliError({ hasPrompt: Boolean(options.prompt), hasMessageArgs: message.length > 0 });
@@ -323,7 +351,7 @@ program
 
       await runHeadless(
         buildVerifyPrompt(process.cwd()),
-        requireApiKey(config.apiKey),
+        requireModelAuth(config.apiKey),
         config.baseURL,
         config.model,
         config.maxToolRounds,
@@ -339,7 +367,7 @@ program
     if (options.prompt) {
       await runHeadless(
         options.prompt,
-        requireApiKey(config.apiKey),
+        requireModelAuth(config.apiKey),
         config.baseURL,
         config.model,
         config.maxToolRounds,
@@ -385,7 +413,7 @@ program
     process.off("SIGTERM", exitCleanlyOnSigterm);
     try {
       await runTelegramHeadlessBridge({
-        apiKey: requireApiKey(config.apiKey),
+        apiKey: requireModelAuth(config.apiKey),
         baseURL: config.baseURL,
         model: config.model,
         maxToolRounds: config.maxToolRounds,

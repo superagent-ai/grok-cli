@@ -46,6 +46,24 @@ describe("client", () => {
         expect(runtime.modelId).toBe("grok-3");
         expect(runtime.providerOptions).toBeUndefined();
       });
+
+      it("keeps chat model tool support in Vertex mode", () => {
+        const original = process.env.GROK_USE_VERTEX;
+        process.env.GROK_USE_VERTEX = "1";
+
+        try {
+          const runtime = resolveModelRuntime(mockProvider, "grok-4-1-fast-reasoning");
+
+          expect(runtime.modelId).toBe("grok-4-1-fast-reasoning");
+          expect(runtime.modelInfo?.supportsClientTools).not.toBe(false);
+        } finally {
+          if (original === undefined) {
+            delete process.env.GROK_USE_VERTEX;
+          } else {
+            process.env.GROK_USE_VERTEX = original;
+          }
+        }
+      });
     });
 
     describe("with configured reasoning effort", () => {

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Native Google Cloud Vertex AI support for Grok chat completions via `GROK_USE_VERTEX=1`, Application Default Credentials, and a Vertex payload/stream adapter.
+- Vertex mode now forwards local CLI tools through sanitized Vertex function declarations, preserving directory/file/bash access while avoiding raw AI SDK schema fields that Vertex rejects.
+- Vertex requests map native xAI model IDs such as `grok-4-1-fast-reasoning` to the corresponding Vertex publisher ID such as `grok-4.1-fast-reasoning`.
+- Vertex ADC refresh failures such as Google `invalid_rapt` reauthentication errors now produce actionable `gcloud auth application-default` recovery guidance instead of raw auth JSON.
 - Dedicated grep tool powered by npm ripgrep WASM (#263)
 - `/btw` command for side questions (#264)
 

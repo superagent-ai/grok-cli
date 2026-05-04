@@ -9,6 +9,7 @@ import {
   getCurrentSandboxMode,
   getCurrentSandboxSettings,
   getTelegramBotToken,
+  hasModelAuthConfigured,
   loadUserSettings,
   type SandboxMode,
   type SandboxSettings,
@@ -36,7 +37,7 @@ export interface TelegramHeadlessBridgeOptions {
 }
 
 interface TelegramHeadlessStartupConfig {
-  apiKey: string;
+  apiKey?: string;
   baseURL: string;
   model: string;
   sandboxMode: SandboxMode;
@@ -121,8 +122,10 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
   }
 
   const apiKey = options.apiKey ?? getApiKey();
-  if (!apiKey) {
-    throw new Error("Missing Grok API key.");
+  if (!hasModelAuthConfigured()) {
+    throw new Error(
+      "Missing model authentication. Set GROK_API_KEY, or configure Vertex with GROK_VERTEX_PROJECT_ID and Application Default Credentials.",
+    );
   }
 
   const startupConfig: TelegramHeadlessStartupConfig = {

@@ -35,7 +35,7 @@ grok uninstall --dry-run
 grok uninstall --keep-config
 ```
 
-**Prerequisites:** a **Grok API key** from [x.ai](https://x.ai) and a modern terminal emulator for the interactive OpenTUI experience. Headless `--prompt` mode does not depend on terminal UI support. If you want host desktop automation via the built-in computer sub-agent, also enable **Accessibility** permission for your terminal app on macOS.
+**Prerequisites:** either a **Grok API key** from [x.ai](https://x.ai) or **Google Cloud Vertex AI** access with Application Default Credentials. You also need a modern terminal emulator for the interactive OpenTUI experience. Headless `--prompt` mode does not depend on terminal UI support. If you want host desktop automation via the built-in computer sub-agent, also enable **Accessibility** permission for your terminal app on macOS.
 
 ---
 
@@ -77,7 +77,8 @@ grok --verify
 
 `--batch-api` uses xAI's Batch API for lower-cost unattended runs. It is a good
 fit for scripts, CI, schedules, and other non-interactive workflows where a
-delayed result is fine.
+delayed result is fine. Batch mode is a native xAI endpoint and is not available
+when `GROK_USE_VERTEX=1`.
 
 **Continue a saved session:**
 
@@ -195,7 +196,11 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 ---
 
-## API key (pick one)
+## Authentication
+
+Pick one model authentication path.
+
+### Native xAI API key
 
 **Environment (good for CI):**
 
@@ -239,6 +244,34 @@ Names cannot be `general`, `explore`, `vision`, `verify`, or `computer` because 
 
 Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`, `**GROK_MAX_TOKENS**`.
 
+### Google Cloud Vertex AI
+
+Vertex mode uses Google Application Default Credentials instead of an xAI API key:
+
+```bash
+gcloud auth application-default login
+export GROK_USE_VERTEX=1
+export GROK_VERTEX_PROJECT_ID=your-gcp-project-id
+export GROK_VERTEX_LOCATION=us-central1
+grok --prompt "hello from Vertex"
+```
+
+`GROK_USE_VERTEX=1` bypasses `GROK_API_KEY` validation for chat completions and fetches a short-lived OAuth access token with the `cloud-platform` scope.
+
+Vertex Grok uses the global API host but a normal location path. By default requests go to:
+
+```text
+https://aiplatform.googleapis.com/v1/projects/$GROK_VERTEX_PROJECT_ID/locations/us-central1/publishers/xai/models/$GROK_MODEL:generateContent
+```
+
+The adapter maps native xAI model IDs to Vertex publisher model IDs where they differ, for example `grok-4-1-fast-reasoning` becomes `grok-4.1-fast-reasoning` on the Vertex request path.
+
+Set `GROK_VERTEX_LOCATION` to choose the location path, for example `us-central1` or `europe-west1`. The host defaults to `https://aiplatform.googleapis.com`; `GROK_VERTEX_BASE_URL` is available only for advanced/custom environments. The broader `GCP_PROJECT_ID`, `GCP_REGION`, and `GCP_VERTEX_*` variables remain compatibility fallbacks, but the `GROK_VERTEX_*` names take precedence to avoid clashing with other Google Cloud tools.
+
+Vertex mode forwards local CLI tools such as `bash`, `read_file`, `grep`, `write_file`, and `edit_file` through Vertex function declarations. The adapter sanitizes the AI SDK JSON schemas into the OpenAPI-style schema subset accepted by Vertex AI. If a specific Google-side model rollout rejects tool declarations, set `GROK_VERTEX_DISABLE_TOOLS=1` as an emergency fallback; that disables local CLI tool access for Vertex mode.
+
+Native xAI-only endpoints remain native xAI-only in Vertex mode: `--batch-api`, live X/web search tools, image/video generation, and Telegram audio transcription require `GROK_USE_VERTEX` unset plus a configured `GROK_API_KEY`.
+
 ---
 
 ## Telegram (remote control) — short version
@@ -254,7 +287,7 @@ Send a voice note or audio attachment in Telegram and Grok will transcribe it wi
 
 #### Prerequisites
 
-- A valid `GROK_API_KEY` (the same key used for the agent). Transcription reuses the CLI's `apiKey` / `baseURL` resolution, so if the agent can reach xAI, transcription will too.
+- A valid `GROK_API_KEY` (the same key used for the agent). Transcription reuses the CLI's `apiKey` / `baseURL` resolution, so if the agent can reach xAI, transcription will too. Vertex ADC alone does not support the native xAI STT endpoint.
 
 #### Configure in `~/.grok/user-settings.json`
 
@@ -401,6 +434,31 @@ grok -k your_key_here
 
 Get your API key from [x.ai](https://x.ai).
 
+**Vertex project or ADC error**
+
+For Vertex mode, verify all three are true:
+
+```bash
+export GROK_USE_VERTEX=1
+export GROK_VERTEX_PROJECT_ID=your-gcp-project-id
+gcloud auth application-default login
+```
+
+Use `GROK_VERTEX_LOCATION` for the resource path location. Keep the default host `https://aiplatform.googleapis.com` unless you are testing a custom endpoint.
+
+If Google returns an ADC reauthentication error such as `invalid_rapt`, refresh the local ADC token:
+
+```bash
+gcloud auth application-default login
+```
+
+If the token cache is stuck, reset it:
+
+```bash
+gcloud auth application-default revoke
+gcloud auth application-default login
+```
+
 ### Terminal UI issues
 
 **UI doesn't render correctly**
@@ -426,6 +484,7 @@ Ensure your terminal supports true color and Unicode. Update your terminal emula
 **Voice messages not transcribing**
 
 - Verify `GROK_API_KEY` is set (transcription uses the same key)
+- If `GROK_USE_VERTEX=1`, unset it for Telegram audio transcription or disable `telegram.audioInput.enabled`
 - Check `~/.grok/user-settings.json` has `telegram.audioInput.enabled: true`
 
 ### Sandbox mode

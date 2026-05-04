@@ -22,7 +22,12 @@ import { editFile, readFile, writeFile } from "../tools/file";
 import { executeGrep } from "../tools/grep";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
-import { type CustomSubagentConfig, loadPaymentSettings, loadValidSubAgents } from "../utils/settings";
+import {
+  type CustomSubagentConfig,
+  isVertexModeEnabled,
+  loadPaymentSettings,
+  loadValidSubAgents,
+} from "../utils/settings";
 import type { XaiProvider } from "./client";
 import {
   type GenerateImageToolInput,
@@ -61,6 +66,10 @@ export function createTools(
     toolName: "web_search" | "x_search",
     abortSignal?: AbortSignal,
   ): Promise<{ success: boolean; output: string }> => {
+    if (isVertexModeEnabled()) {
+      return vertexUnsupportedTool(toolName === "web_search" ? "Web search" : "X search");
+    }
+
     try {
       const { text } = await generateText({
         model: provider.responses(RESPONSES_SEARCH_MODEL),
@@ -242,6 +251,9 @@ export function createTools(
           .describe("Optional file path for the generated image. For multiple images, numbered suffixes are added."),
       }),
       execute: async (input: GenerateImageToolInput, { abortSignal }) => {
+        if (isVertexModeEnabled()) {
+          return vertexUnsupportedTool("Image generation");
+        }
         return generateImageTool(provider, input, cwd(), abortSignal);
       },
     }),
@@ -279,6 +291,9 @@ export function createTools(
           .describe("Optional timeout in milliseconds while waiting for video generation"),
       }),
       execute: async (input: GenerateVideoToolInput, { abortSignal }) => {
+        if (isVertexModeEnabled()) {
+          return vertexUnsupportedTool("Video generation");
+        }
         return generateVideoTool(provider, input, cwd(), abortSignal);
       },
     }),
@@ -970,6 +985,13 @@ export function createTools(
   });
 
   return tools;
+}
+
+function vertexUnsupportedTool(label: string): { success: false; output: string } {
+  return {
+    success: false,
+    output: `${label} is not available through Vertex AI Grok chat completions. Unset GROK_USE_VERTEX and configure GROK_API_KEY to use native xAI-only endpoints.`,
+  };
 }
 
 function formatScheduleList(schedules: StoredSchedule[], daemonStatus: ScheduleDaemonStatus): string {
