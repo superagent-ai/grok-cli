@@ -53,13 +53,10 @@ export class BashTool {
 
   async execute(command: string, timeout = 30_000, abortSignal?: AbortSignal): Promise<ToolResult> {
     try {
-      if (isSimpleCdCommand(command)) {
-        const dir = command
-          .substring(3)
-          .trim()
-          .replace(/^["']|["']$/g, "");
+      const cdTarget = getSimpleCdCommandTarget(command);
+      if (cdTarget !== null) {
         try {
-          const nextCwd = path.resolve(this.cwd, dir);
+          const nextCwd = path.resolve(this.cwd, cdTarget);
           const info = await stat(nextCwd);
           if (!info.isDirectory()) {
             return { success: false, error: `Cannot change directory: ${nextCwd} is not a directory` };
@@ -747,7 +744,7 @@ function extractShellCommandString(words: string[]): string | null {
 
   for (let i = 1; i < words.length; i++) {
     const word = words[i];
-    if (word === "-c" || word.endsWith("c")) {
+    if (isShellCommandOption(word)) {
       return words[i + 1] ?? null;
     }
   }
@@ -755,8 +752,15 @@ function extractShellCommandString(words: string[]): string | null {
   return null;
 }
 
+function isShellCommandOption(word: string): boolean {
+  if (word === "-c") return true;
+  if (!word.startsWith("-") || word.startsWith("--")) return false;
+  return word.slice(1).includes("c");
+}
+
 function getSimpleCdTarget(words: string[]): string | null {
   if (words[0] !== "cd") return null;
+  if (words.length > 2) return null;
   const target = words[1] ?? os.homedir();
   if (target.includes("$") || target.includes("*") || target.includes("?")) return null;
   return target;
@@ -765,16 +769,67 @@ function getSimpleCdTarget(words: string[]): string | null {
 function getShellCommandIndex(words: string[]): number | null {
   let index = 0;
 
+  index = skipEnvAssignments(words, index);
+
   if (words[index] === "env") {
-    index++;
-    while (index < words.length && (isEnvAssignment(words[index]) || words[index].startsWith("-"))) {
-      index++;
-    }
+    index = skipEnvCommandPrefix(words, index + 1);
   }
 
-  if (words[index] === "command") index++;
+  index = skipEnvAssignments(words, index);
+
+  if (words[index] === "command") {
+    index++;
+    index = skipEnvAssignments(words, index);
+  }
 
   return index < words.length ? index : null;
+}
+
+function skipEnvAssignments(words: string[], start: number): number {
+  let index = start;
+  while (index < words.length && isEnvAssignment(words[index])) index++;
+  return index;
+}
+
+function skipEnvCommandPrefix(words: string[], start: number): number {
+  let index = start;
+
+  while (index < words.length) {
+    const word = words[index];
+
+    if (word === "--") {
+      return index + 1;
+    }
+
+    if (isEnvAssignment(word)) {
+      index++;
+      continue;
+    }
+
+    if (word === "-i" || word === "-0" || word === "--ignore-environment" || word === "--null") {
+      index++;
+      continue;
+    }
+
+    if (word === "-u" || word === "--unset" || word === "-C" || word === "--chdir") {
+      index += 2;
+      continue;
+    }
+
+    if (word.startsWith("--unset=") || word.startsWith("--chdir=")) {
+      index++;
+      continue;
+    }
+
+    if (word.startsWith("-")) {
+      index++;
+      continue;
+    }
+
+    return index;
+  }
+
+  return index;
 }
 
 function isEnvAssignment(word: string): boolean {
@@ -865,11 +920,11 @@ function resolveShellPath(cwd: string, target: string): string {
   return path.resolve(cwd, target);
 }
 
-function isSimpleCdCommand(command: string): boolean {
+function getSimpleCdCommandTarget(command: string): string | null {
   const tokens = tokenizeShell(command);
-  if (tokens.some((token) => token.type === "operator")) return false;
+  if (tokens.some((token) => token.type === "operator")) return null;
   const words = tokens.filter((token): token is ShellWord => token.type === "word").map((token) => token.value);
-  return words[0] === "cd" && words.length <= 2;
+  return getSimpleCdTarget(words);
 }
 
 function formatGitRepositoryError(cwd: string): string {

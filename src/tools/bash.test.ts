@@ -62,6 +62,17 @@ describe("BashTool git inspection handling", () => {
     expect(result.error).not.toContain(`Not a git repository: ${start}`);
   });
 
+  it("uses the tokenized target when changing directories", async () => {
+    const start = makeTempDir("grok-start-");
+    const target = makeTempDir("grok-target-");
+    const bash = new BashTool(start);
+
+    const result = await bash.execute(`  cd "${target}"`);
+
+    expect(result.success).toBe(true);
+    expect(bash.getCwd()).toBe(target);
+  });
+
   it("understands git global options before read-only subcommands", () => {
     const dir = makeTempDir("grok-non-git-");
 
@@ -72,6 +83,20 @@ describe("BashTool git inspection handling", () => {
       `Not a git repository: ${dir}`,
     );
     expect(getGitInspectionRepositoryError(`git -C ${dir} status --short`, process.cwd())).toContain(
+      `Not a git repository: ${dir}`,
+    );
+  });
+
+  it("understands shell and env prefixes before read-only git inspections", () => {
+    const dir = makeTempDir("grok-non-git-");
+
+    expect(getGitInspectionRepositoryError('bash --norc -c "git status --short"', dir)).toContain(
+      `Not a git repository: ${dir}`,
+    );
+    expect(getGitInspectionRepositoryError("FOO=bar git status --short", dir)).toContain(
+      `Not a git repository: ${dir}`,
+    );
+    expect(getGitInspectionRepositoryError("env -u FOO BAR=baz git status --short", dir)).toContain(
       `Not a git repository: ${dir}`,
     );
   });
@@ -298,6 +323,10 @@ describe("getSandboxMutationBlockReason", () => {
       "Sandbox mode blocks git commands",
     );
     expect(getSandboxMutationBlockReason('bash -c "git push"')).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason('bash --norc -c "git push"')).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("FOO=bar git push")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("env -u FOO BAR=baz git push")).toContain("Sandbox mode blocks git commands");
+    expect(getSandboxMutationBlockReason("FOO=bar git status")).toBeNull();
   });
 
   it("does not block quoted git text in unrelated commands", () => {
