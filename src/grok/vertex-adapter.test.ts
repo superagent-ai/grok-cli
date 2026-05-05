@@ -331,6 +331,25 @@ describe("Vertex Grok adapter", () => {
     expect(text.trim().endsWith("data: [DONE]")).toBe(true);
   });
 
+  it("forwards Vertex streaming error chunks as OpenAI SSE error events", async () => {
+    const encoder = new TextEncoder();
+    const vertexBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('{"error":{"message":"quota exceeded","status":"RESOURCE_EXHAUSTED","code":8}}'),
+        );
+        controller.close();
+      },
+    });
+
+    const text = await new Response(
+      createVertexSseStream(vertexBody, { id: "chatcmpl-stream", model: "grok-4-1-fast-reasoning", created: 123 }),
+    ).text();
+
+    expect(text).toContain('"error":{"message":"quota exceeded","status":"RESOURCE_EXHAUSTED","code":8}');
+    expect(text.trim().endsWith("data: [DONE]")).toBe(true);
+  });
+
   it("includes OpenAI stream indexes for Vertex function-call chunks", () => {
     const chunks = convertVertexStreamResponseToOpenAIChunks(
       {

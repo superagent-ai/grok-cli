@@ -667,6 +667,10 @@ export function createVertexSseStream(
 
 export function convertVertexStreamResponseToOpenAIChunks(payload: unknown, context: OpenAIContext): JsonRecord[] {
   const response = normalizeVertexResponse(payload);
+  if (response.error?.message || response.error?.status || response.error?.code !== undefined) {
+    return [{ error: response.error }];
+  }
+
   const usage = convertVertexUsage(response.usageMetadata);
   const chunks: JsonRecord[] = [];
 
