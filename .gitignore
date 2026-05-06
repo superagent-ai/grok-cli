@@ -114,3 +114,7 @@ skills-lock.json
 
 # Secrets / credentials
 telegram-pair-code.txt
+/.contex
+/.agent-memory
+/.playwright-mcp
+/.worktrees
