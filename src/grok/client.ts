@@ -9,8 +9,8 @@ export type XaiChatModel = ReturnType<XaiProvider>;
 export type XaiResponsesModel = ReturnType<XaiProvider["responses"]>;
 export type GrokRuntimeModel = XaiChatModel | XaiResponsesModel;
 
-const DEFAULT_TITLE_MODEL = "grok-4-1-fast-non-reasoning";
-const DEFAULT_RECAP_MODEL = "grok-4-1-fast-non-reasoning";
+const DEFAULT_TITLE_MODEL = "grok-4.20-non-reasoning";
+const DEFAULT_RECAP_MODEL = "grok-4.20-non-reasoning";
 
 interface GeneratedTextResult {
   modelId: string;

@@ -82,6 +82,7 @@ import {
   PlanView,
 } from "./plan";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
+import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
   buildAssistantEntry,
   buildToolResultEntry,
@@ -289,32 +290,6 @@ const _LINE = {
   leftT: "━",
   rightT: "━",
 };
-
-interface SlashMenuItem {
-  id: string;
-  label: string;
-  description: string;
-}
-
-const SLASH_MENU_ITEMS: SlashMenuItem[] = [
-  { id: "exit", label: "exit", description: "Quit the CLI" },
-  { id: "help", label: "help", description: "Show available commands" },
-  { id: "remote-control", label: "remote-control", description: "Remote control" },
-  { id: "agents", label: "agents", description: "Manage custom sub-agents" },
-  { id: "schedule", label: "schedule", description: "View scheduled runs" },
-  { id: "mcp", label: "mcp", description: "Manage MCP servers" },
-  { id: "sandbox", label: "sandbox", description: "Select shell sandbox mode" },
-  { id: "wallet", label: "wallet", description: "Wallet and payment settings" },
-  { id: "models", label: "models", description: "Select a model" },
-  { id: "new", label: "new session", description: "Start a new session" },
-  { id: "commit-push", label: "commit & push", description: "Commit and push" },
-  { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
-  { id: "review", label: "review", description: "Review recent changes" },
-  { id: "verify", label: "verify", description: "Run local verification" },
-  { id: "skills", label: "skills", description: "Manage skills" },
-  { id: "btw", label: "btw", description: "Ask a side question without interrupting" },
-  { id: "update", label: "update", description: "Update grok to the latest version" },
-];
 
 const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
 
@@ -830,13 +805,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
-  const filteredSlashItems = slashSearchQuery
-    ? SLASH_MENU_ITEMS.filter(
-        (item) =>
-          item.label.toLowerCase().includes(slashSearchQuery.toLowerCase()) ||
-          item.description.toLowerCase().includes(slashSearchQuery.toLowerCase()),
-      )
-    : SLASH_MENU_ITEMS;
+  const filteredSlashItems = filterSlashMenuItems(SLASH_MENU_ITEMS, slashSearchQuery);
   const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
   const mcpEditorFields = mcpEditorDraft.transport === "stdio" ? MCP_STDIO_FIELDS : MCP_REMOTE_FIELDS;
   const agentRows = useMemo(

@@ -36,4 +36,24 @@ describe("buildVisionUserMessages", () => {
       text: `Validate the image at ${imagePath}`,
     });
   });
+
+  it("recognizes shell-escaped screenshot paths", async () => {
+    const imageName = "Screenshot 2026-05-06 at 10.02.18.png";
+    const imagePath = path.join(tempDir, imageName);
+    fs.writeFileSync(imagePath, Buffer.from([1, 2, 3, 4]));
+    const escapedPath = path.join(tempDir, "Screenshot\\ 2026-05-06\\ at\\ 10.02.18.png");
+
+    const messages = await buildVisionUserMessages(`${escapedPath}\nExplain this image`, tempDir);
+
+    const content = messages[0]?.content as Array<Record<string, unknown>>;
+    expect(content[0]).toMatchObject({
+      type: "file",
+      mediaType: "image/png",
+    });
+    expect(content[0]?.data).toBeInstanceOf(Uint8Array);
+    expect(content[1]).toMatchObject({
+      type: "text",
+      text: `${escapedPath}\nExplain this image`,
+    });
+  });
 });

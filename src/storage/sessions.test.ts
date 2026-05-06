@@ -32,29 +32,29 @@ describe("SessionStore recap persistence", () => {
 
   it("stores and reloads the latest recap metadata with the session", () => {
     const store = new SessionStore(tempCwd);
-    const session = store.createSession("grok-4-1-fast", "agent", tempCwd);
+    const session = store.createSession("grok-4.3", "agent", tempCwd);
     const updatedAt = new Date("2026-04-22T15:00:00.000Z");
 
     store.setRecap(session.id, {
       text: "Migrated billing sessions to the new schema. Next step is wiring the prompt banner.",
-      model: "grok-4-1-fast-non-reasoning",
+      model: "grok-4.20-non-reasoning",
       updatedAt,
     });
 
     expect(store.getRequiredSession(session.id).recap).toEqual({
       text: "Migrated billing sessions to the new schema. Next step is wiring the prompt banner.",
-      model: "grok-4-1-fast-non-reasoning",
+      model: "grok-4.20-non-reasoning",
       updatedAt,
     });
   });
 
   it("clears recap metadata when the recap is removed", () => {
     const store = new SessionStore(tempCwd);
-    const session = store.createSession("grok-4-1-fast", "agent", tempCwd);
+    const session = store.createSession("grok-4.3", "agent", tempCwd);
 
     store.setRecap(session.id, {
       text: "Temporary recap",
-      model: "grok-4-1-fast-non-reasoning",
+      model: "grok-4.20-non-reasoning",
       updatedAt: new Date("2026-04-22T15:00:00.000Z"),
     });
     store.setRecap(session.id, null);

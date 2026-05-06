@@ -42,7 +42,7 @@ bun run start
 |----|----|----|
 | `GROK_API_KEY` | Yes | API key for xAI Grok |
 | `GROK_BASE_URL` | No | Custom API endpoint (default: `https://api.x.ai/v1`) |
-| `GROK_MODEL` | No | Model override (default: `grok-4-1-fast`) |
+| `GROK_MODEL` | No | Model override (default: `grok-4.3`) |
 | `GROK_MAX_TOKENS` | No | Max tokens per response (default: 16384) |
 
 Copy `.env.example` to `.env` and fill in your values.

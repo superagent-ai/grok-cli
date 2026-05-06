@@ -5,7 +5,7 @@ async function importAgentModuleWithRecapMocks() {
 
   const generateRecap = vi.fn(async () => ({
     recap: "Recovered the latest session state.",
-    modelId: "grok-4-1-fast-non-reasoning",
+    modelId: "grok-4.20-non-reasoning",
     usage: {
       inputTokens: 10,
       outputTokens: 4,
@@ -83,7 +83,7 @@ describe("Agent session recap", () => {
       workspaceId: "workspace-1",
       title: null,
       recap: null,
-      model: "grok-4-1-fast",
+      model: "grok-4.3",
       mode: "agent",
       cwdAtStart: process.cwd(),
       cwdLast: process.cwd(),

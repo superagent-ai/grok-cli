@@ -1,10 +1,10 @@
-# grok-cli — an open-source coding agent for the Grok API
+# grok-cli: an open-source coding agent for the Grok API
 
-[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
-[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
+[CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
+[npm](https://www.npmjs.com/package/grok-dev)
+[License: MIT](./LICENSE)
+[TypeScript](https://www.typescriptlang.org/)
+[Bun](https://bun.sh/)
 
 > **Disclaimer:** This project is community-built, open-source, and **not affiliated with, endorsed by, or sponsored by xAI Corp.** "Grok" is a trademark of xAI Corp. This tool uses the publicly available Grok API.
 
@@ -173,19 +173,19 @@ You keep using a text model for the session, and Grok saves generated media unde
 
 | Thing                             | What it means                                                                                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Built for the Grok API**        | Defaults tuned for the xAI API; models like `**grok-code-fast-1`**, `**grok-4-1-fast-reasoning**`, `**grok-4.20-multi-agent-0309**`, plus flagship and fast variants—run `grok models` for the full menu.                         |
-| **X + web search**                | `**search_x`** and `**search_web**` tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
-| **Media generation**              | Built-in `**generate_image`** and `**generate_video**` tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
-| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate**` for read-only deep dives—parallelize like you mean it.                                                                |
-| **Verify**                        | `**/verify`** or `**--verify**` — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
-| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop**`. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
-| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json**` and manage them from the TUI with `**/agents**`.                                                                                              |
+| **Built for the Grok API**        | Defaults tuned for the xAI API; models like `grok-4.3`, `grok-4.20-non-reasoning`, `grok-4.20-multi-agent-0309`, plus current flagship and multi-agent variants—run `grok models` for the full menu.                       |
+| **X + web search**                | `**search_x`** and `**search_web`** tools—live posts and docs without pretending the internet stopped in 2023.                                                                                                             |
+| **Media generation**              | Built-in `**generate_image`** and `**generate_video`** tools for text-to-image, image editing, text-to-video, and image-to-video flows. Generated files are saved locally so you can reuse them after the xAI URLs expire. |
+| **Sub-agents (default behavior)** | Foreground `**task`** delegation (e.g. explore, general, or computer) plus background `**delegate`** for read-only deep dives—parallelize like you mean it.                                                                |
+| **Verify**                        | `**/verify`** or `**--verify`** — inspects your app, builds, tests, boots it, and runs browser smoke checks in a sandboxed environment. Screenshots and video included.                                                    |
+| **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop`**. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
+| **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json`** and manage them from the TUI with `**/agents**`.                                                                                              |
 | **Remote control**                | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, `**/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone.                                             |
 | **No “mystery meat” UI**          | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of.                                                                                                                            |
-| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/**` (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
-| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json**` (`mcpServers`).                                                                                               |
+| **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/`** (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
+| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json`** (`mcpServers`).                                                                                               |
 | **Sessions**                      | Conversations persist; `**--session latest`** picks up where you left off.                                                                                                                                                 |
-| **Headless**                      | `**--prompt`** / `**-p**` for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
+| **Headless**                      | `**--prompt`** / `**-p`** for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
 | **Hackable**                      | TypeScript, clear agent loop, bash-first tools—fork it, shamelessly.                                                                                                                                                       |
 
 
@@ -228,7 +228,7 @@ Optional `**subAgents**` — custom foreground sub-agents. Each entry needs `**n
   "subAgents": [
     {
       "name": "security-review",
-      "model": "grok-code-fast-1",
+      "model": "grok-4.3",
       "instruction": "Prioritize security implications and suggest concrete fixes."
     }
   ]
@@ -320,7 +320,7 @@ Hook commands receive JSON on **stdin** (event details) and can return JSON on *
 
 ## Instructions & project brain
 
-- `**AGENTS.md**` — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.
+- `**AGENTS.md`** — merged from git root down to your cwd (Codex-style; see repo docs). `**AGENTS.override.md**` wins per directory when present.
 
 ---
 
@@ -350,7 +350,7 @@ All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/setting
 
 ### Verify
 
-Run `**/verify`** in the TUI or `**--verify**` on the CLI to verify your app locally:
+Run `**/verify`** in the TUI or `**--verify`** on the CLI to verify your app locally:
 
 ```bash
 grok --verify
@@ -370,6 +370,7 @@ Common issues and solutions:
 **Install script fails on macOS**
 
 Make sure you have a modern shell and `curl` available:
+
 ```bash
 # Verify curl is installed
 which curl
@@ -381,6 +382,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/m
 **Bun not found**
 
 The install script bundles Bun, but if you want to use your own:
+
 ```bash
 curl -fsSL https://bun.sh/install | bash
 bun add -g grok-dev
@@ -391,6 +393,7 @@ bun add -g grok-dev
 **"Missing GROK_API_KEY" error**
 
 Set your API key using one of these methods:
+
 ```bash
 # Environment variable
 export GROK_API_KEY=your_key_here
@@ -406,6 +409,7 @@ Get your API key from [x.ai](https://x.ai).
 **UI doesn't render correctly**
 
 Try a different terminal emulator. Recommended:
+
 - WezTerm (cross-platform)
 - Alacritty (cross-platform)
 - Ghostty (macOS/Linux)
@@ -439,7 +443,7 @@ If you're on Intel Mac or Linux, sandbox mode is not available. Use standard mod
 **Slow response times**
 
 - Check your network connection to x.ai API
-- Try `grok-code-fast-1` model for faster responses
+- Try `grok-4.20-non-reasoning` for non-reasoning workloads
 - Reduce `--max-tool-rounds` for headless runs
 
 **High memory usage**

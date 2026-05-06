@@ -35,7 +35,7 @@ import {
   VIDEO_RESOLUTIONS,
 } from "./media";
 
-const RESPONSES_SEARCH_MODEL = "grok-4-1-fast-non-reasoning";
+const RESPONSES_SEARCH_MODEL = "grok-4.20-non-reasoning";
 
 interface CreateToolsOptions {
   runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
