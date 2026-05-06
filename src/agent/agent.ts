@@ -13,7 +13,13 @@ import {
   getBatchChatCompletion,
   pollBatchRequestResult,
 } from "../grok/batch";
-import { createProvider, generateTitle as genTitle, resolveModelRuntime, type XaiProvider } from "../grok/client";
+import {
+  createProvider,
+  generateRecap as genRecap,
+  generateTitle as genTitle,
+  resolveModelRuntime,
+  type XaiProvider,
+} from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
 import { createTools } from "../grok/tools";
@@ -715,6 +721,10 @@ export class Agent {
     return generated.title;
   }
 
+  getSessionRecap(): string | null {
+    return this.session?.recap?.text || null;
+  }
+
   async askSideQuestion(question: string, signal?: AbortSignal): Promise<SideQuestionResult> {
     if (!this.provider) {
       return { response: "No API key configured." };
@@ -846,6 +856,54 @@ export class Agent {
       this.messages.splice(idx, 1);
       this.messageSeqs.splice(idx, 1);
     }
+  }
+
+  private async refreshSessionRecap(signal?: AbortSignal): Promise<void> {
+    if (!this.provider || !this.sessionStore || !this.session) {
+      return;
+    }
+
+    try {
+      const prompt = this.buildRecapPrompt();
+      if (!prompt) {
+        return;
+      }
+
+      const generated = await genRecap(this.provider, prompt, withAbortTimeout(signal, 8_000));
+      this.recordUsage(generated.usage, "recap", generated.modelId);
+      if (!generated.recap) {
+        return;
+      }
+
+      this.sessionStore.setRecap(this.session.id, {
+        text: generated.recap,
+        model: generated.modelId,
+        updatedAt: new Date(),
+      });
+      this.session = this.sessionStore.getRequiredSession(this.session.id);
+    } catch {
+      // Recaps are best-effort and should never make the completed turn fail.
+    }
+  }
+
+  private buildRecapPrompt(): string | null {
+    if (!this.session) {
+      return null;
+    }
+
+    const transcript = formatEntriesForRecap(buildChatEntries(this.session.id), 5_000);
+    if (!transcript) {
+      return null;
+    }
+
+    const sections = [
+      "Refresh the saved recap for this coding session using the latest transcript.",
+      this.session.recap?.text
+        ? `Existing recap:\n${truncate(this.session.recap.text, 1_200)}`
+        : "Existing recap:\n(none)",
+      `Session transcript:\n${transcript}`,
+    ];
+    return sections.join("\n\n");
   }
 
   private recordUsage(
@@ -1634,6 +1692,7 @@ export class Agent {
               this.recordUsage(totalUsage, "message", runtime.modelId);
             }
             this.appendCompletedTurn(userModelMessage, turnMessages);
+            await this.refreshSessionRecap(signal);
             yield { type: "done" };
             return;
           }
@@ -2052,6 +2111,7 @@ export class Agent {
             const response = await result.response;
             if (!signal.aborted) {
               this.appendCompletedTurn(userModelMessage, sanitizeModelMessages(response.messages));
+              await this.refreshSessionRecap(signal);
               streamOk = true;
             }
           } catch (responseError: unknown) {
@@ -2074,6 +2134,7 @@ export class Agent {
 
           if (!streamOk && assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
+            await this.refreshSessionRecap(signal);
           }
 
           const stopInput: StopHookInput = {
@@ -2634,6 +2695,53 @@ function firstLine(text: string): string {
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function formatEntriesForRecap(entries: ChatEntry[], maxChars: number): string {
+  const lines: string[] = [];
+  let remaining = maxChars;
+
+  for (let i = entries.length - 1; i >= 0 && remaining > 0; i--) {
+    const line = formatRecapEntry(entries[i]!);
+    if (!line) {
+      continue;
+    }
+
+    const bounded = truncate(line, Math.min(remaining, 520));
+    if (!bounded.trim()) {
+      continue;
+    }
+
+    lines.unshift(bounded);
+    remaining -= bounded.length + 1;
+  }
+
+  return lines.join("\n");
+}
+
+function formatRecapEntry(entry: ChatEntry): string | null {
+  const content = entry.content.trim();
+  if (!content) {
+    return null;
+  }
+
+  switch (entry.type) {
+    case "user":
+      return `[User] ${truncate(content, 420)}`;
+    case "assistant":
+      return `[Assistant] ${truncate(content, 420)}`;
+    case "tool_result":
+      return `[Tool ${entry.toolResult?.success === false ? "error" : "result"}] ${truncate(content, 260)}`;
+    default:
+      return null;
+  }
+}
+
+function withAbortTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortSignal.timeout !== "function") {
+    return signal;
+  }
+  return combineAbortSignals(signal, AbortSignal.timeout(timeoutMs));
 }
 
 function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {

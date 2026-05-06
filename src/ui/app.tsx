@@ -654,6 +654,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [sessionTitle, setSessionTitle] = useState<string | null>(() => agent.getSessionTitle());
   const [sessionId, setSessionId] = useState<string | null>(() => agent.getSessionId());
+  const [sessionRecap, setSessionRecap] = useState<string | null>(() => agent.getSessionRecap());
   const [showApiKeyModal, setShowApiKeyModal] = useState(() => !initialHasApiKey);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -1559,6 +1560,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           });
           setSessionTitle(activeTurn.agent.getSessionTitle());
           setSessionId(activeTurn.agent.getSessionId());
+          setSessionRecap(activeTurn.agent.getSessionRecap());
         } else if (activeTurn.kind === "telegram") {
           syncTelegramTurnEntries(activeTurn);
         }
@@ -2036,6 +2038,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);
     setSessionId(snapshot?.session.id ?? agent.getSessionId());
+    setSessionRecap(snapshot?.session.recap?.text ?? agent.getSessionRecap());
     setActivePlan(null);
     setPqs(initialPlanQuestionsState());
     replacePasteBlocks([]);
@@ -3451,7 +3454,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             </scrollbox>
             {btwState && <BtwOverlay state={btwState} theme={t} />}
             {/* Prompt */}
-            <box flexShrink={0}>
+            <box flexShrink={0} flexDirection="column">
+              {sessionRecap ? <RecapBanner t={t} recap={sessionRecap} /> : null}
               <PromptBox
                 t={t}
                 inputRef={inputRef}
@@ -3744,6 +3748,17 @@ function SessionHeader({
         <box flexGrow={1} />
         {sessionId ? <text fg={t.textDim}>{sessionId}</text> : null}
       </box>
+    </box>
+  );
+}
+
+function RecapBanner({ t, recap }: { t: Theme; recap: string }) {
+  return (
+    <box width="100%" paddingBottom={1}>
+      <text>
+        <span style={{ fg: t.textDim }}>{"※ recap: "}</span>
+        <span style={{ fg: t.textMuted }}>{recap}</span>
+      </text>
     </box>
   );
 }

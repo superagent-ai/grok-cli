@@ -243,7 +243,13 @@ export interface ModelInfo {
 
 export type AgentMode = "agent" | "plan" | "ask";
 export type SessionStatus = "active" | "archived";
-export type UsageSource = "message" | "title" | "task" | "delegation" | "other";
+export type UsageSource = "message" | "title" | "recap" | "task" | "delegation" | "other";
+
+export interface SessionRecap {
+  text: string;
+  model: string | null;
+  updatedAt: Date | null;
+}
 
 export interface WorkspaceInfo {
   id: string;
@@ -258,6 +264,7 @@ export interface SessionInfo {
   id: string;
   workspaceId: string;
   title: string | null;
+  recap: SessionRecap | null;
   model: string;
   mode: AgentMode;
   cwdAtStart: string;
