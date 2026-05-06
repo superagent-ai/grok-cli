@@ -38,9 +38,10 @@ describe("buildVisionUserMessages", () => {
   });
 
   it("recognizes shell-escaped screenshot paths", async () => {
-    const imagePath = path.join(tempDir, "Screenshot 2026-05-06 at 10.02.18.png");
+    const imageName = "Screenshot 2026-05-06 at 10.02.18.png";
+    const imagePath = path.join(tempDir, imageName);
     fs.writeFileSync(imagePath, Buffer.from([1, 2, 3, 4]));
-    const escapedPath = imagePath.replace(/ /g, "\\ ");
+    const escapedPath = path.join(tempDir, "Screenshot\\ 2026-05-06\\ at\\ 10.02.18.png");
 
     const messages = await buildVisionUserMessages(`${escapedPath}\nExplain this image`, tempDir);
 
