@@ -4,7 +4,6 @@ const LATEST_DB_VERSION = 3;
 
 export function applyMigrations(db: SQLiteDatabase): void {
   const version = Number(db.pragma("user_version", { simple: true })) || 0;
-  if (version >= LATEST_DB_VERSION) return;
 
   const migrate = db.transaction(() => {
     if (version < 1) {
@@ -15,10 +14,12 @@ export function applyMigrations(db: SQLiteDatabase): void {
       createCompactionSchema(db);
       db.pragma("user_version = 2");
     }
-    if (version < 3) {
+    if (version < LATEST_DB_VERSION) {
       createSessionRecapSchema(db);
-      db.pragma("user_version = 3");
+      db.pragma(`user_version = ${LATEST_DB_VERSION}`);
     }
+
+    ensureLatestSchema(db);
   });
 
   migrate();
@@ -137,6 +138,10 @@ function createSessionRecapSchema(db: SQLiteDatabase): void {
   addColumnIfMissing(db, "sessions", "recap_text", "TEXT");
   addColumnIfMissing(db, "sessions", "recap_model", "TEXT");
   addColumnIfMissing(db, "sessions", "recap_updated_at", "TEXT");
+}
+
+function ensureLatestSchema(db: SQLiteDatabase): void {
+  createSessionRecapSchema(db);
 }
 
 function addColumnIfMissing(db: SQLiteDatabase, table: string, column: string, definition: string): void {

@@ -863,23 +863,27 @@ export class Agent {
       return;
     }
 
-    const prompt = this.buildRecapPrompt();
-    if (!prompt) {
-      return;
-    }
+    try {
+      const prompt = this.buildRecapPrompt();
+      if (!prompt) {
+        return;
+      }
 
-    const generated = await genRecap(this.provider, prompt, withAbortTimeout(signal, 8_000));
-    this.recordUsage(generated.usage, "recap", generated.modelId);
-    if (!generated.recap) {
-      return;
-    }
+      const generated = await genRecap(this.provider, prompt, withAbortTimeout(signal, 8_000));
+      this.recordUsage(generated.usage, "recap", generated.modelId);
+      if (!generated.recap) {
+        return;
+      }
 
-    this.sessionStore.setRecap(this.session.id, {
-      text: generated.recap,
-      model: generated.modelId,
-      updatedAt: new Date(),
-    });
-    this.session = this.sessionStore.getRequiredSession(this.session.id);
+      this.sessionStore.setRecap(this.session.id, {
+        text: generated.recap,
+        model: generated.modelId,
+        updatedAt: new Date(),
+      });
+      this.session = this.sessionStore.getRequiredSession(this.session.id);
+    } catch {
+      // Recaps are best-effort and should never make the completed turn fail.
+    }
   }
 
   private buildRecapPrompt(): string | null {
