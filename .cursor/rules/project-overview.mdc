@@ -53,12 +53,11 @@ src/
 
 ## Latest Grok Models
 
-- grok-4-0709 (flagship reasoning)
-- grok-4.20-beta-0309 (multi-agent, 2M context)
-- grok-4-fast (fast reasoning, 2M context)
-- grok-4-1-fast (latest fast, 2M context)
-- grok-code-fast-1 (code optimized)
-- grok-3, grok-3-mini
+- grok-4.3 (recommended flagship reasoning)
+- grok-4.20-non-reasoning (recommended non-reasoning)
+- grok-4.20-multi-agent-0309 (multi-agent, 2M context)
+- grok-4.20-0309-reasoning (reasoning, 2M context)
+- grok-3-mini (compact model with reasoning effort controls)
 
 ## CI/CD
 

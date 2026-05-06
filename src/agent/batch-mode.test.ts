@@ -109,7 +109,7 @@ describe("Agent batch mode", () => {
         childMessages: [{ role: "user", content: "Do the thing" }],
         childSystem: "system",
         childRuntime: {
-          modelId: "grok-4-1-fast-reasoning",
+          modelId: "grok-4.3",
           modelInfo: {
             supportsClientTools: false,
             supportsMaxOutputTokens: true,

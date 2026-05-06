@@ -99,8 +99,8 @@ import { containsEncryptedReasoning, sanitizeModelMessages } from "./reasoning";
 import { buildVisionUserMessages } from "./vision-input";
 
 const MAX_TOOL_ROUNDS = 400;
-const VISION_MODEL = "grok-4-1-fast-reasoning";
-const COMPUTER_MODEL = "grok-4.20-0309-reasoning";
+const VISION_MODEL = "grok-4.3";
+const COMPUTER_MODEL = "grok-4.3";
 
 interface AgentOptions {
   persistSession?: boolean;
@@ -1839,7 +1839,8 @@ export class Agent {
     await this.fireHook(promptInput, signal).catch(() => {});
 
     await this.consumeBackgroundNotifications();
-    const userModelMessage: ModelMessage = { role: "user", content: userMessage };
+    const userModelMessages = await buildVisionUserMessages(userMessage, this.bash.getCwd(), signal);
+    const userModelMessage = userModelMessages[0] ?? ({ role: "user", content: userMessage } satisfies ModelMessage);
     this.messages.push(userModelMessage);
     this.messageSeqs.push(null);
 
