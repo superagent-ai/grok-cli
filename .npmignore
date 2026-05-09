@@ -1,6 +1,9 @@
 # Source files (only include built dist/)
 src/
 tsconfig.json
+vitest.config.ts
+biome.json
+test-vertex-integration.ts
 
 # Lock files from other package managers
 yarn.lock
@@ -50,6 +53,9 @@ tests/
 *.test.ts
 *.spec.js
 *.spec.ts
+dist/**/*.test.*
+dist/**/*.spec.*
+dist/grok-standalone*
 coverage/
 .nyc_output/
 
@@ -61,6 +67,15 @@ docs/
 # Git files
 .git/
 .gitignore
+
+# Local development, agent, and editor runtime state
+.cursor/
+.omx/
+.codex/
+.agents/
+.claude/
+.grok/
+.husky/
 
 # CI/CD files
 .github/
