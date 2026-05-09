@@ -1,8 +1,8 @@
 import { generateImage, experimental_generateVideo as generateVideo } from "ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, extname, isAbsolute, join, resolve } from "path";
+import type { GrokProviderAdapter } from "../providers";
 import type { MediaAsset, ToolResult } from "../types/index";
-import type { XaiProvider } from "./client";
 
 const GENERATED_MEDIA_DIR = ".grok/generated-media";
 const IMAGE_MODEL_ID = "grok-imagine-image";
@@ -63,16 +63,22 @@ interface ResolvedImageSource {
 }
 
 export async function generateImageTool(
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   input: GenerateImageToolInput,
   cwd: string,
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
+    if (!provider.imageModel) {
+      return failureResult(
+        "Image generation failed",
+        new Error(`Image generation is not supported by the ${provider.kind} provider.`),
+      );
+    }
     const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
     const prompt = source ? { text: input.prompt, images: [source.data] } : input.prompt;
     const response = await generateImage({
-      model: provider.image(IMAGE_MODEL_ID),
+      model: provider.imageModel(IMAGE_MODEL_ID),
       prompt,
       n: input.n,
       aspectRatio: toSdkAspectRatio(input.aspect_ratio),
@@ -121,16 +127,22 @@ export async function generateImageTool(
 }
 
 export async function generateVideoTool(
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   input: GenerateVideoToolInput,
   cwd: string,
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
+    if (!provider.videoModel) {
+      return failureResult(
+        "Video generation failed",
+        new Error(`Video generation is not supported by the ${provider.kind} provider.`),
+      );
+    }
     const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
     const prompt = source ? { text: input.prompt, image: source.dataUrl } : input.prompt;
     const response = await generateVideo({
-      model: provider.video(VIDEO_MODEL_ID),
+      model: provider.videoModel(VIDEO_MODEL_ID),
       prompt,
       duration: input.duration,
       aspectRatio: input.aspect_ratio,

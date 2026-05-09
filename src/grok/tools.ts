@@ -3,6 +3,7 @@ import { z } from "zod";
 import { executePostToolFailureHooks, executePostToolHooks, executePreToolHooks } from "../hooks/index";
 import { isLspToolEnabled, queryLsp } from "../lsp/runtime";
 import { LSP_TOOL_OPERATIONS } from "../lsp/types";
+import type { GrokProviderAdapter } from "../providers";
 import type { BashTool } from "../tools/bash";
 import {
   computerClick,
@@ -23,7 +24,6 @@ import { executeGrep } from "../tools/grep";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadPaymentSettings, loadValidSubAgents } from "../utils/settings";
-import type { XaiProvider } from "./client";
 import {
   type GenerateImageToolInput,
   type GenerateVideoToolInput,
@@ -50,7 +50,7 @@ interface CreateToolsOptions {
 
 export function createTools(
   bash: BashTool,
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   mode: AgentMode = "agent",
   options: CreateToolsOptions = {},
 ) {
@@ -62,14 +62,23 @@ export function createTools(
     abortSignal?: AbortSignal,
   ): Promise<{ success: boolean; output: string }> => {
     try {
+      const responsesModel = provider.responsesModel;
+      const hostedTools = provider.hostedTools;
+      if (!responsesModel || !hostedTools) {
+        const label = toolName === "web_search" ? "Web search" : "X search";
+        return {
+          success: false,
+          output: `${label} requires a provider that supports hosted search; the active ${provider.kind} provider does not.`,
+        };
+      }
       const { text } = await generateText({
-        model: provider.responses(RESPONSES_SEARCH_MODEL),
+        model: responsesModel.call(provider, RESPONSES_SEARCH_MODEL),
         maxOutputTokens: 4096,
         prompt: query,
         abortSignal,
         tools: {
-          ...(toolName === "web_search" ? { web_search: provider.tools.webSearch() } : {}),
-          ...(toolName === "x_search" ? { x_search: provider.tools.xSearch() } : {}),
+          ...(toolName === "web_search" ? { web_search: hostedTools.webSearch() } : {}),
+          ...(toolName === "x_search" ? { x_search: hostedTools.xSearch() } : {}),
         },
       });
 

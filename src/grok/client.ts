@@ -1,13 +1,10 @@
-import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
-import type { ModelInfo, ReasoningEffort } from "../types/index";
-import { getReasoningEffortForModel } from "../utils/settings";
-import { getEffectiveReasoningEffort, getModelInfo, normalizeModelId } from "./models";
 
-export type XaiProvider = ReturnType<typeof createXai>;
-export type XaiChatModel = ReturnType<XaiProvider>;
-export type XaiResponsesModel = ReturnType<XaiProvider["responses"]>;
-export type GrokRuntimeModel = XaiChatModel | XaiResponsesModel;
+import {
+  createProvider as createProviderInternal,
+  type GrokProviderAdapter,
+  type ResolvedModelRuntime,
+} from "../providers";
 
 const DEFAULT_TITLE_MODEL = "grok-4.20-non-reasoning";
 const DEFAULT_RECAP_MODEL = "grok-4.20-non-reasoning";
@@ -29,45 +26,36 @@ export interface GeneratedRecap extends GeneratedTextResult {
   recap: string;
 }
 
-export interface ResolvedModelRuntime {
-  model: GrokRuntimeModel;
-  modelId: string;
-  modelInfo?: ModelInfo;
-  providerOptions?: {
-    xai: {
-      reasoningEffort: ReasoningEffort;
-    };
-  };
+/**
+ * Backward-compatible re-exports. Prefer importing GrokProviderAdapter and
+ * ResolvedModelRuntime from "../providers" directly in new code.
+ */
+export type { GrokProviderAdapter, ResolvedModelRuntime } from "../providers";
+
+/**
+ * @deprecated Alias retained so existing imports keep compiling. New code
+ * should reference GrokProviderAdapter from "../providers".
+ */
+export type XaiProvider = GrokProviderAdapter;
+
+/**
+ * Constructs the default (xAI) provider adapter.
+ *
+ * Kept on the legacy `(apiKey, baseURL?)` signature so the provider
+ * abstraction migration stays a single self-contained refactor. New code
+ * should call `createProvider({ kind, ... })` from "../providers" directly.
+ */
+export function createProvider(apiKey: string, baseURL?: string): GrokProviderAdapter {
+  return createProviderInternal({ kind: "xai", apiKey, baseURL });
 }
 
-export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
-  return createXai({
-    apiKey,
-    baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-  });
+/** Delegates to provider.resolveRuntime. Retained for legacy import paths. */
+export function resolveModelRuntime(provider: GrokProviderAdapter, requestedModelId: string): ResolvedModelRuntime {
+  return provider.resolveRuntime(requestedModelId);
 }
 
-export function resolveModelRuntime(provider: XaiProvider, requestedModelId: string): ResolvedModelRuntime {
-  const modelId = normalizeModelId(requestedModelId);
-  const modelInfo = getModelInfo(modelId);
-  const reasoningEffort = getEffectiveReasoningEffort(modelId, getReasoningEffortForModel(modelId));
-
-  return {
-    model: modelInfo?.responsesOnly ? provider.responses(modelId) : provider(modelId),
-    modelId,
-    modelInfo,
-    providerOptions: reasoningEffort
-      ? {
-          xai: {
-            reasoningEffort,
-          },
-        }
-      : undefined,
-  };
-}
-
-export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<GeneratedTitle> {
-  const runtime = resolveModelRuntime(provider, DEFAULT_TITLE_MODEL);
+export async function generateTitle(provider: GrokProviderAdapter, userMessage: string): Promise<GeneratedTitle> {
+  const runtime = provider.resolveRuntime(DEFAULT_TITLE_MODEL);
   try {
     const { text, usage } = await generateText({
       model: runtime.model,
@@ -98,11 +86,11 @@ export async function generateTitle(provider: XaiProvider, userMessage: string):
 }
 
 export async function generateRecap(
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   transcript: string,
   signal?: AbortSignal,
 ): Promise<GeneratedRecap> {
-  const runtime = resolveModelRuntime(provider, DEFAULT_RECAP_MODEL);
+  const runtime = provider.resolveRuntime(DEFAULT_RECAP_MODEL);
   try {
     const { text, usage } = await generateText({
       model: runtime.model,

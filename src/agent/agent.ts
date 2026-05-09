@@ -18,7 +18,6 @@ import {
   generateRecap as genRecap,
   generateTitle as genTitle,
   resolveModelRuntime,
-  type XaiProvider,
 } from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
@@ -40,6 +39,7 @@ import type {
 } from "../hooks/types";
 import { shutdownWorkspaceLspManager } from "../lsp/runtime";
 import { buildMcpToolSet } from "../mcp/runtime";
+import type { GrokProviderAdapter } from "../providers";
 import {
   appendCompaction,
   appendMessages,
@@ -531,8 +531,21 @@ function applyModelConstraints(system: string, modelId: string): string {
   ].join("\n");
 }
 
+function requireResponsesModel(
+  provider: GrokProviderAdapter,
+  contextLabel: string,
+): NonNullable<GrokProviderAdapter["responsesModel"]> {
+  const responsesModel = provider.responsesModel;
+  if (!responsesModel) {
+    throw new Error(
+      `${contextLabel} requires the Responses API, which is not supported by the ${provider.kind} provider.`,
+    );
+  }
+  return responsesModel.bind(provider);
+}
+
 export class Agent {
-  private provider: XaiProvider | null = null;
+  private provider: GrokProviderAdapter | null = null;
   private apiKey: string | null = null;
   private baseURL: string | null = null;
   private bash: BashTool;
@@ -1067,7 +1080,7 @@ export class Agent {
                   childRuntime.modelInfo?.supportsMaxOutputTokens === false
                     ? undefined
                     : Math.min(this.maxTokens, 8_192),
-                reasoningEffort: childRuntime.providerOptions?.xai.reasoningEffort,
+                reasoningEffort: childRuntime.providerOptions?.xai?.reasoningEffort,
                 tools: batchTools,
               }),
             },
@@ -1248,7 +1261,10 @@ export class Agent {
               : this.modelId,
     );
     const childRuntime = isVision
-      ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
+      ? {
+          ...resolveModelRuntime(provider, childModelId),
+          model: requireResponsesModel(provider, "vision sub-agent")(childModelId),
+        }
       : resolveModelRuntime(provider, childModelId);
     if (isComputer && childRuntime.modelInfo?.supportsClientTools === false) {
       return {
@@ -1518,7 +1534,7 @@ export class Agent {
   }
 
   private async compactForContext(
-    provider: XaiProvider,
+    provider: GrokProviderAdapter,
     system: string,
     contextWindow: number,
     signal: AbortSignal,
@@ -1564,7 +1580,7 @@ export class Agent {
   private async *processMessageBatchTurn(args: {
     userModelMessage: ModelMessage;
     observer?: ProcessMessageObserver;
-    provider: XaiProvider;
+    provider: GrokProviderAdapter;
     subagents: CustomSubagentConfig[];
     system: string;
     runtime: ReturnType<typeof resolveModelRuntime>;
@@ -1646,7 +1662,7 @@ export class Agent {
                     messages: [...this.messages, ...turnMessages],
                     temperature: 0.7,
                     maxOutputTokens: runtime.modelInfo?.supportsMaxOutputTokens === false ? undefined : this.maxTokens,
-                    reasoningEffort: runtime.providerOptions?.xai.reasoningEffort,
+                    reasoningEffort: runtime.providerOptions?.xai?.reasoningEffort,
                     tools: batchTools,
                   }),
                 },
@@ -2196,7 +2212,7 @@ export class Agent {
     }
   }
 
-  private requireProvider(): XaiProvider {
+  private requireProvider(): GrokProviderAdapter {
     if (!this.provider) {
       throw new Error("API key required. Add an API key to continue.");
     }
