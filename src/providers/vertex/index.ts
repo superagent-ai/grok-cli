@@ -1,6 +1,6 @@
 import { createXai } from "@ai-sdk/xai";
 
-import { requireVertexSettings, type VertexSettings } from "../../utils/settings";
+import { requireVertexSettings } from "../../utils/settings";
 import type { GrokProviderAdapter, ProviderCapabilities, ResolvedModelRuntime } from "../types";
 import { ProviderCapabilityError } from "../types";
 import { DEFAULT_VERTEX_MODEL, DEFAULT_VERTEX_TITLE_MODEL, getVertexModelInfo, normalizeVertexModelId } from "./models";
@@ -25,12 +25,6 @@ const VERTEX_CAPABILITIES: ProviderCapabilities = {
 
 export interface VertexAdapterOptions {
   /**
-   * Pre-resolved Vertex settings. When omitted, settings are read from
-   * env + user-settings.json via requireVertexSettings(). Tests can pass
-   * a fully-formed object.
-   */
-  settings?: VertexSettings;
-  /**
    * Optional fetch override. Used by tests to inject a canned transport;
    * production callers should leave this undefined so the default
    * createVertexFetch wraps globalThis.fetch.
@@ -52,11 +46,15 @@ class VertexProviderAdapter implements GrokProviderAdapter {
   readonly kind = "vertex" as const;
   readonly capabilities = VERTEX_CAPABILITIES;
 
-  private readonly settings: VertexSettings;
   private readonly sdk: ReturnType<typeof createXai>;
 
   constructor(options: VertexAdapterOptions = {}) {
-    this.settings = options.settings ?? requireVertexSettings();
+    // Eagerly validate the Vertex settings so misconfiguration fails at
+    // provider construction rather than at the first request. The fetch
+    // shim re-resolves settings per request (see createVertexFetch), so
+    // we don't need to keep the resolved object around — the side-effect
+    // of throwing is the value here.
+    requireVertexSettings();
     this.sdk = createXai({
       apiKey: VERTEX_SDK_PLACEHOLDER_KEY,
       baseURL: VERTEX_DEFAULT_BASE_URL,

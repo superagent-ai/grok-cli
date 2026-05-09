@@ -1,4 +1,4 @@
-import type { GrokProviderAdapter, ProviderFactoryConfig, ProviderKind } from "./types";
+import type { GrokProviderAdapter, ProviderFactoryConfig } from "./types";
 import { createVertexAdapter } from "./vertex";
 import { createXaiAdapter } from "./xai";
 
@@ -36,14 +36,4 @@ export function createProvider(config: ProviderFactoryConfig): GrokProviderAdapt
       throw new Error(`Unknown provider kind: ${String(exhaustive)}`);
     }
   }
-}
-
-/**
- * Convenience for callers that have an apiKey/baseURL pair and want the
- * default xAI behavior. Mirrors the legacy createProvider(apiKey, baseURL?)
- * signature so the migration to the adapter-aware API can land in one PR
- * without rewriting every call site at once.
- */
-export function createDefaultProvider(apiKey: string, baseURL?: string): GrokProviderAdapter {
-  return createProvider({ kind: "xai" as ProviderKind, apiKey, baseURL });
 }
