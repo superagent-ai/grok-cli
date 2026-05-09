@@ -1,9 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const RELEASE_URL = "https://api.github.com/repos/superagent-ai/grok-cli/releases/latest";
+const isCurrentScriptManagedInstallMock = vi.hoisted(() => vi.fn(() => true));
+const getScriptInstallContextMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    metadata: { version: "1.0.0" },
+  })),
+);
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
+  isCurrentScriptManagedInstallMock.mockReset();
+  isCurrentScriptManagedInstallMock.mockReturnValue(true);
+  getScriptInstallContextMock.mockReset();
+  getScriptInstallContextMock.mockReturnValue({
+    metadata: { version: "1.0.0" },
+  });
+  vi.doMock("./install-manager", async () => {
+    const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
+    return {
+      ...actual,
+      getScriptInstallContext: getScriptInstallContextMock,
+      isCurrentScriptManagedInstall: isCurrentScriptManagedInstallMock,
+    };
+  });
 });
 
 afterEach(() => {
@@ -16,6 +36,32 @@ async function importModule() {
 }
 
 describe("checkForUpdate", () => {
+  it("returns null without fetching when the current process is not the script-managed install", async () => {
+    isCurrentScriptManagedInstallMock.mockReturnValue(false);
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { checkForUpdate } = await importModule();
+    const result = await checkForUpdate("1.0.0");
+
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns null without fetching when the running version does not match script metadata", async () => {
+    getScriptInstallContextMock.mockReturnValue({
+      metadata: { version: "1.1.6" },
+    });
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { checkForUpdate } = await importModule();
+    const result = await checkForUpdate("1.1.5");
+
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("returns hasUpdate=true when release version is newer", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -53,6 +99,9 @@ describe("checkForUpdate", () => {
   });
 
   it("detects update from prerelease to stable release", async () => {
+    getScriptInstallContextMock.mockReturnValue({
+      metadata: { version: "1.0.0-rc7" },
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -71,6 +120,9 @@ describe("checkForUpdate", () => {
   });
 
   it("returns hasUpdate=false when prerelease is newer than registry", async () => {
+    getScriptInstallContextMock.mockReturnValue({
+      metadata: { version: "1.0.0-rc7" },
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -148,11 +200,35 @@ describe("checkForUpdate", () => {
 });
 
 describe("runUpdate", () => {
+  it("returns failure when the current process is not the script-managed install", async () => {
+    isCurrentScriptManagedInstallMock.mockReturnValue(false);
+
+    const { runUpdate } = await importModule();
+    const result = await runUpdate("1.0.0");
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not the active script-managed release install");
+  });
+
+  it("returns failure when the running version does not match script metadata", async () => {
+    getScriptInstallContextMock.mockReturnValue({
+      metadata: { version: "1.1.6" },
+    });
+
+    const { runUpdate } = await importModule();
+    const result = await runUpdate("1.1.5");
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not the active script-managed release install");
+  });
+
   it("returns success when the script-managed updater succeeds", async () => {
     vi.doMock("./install-manager", async () => {
       const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
       return {
         ...actual,
+        getScriptInstallContext: getScriptInstallContextMock,
+        isCurrentScriptManagedInstall: isCurrentScriptManagedInstallMock,
         runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: true, output: "Updated to Grok 2.0.0." }),
       };
     });
@@ -169,6 +245,8 @@ describe("runUpdate", () => {
       const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
       return {
         ...actual,
+        getScriptInstallContext: getScriptInstallContextMock,
+        isCurrentScriptManagedInstall: isCurrentScriptManagedInstallMock,
         runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: false, output: "permission denied" }),
       };
     });
