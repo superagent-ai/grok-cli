@@ -17,7 +17,15 @@ export type TelegramStreamingMode = "off" | "partial";
 export type SandboxMode = "off" | "shuru";
 export type PaymentChain = "base" | "base-sepolia";
 
-export type VertexAuthMode = "adc" | "oauth_token" | "service_account_api_key";
+/**
+ * Vertex AI auth mode. Currently only Application Default Credentials
+ * (`adc`) is supported. Service-account-bound API keys and pre-minted
+ * OAuth bearer tokens are documented in the Google Cloud quickstart but
+ * deliberately out of scope for this PR — they need additional settings
+ * fields (token / key) and live verification against the Grok-on-Vertex
+ * endpoint before being safe to expose. Tracked as a follow-up.
+ */
+export type VertexAuthMode = "adc";
 
 export const DEFAULT_VERTEX_LOCATION = "global";
 export const DEFAULT_VERTEX_BASE_URL = "https://aiplatform.googleapis.com";
@@ -306,7 +314,16 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
-    ...(partial.provider !== undefined ? { provider: normalizeProviderKind(partial.provider) } : {}),
+    ...(() => {
+      // When the partial supplies a provider value, ALWAYS override the
+      // spread above so an invalid value (e.g. saveUserSettings({ provider:
+      // "anthropic" })) is filtered out. Falls back to the previously saved
+      // provider so an invalid update never clobbers a valid existing one.
+      // JSON.stringify will omit the field entirely if both end up undefined.
+      if (partial.provider === undefined) return {};
+      const normalized = normalizeProviderKind(partial.provider);
+      return { provider: normalized ?? current.provider };
+    })(),
     ...(partial.vertex !== undefined
       ? {
           vertex: normalizeVertexUserSettings({
@@ -362,11 +379,8 @@ function normalizeProviderKind(value: unknown): ProviderKind | undefined {
 }
 
 function normalizeVertexAuthMode(value: unknown): VertexAuthMode | undefined {
-  if (value === "adc" || value === "oauth_token" || value === "service_account_api_key") return value;
-  if (typeof value === "string") {
-    const lower = value.trim().toLowerCase();
-    if (lower === "adc" || lower === "oauth_token" || lower === "service_account_api_key") return lower;
-  }
+  if (value === "adc") return value;
+  if (typeof value === "string" && value.trim().toLowerCase() === "adc") return "adc";
   return undefined;
 }
 
@@ -457,7 +471,7 @@ export function requireVertexSettings(): VertexSettings {
   const resolved = resolveVertexSettings();
   if (!resolved.projectId) {
     throw new Error(
-      "Vertex AI is selected but no project id is configured. Set GROK_VERTEX_PROJECT_ID, GCP_PROJECT_ID, or save vertex.projectId via the TUI auth modal.",
+      "Vertex AI is selected but no project id is configured. Set GROK_VERTEX_PROJECT_ID (or GCP_PROJECT_ID) in the environment, or save `vertex.projectId` to ~/.grok/user-settings.json.",
     );
   }
   return {

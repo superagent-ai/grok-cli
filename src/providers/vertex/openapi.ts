@@ -773,7 +773,7 @@ async function readBodyAsText(body: NonNullable<RequestInit["body"]>): Promise<s
 
 function unsupportedVertexEndpointResponse(url: URL): Response {
   return vertexErrorResponse(
-    `GROK_USE_VERTEX=1 supports Vertex AI chat completions only. The xAI endpoint "${url.pathname}" is not available through Vertex AI; native xAI-only features such as Responses API search, image/video generation, STT, and Batch API require GROK_API_KEY with GROK_USE_VERTEX unset.`,
+    `The Vertex AI provider supports chat completions only. The xAI endpoint "${url.pathname}" is not available on Vertex; native xAI-only features (Responses API search, image/video generation, STT, Batch API) require switching back to the xAI provider — unset GROK_PROVIDER (or pass --provider xai) and configure GROK_API_KEY.`,
     400,
     "vertex_unsupported_endpoint",
   );

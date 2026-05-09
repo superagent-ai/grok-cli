@@ -72,42 +72,13 @@ describe("getVertexAccessToken (adc)", () => {
   });
 });
 
-describe("getVertexAccessToken (oauth_token)", () => {
-  it("returns the explicit token verbatim", async () => {
+describe("getVertexAccessToken (unsupported modes)", () => {
+  it("throws a descriptive error when an unsupported mode is requested", async () => {
     const auth = await import("./auth");
-    const token = await auth.getVertexAccessToken({ mode: "oauth_token", oauthToken: "ya29.explicit-token" });
-    expect(token).toBe("ya29.explicit-token");
-  });
-
-  it("trims whitespace from the explicit token", async () => {
-    const auth = await import("./auth");
-    const token = await auth.getVertexAccessToken({ mode: "oauth_token", oauthToken: "  ya29.token  " });
-    expect(token).toBe("ya29.token");
-  });
-
-  it("throws when no token is provided", async () => {
-    const auth = await import("./auth");
-    await expect(auth.getVertexAccessToken({ mode: "oauth_token" })).rejects.toThrow(/no token was provided/);
-  });
-
-  it("does not call google-auth-library", async () => {
-    const auth = await import("./auth");
-    await auth.getVertexAccessToken({ mode: "oauth_token", oauthToken: "abc" });
-    expect(getAccessTokenMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("getVertexAccessToken (service_account_api_key)", () => {
-  it("returns the API key verbatim", async () => {
-    const auth = await import("./auth");
-    const token = await auth.getVertexAccessToken({ mode: "service_account_api_key", apiKey: "AIza-test-key" });
-    expect(token).toBe("AIza-test-key");
-  });
-
-  it("throws when no API key is provided", async () => {
-    const auth = await import("./auth");
-    await expect(auth.getVertexAccessToken({ mode: "service_account_api_key" })).rejects.toThrow(
-      /no API key was provided/,
+    // Cast to bypass the union narrowing — defensive coverage for the day
+    // VertexAuthMode widens beyond "adc".
+    await expect(auth.getVertexAccessToken({ mode: "oauth_token" as unknown as "adc" })).rejects.toThrow(
+      /Unsupported Vertex auth mode/,
     );
   });
 });

@@ -2246,6 +2246,11 @@ export class Agent {
 
   private requireProvider(): GrokProviderAdapter {
     if (!this.provider) {
+      if (getActiveProvider() === "vertex") {
+        throw new Error(
+          "Vertex AI is selected but no project id is configured. Set GROK_VERTEX_PROJECT_ID (or GCP_PROJECT_ID), or save `vertex.projectId` to ~/.grok/user-settings.json.",
+        );
+      }
       throw new Error("API key required. Add an API key to continue.");
     }
 

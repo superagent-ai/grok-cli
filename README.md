@@ -303,7 +303,8 @@ GROK_PROVIDER=vertex GROK_VERTEX_PROJECT_ID=my-gcp-project grok
 | `GCP_PROJECT_ID` | Fallback for `GROK_VERTEX_PROJECT_ID` | — |
 | `GROK_VERTEX_LOCATION` | Vertex region (e.g. `us-central1`) | `global` |
 | `GROK_VERTEX_BASE_URL` | Vertex API host override | `https://aiplatform.googleapis.com` |
-| `GROK_VERTEX_AUTH_MODE` | `adc`, `oauth_token`, or `service_account_api_key` | `adc` |
+
+> Authentication is currently **ADC only** (`gcloud auth application-default login`). Pre-minted OAuth tokens and service-account-bound API keys are documented in the Google Cloud quickstart but require additional CLI plumbing — tracked as a follow-up.
 
 > **Disclaimer:** Vertex AI access to Grok is provided by Google Cloud as a partner integration. This project is independent of both xAI Corp. and Google. Pricing and availability are governed by your Google Cloud contract.
 

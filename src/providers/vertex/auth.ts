@@ -20,67 +20,34 @@ let cachedAuthClient: GoogleAuth | undefined;
 
 export interface VertexAuthOptions {
   mode: VertexAuthMode;
-  /** Pre-resolved OAuth bearer token, used when mode === "oauth_token". */
-  oauthToken?: string;
-  /** Service-account-bound API key, used when mode === "service_account_api_key". */
-  apiKey?: string;
 }
 
 /**
  * Resolves a Google Cloud access token for Vertex AI requests.
  *
- * Resolution order is determined by `options.mode`:
- *   - "adc"                       → Application Default Credentials. Looks up
- *                                   `gcloud auth application-default login`
- *                                   credentials, GOOGLE_APPLICATION_CREDENTIALS,
- *                                   or workload identity, in that order.
- *   - "oauth_token"               → Returns the explicit token verbatim.
- *                                   Useful for short-lived tokens minted by
- *                                   `gcloud auth print-access-token`.
- *   - "service_account_api_key"   → Returns the configured API key. Reserved
- *                                   for organizations that have enabled
- *                                   service-account-bound API keys; not
- *                                   recommended unless verified live against
- *                                   the Grok-on-Vertex endpoint.
+ * Currently only Application Default Credentials (`mode: "adc"`) is
+ * supported. ADC looks up `gcloud auth application-default login`
+ * credentials, GOOGLE_APPLICATION_CREDENTIALS, or workload identity, in
+ * that order.
+ *
+ * Other auth modes (pre-minted OAuth bearer tokens, service-account-bound
+ * API keys) are documented in the Vertex AI quickstart but require
+ * additional settings/env wiring and live verification against the
+ * Grok-on-Vertex endpoint before being safe to expose. Tracked as a
+ * follow-up.
  */
 export async function getVertexAccessToken(options: VertexAuthOptions): Promise<string> {
-  switch (options.mode) {
-    case "oauth_token":
-      return resolveExplicitToken(options.oauthToken);
-    case "service_account_api_key":
-      return resolveServiceAccountApiKey(options.apiKey);
-    case "adc":
-      return resolveAdcAccessToken();
-    default: {
-      const exhaustive: never = options.mode;
-      throw new Error(`Unknown Vertex auth mode: ${String(exhaustive)}`);
-    }
+  if (options.mode !== "adc") {
+    // VertexAuthMode currently narrows to "adc"; this branch is defensive
+    // for the future when the type union widens.
+    throw new Error(`Unsupported Vertex auth mode "${String(options.mode)}". Only "adc" is wired up.`);
   }
+  return resolveAdcAccessToken();
 }
 
 /** Clears the cached GoogleAuth client. Call after an auth failure or in tests. */
 export function resetVertexAuthClient(): void {
   cachedAuthClient = undefined;
-}
-
-function resolveExplicitToken(token: string | undefined): string {
-  const trimmed = token?.trim();
-  if (!trimmed) {
-    throw new Error(
-      "Vertex auth mode is 'oauth_token' but no token was provided. Set vertex.oauthToken in settings or run `gcloud auth print-access-token` and pass the result.",
-    );
-  }
-  return trimmed;
-}
-
-function resolveServiceAccountApiKey(apiKey: string | undefined): string {
-  const trimmed = apiKey?.trim();
-  if (!trimmed) {
-    throw new Error(
-      "Vertex auth mode is 'service_account_api_key' but no API key was provided. Save vertex.apiKey via settings, or switch to ADC by setting GROK_VERTEX_AUTH_MODE=adc.",
-    );
-  }
-  return trimmed;
 }
 
 async function resolveAdcAccessToken(): Promise<string> {

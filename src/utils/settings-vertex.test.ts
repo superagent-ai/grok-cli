@@ -105,14 +105,27 @@ describe("resolveVertexSettings", () => {
   it("loads saved Vertex settings from user-settings.json", async () => {
     stubSettingsFile({
       provider: "vertex",
-      vertex: { projectId: "my-proj", location: "us-central1", authMode: "oauth_token" },
+      vertex: { projectId: "my-proj", location: "us-central1", authMode: "adc" },
     });
     const settings = await import("./settings");
     const resolved = settings.resolveVertexSettings();
     expect(resolved.projectId).toBe("my-proj");
     expect(resolved.location).toBe("us-central1");
-    expect(resolved.authMode).toBe("oauth_token");
+    expect(resolved.authMode).toBe("adc");
     expect(resolved.baseURL).toBe(settings.DEFAULT_VERTEX_BASE_URL);
+  });
+
+  it("normalizes a saved unsupported authMode back to the adc default", async () => {
+    stubSettingsFile({
+      provider: "vertex",
+      // The user (or a future-version of the CLI) wrote a value the
+      // current build does not support. We want to fall back to the
+      // safe default rather than honor a mode the auth module would
+      // reject at request time.
+      vertex: { projectId: "my-proj", authMode: "oauth_token" as never },
+    });
+    const settings = await import("./settings");
+    expect(settings.resolveVertexSettings().authMode).toBe(settings.DEFAULT_VERTEX_AUTH_MODE);
   });
 
   it("env overrides saved settings", async () => {

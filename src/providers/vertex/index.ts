@@ -1,6 +1,6 @@
 import { createXai } from "@ai-sdk/xai";
 
-import { getReasoningEffortForModel, requireVertexSettings, type VertexSettings } from "../../utils/settings";
+import { requireVertexSettings, type VertexSettings } from "../../utils/settings";
 import type { GrokProviderAdapter, ProviderCapabilities, ResolvedModelRuntime } from "../types";
 import { ProviderCapabilityError } from "../types";
 import { DEFAULT_VERTEX_MODEL, DEFAULT_VERTEX_TITLE_MODEL, getVertexModelInfo, normalizeVertexModelId } from "./models";
@@ -71,16 +71,16 @@ class VertexProviderAdapter implements GrokProviderAdapter {
   resolveRuntime(requestedModelId: string): ResolvedModelRuntime {
     const modelId = normalizeVertexModelId(requestedModelId);
     const modelInfo = getVertexModelInfo(modelId);
-    // Vertex selects reasoning by SKU, not via per-request reasoning_effort,
-    // so providerOptions.xai.reasoningEffort is intentionally omitted. We
-    // still consult the saved per-model setting to preserve ergonomics for
-    // cross-provider tooling that round-trips the value.
-    const requestedEffort = getReasoningEffortForModel(modelId);
+    // Vertex selects reasoning by SKU (e.g. grok-4.20-reasoning vs
+    // grok-4.20-non-reasoning), not via a per-request reasoning_effort
+    // knob. Per the capability matrix (capabilities.reasoningEffort:
+    // false), we deliberately omit providerOptions here so the agent
+    // does not surface a setting that Vertex will silently ignore.
     return {
       model: this.sdk(modelId),
       modelId,
       modelInfo,
-      providerOptions: requestedEffort ? { xai: { reasoningEffort: requestedEffort } } : undefined,
+      providerOptions: undefined,
     };
   }
 
