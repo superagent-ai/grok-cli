@@ -241,6 +241,74 @@ Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`,
 
 ---
 
+## Vertex AI Grok (Google Cloud backend)
+
+`grok-cli` can route Grok traffic through **Google Cloud Vertex AI** instead of the native xAI API. The four documented Vertex Grok SKUs are supported:
+
+- `grok-4.20-reasoning` (200K context — default chat model)
+- `grok-4.20-non-reasoning`
+- `grok-4.1-fast-reasoning` (128K context)
+- `grok-4.1-fast-non-reasoning` (128K context — default title/recap model)
+
+### Prerequisites
+
+1. Enable the Vertex AI API on your GCP project.
+2. Authenticate locally with **Application Default Credentials**:
+   ```bash
+   gcloud auth application-default login
+   gcloud auth application-default print-access-token   # verify
+   ```
+
+### Run
+
+```bash
+# CLI flag
+grok --provider vertex
+
+# Or via env var
+GROK_PROVIDER=vertex GROK_VERTEX_PROJECT_ID=my-gcp-project grok
+
+# Or save in ~/.grok/user-settings.json
+{
+  "provider": "vertex",
+  "vertex": {
+    "projectId": "my-gcp-project",
+    "location": "global"
+  }
+}
+```
+
+### What works on Vertex
+
+- Chat and streaming
+- Local function/tool calling (bash, file edits, LSP, etc.)
+- Structured outputs
+- Image inputs (vision)
+- Reasoning vs non-reasoning by SKU selection
+
+### What's xAI-only (returns a typed error on Vertex)
+
+- xAI `/responses` endpoint and the multi-agent SKUs
+- Hosted web search and X search (`search_web`, `search_x`)
+- Image generation (`grok-imagine-image`) and video generation (`grok-imagine-video`)
+- xAI Batch API (`--batch-api`)
+- Telegram audio transcription via Grok STT
+
+### Vertex environment variables
+
+| Var | Purpose | Default |
+|---|---|---|
+| `GROK_PROVIDER` | Active backend (`xai` or `vertex`) | `xai` |
+| `GROK_VERTEX_PROJECT_ID` | GCP project for Vertex requests | — |
+| `GCP_PROJECT_ID` | Fallback for `GROK_VERTEX_PROJECT_ID` | — |
+| `GROK_VERTEX_LOCATION` | Vertex region (e.g. `us-central1`) | `global` |
+| `GROK_VERTEX_BASE_URL` | Vertex API host override | `https://aiplatform.googleapis.com` |
+| `GROK_VERTEX_AUTH_MODE` | `adc`, `oauth_token`, or `service_account_api_key` | `adc` |
+
+> **Disclaimer:** Vertex AI access to Grok is provided by Google Cloud as a partner integration. This project is independent of both xAI Corp. and Google. Pricing and availability are governed by your Google Cloud contract.
+
+---
+
 ## Telegram (remote control) — short version
 
 1. Create a bot with [@BotFather](https://t.me/BotFather), copy the token.
