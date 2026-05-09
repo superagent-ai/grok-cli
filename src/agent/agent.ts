@@ -39,7 +39,7 @@ import type {
 } from "../hooks/types";
 import { shutdownWorkspaceLspManager } from "../lsp/runtime";
 import { buildMcpToolSet } from "../mcp/runtime";
-import type { GrokProviderAdapter } from "../providers";
+import { createProvider as createProviderFromKind, type GrokProviderAdapter } from "../providers";
 import {
   appendCompaction,
   appendMessages,
@@ -72,10 +72,12 @@ import type {
 import { loadCustomInstructions } from "../utils/instructions";
 import {
   type CustomSubagentConfig,
+  getActiveProvider,
   getCurrentModel,
   getModeSpecificModel,
   loadMcpServers,
   loadValidSubAgents,
+  resolveVertexSettings,
   type SandboxMode,
   type SandboxSettings,
 } from "../utils/settings";
@@ -575,8 +577,13 @@ export class Agent {
     options: AgentOptions = {},
   ) {
     this.baseURL = baseURL || null;
+    // For xAI: only construct the provider when an apiKey is supplied.
+    // For Vertex: construct when settings are present, regardless of apiKey
+    // (Vertex auth is handled by Google ADC, not a static key).
     if (apiKey) {
       this.setApiKey(apiKey, baseURL);
+    } else if (this.canBootstrapVertexProvider()) {
+      this.setApiKey("", baseURL);
     }
     this.bash = new BashTool(process.cwd(), {
       sandboxMode: options.sandboxMode ?? "off",
@@ -662,14 +669,37 @@ export class Agent {
     this.sendTelegramFile = fn;
   }
 
+  /**
+   * True when the active provider has the credentials it needs to run.
+   * - xAI:    requires an API key.
+   * - Vertex: requires Vertex settings (project id) regardless of apiKey.
+   *
+   * Kept named hasApiKey() for backward-compat with the existing UI surface
+   * which polls this method to decide whether to render the auth modal.
+   */
   hasApiKey(): boolean {
+    if (getActiveProvider() === "vertex") {
+      return !!this.provider;
+    }
     return !!this.apiKey;
   }
 
   setApiKey(apiKey: string, baseURL = this.baseURL ?? undefined): void {
     this.apiKey = apiKey;
     this.baseURL = baseURL || null;
-    this.provider = createProvider(apiKey, baseURL);
+    this.provider = this.buildProvider(apiKey, baseURL);
+  }
+
+  private buildProvider(apiKey: string, baseURL?: string): GrokProviderAdapter {
+    if (getActiveProvider() === "vertex") {
+      return createProviderFromKind({ kind: "vertex" });
+    }
+    return createProvider(apiKey, baseURL);
+  }
+
+  private canBootstrapVertexProvider(): boolean {
+    if (getActiveProvider() !== "vertex") return false;
+    return !!resolveVertexSettings().projectId;
   }
 
   getCwd(): string {
@@ -956,12 +986,14 @@ export class Agent {
   }
 
   private getBatchClientOptions(signal?: AbortSignal): BatchClientOptions {
-    if (!this.apiKey) {
-      throw new Error("API key required. Add an API key to continue.");
+    const provider = this.requireProvider();
+    if (!provider.capabilities.batchApi || !provider.getBatchClientApiKey) {
+      throw new Error(
+        `xAI Batch API is not available with the ${provider.kind} provider. Use streaming/headless mode, or switch to provider=xai with GROK_API_KEY configured.`,
+      );
     }
-
     return {
-      apiKey: this.apiKey,
+      apiKey: provider.getBatchClientApiKey(),
       baseURL: this.baseURL ?? undefined,
       signal,
     };

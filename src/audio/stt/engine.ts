@@ -1,5 +1,5 @@
 import type { TelegramSettings } from "../../utils/settings";
-import { getApiKey, getBaseURL, resolveTelegramAudioInputSettings } from "../../utils/settings";
+import { getActiveProvider, getApiKey, getBaseURL, resolveTelegramAudioInputSettings } from "../../utils/settings";
 import { GrokSttEngine, type GrokSttTranscriptionResult } from "./grok-stt";
 
 export interface AudioTranscriptionInput {
@@ -18,6 +18,12 @@ export function createTelegramAudioInputEngine(
   telegramSettings: TelegramSettings | undefined,
 ): AudioTranscriptionEngine {
   const resolved = resolveTelegramAudioInputSettings(telegramSettings);
+  const provider = getActiveProvider();
+  if (provider !== "xai") {
+    throw new Error(
+      `Telegram audio transcription via Grok STT is only available with the xAI provider; the active provider is ${provider}. Disable telegram.audioInput.enabled or switch to provider=xai.`,
+    );
+  }
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error(
