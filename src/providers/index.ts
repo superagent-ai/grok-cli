@@ -1,4 +1,5 @@
 import type { GrokProviderAdapter, ProviderFactoryConfig, ProviderKind } from "./types";
+import { createVertexAdapter } from "./vertex";
 import { createXaiAdapter } from "./xai";
 
 export type {
@@ -11,6 +12,7 @@ export type {
   ResolvedModelRuntime,
 } from "./types";
 export { ProviderCapabilityError } from "./types";
+export { createVertexAdapter, VERTEX_DEFAULT_MODEL, VERTEX_DEFAULT_TITLE_MODEL } from "./vertex";
 export { createXaiAdapter, XAI_DEFAULT_MODEL } from "./xai";
 
 /**
@@ -28,7 +30,7 @@ export function createProvider(config: ProviderFactoryConfig): GrokProviderAdapt
         baseURL: config.baseURL,
       });
     case "vertex":
-      throw new Error("The vertex provider has not been wired up yet. This branch will land it in a follow-up commit.");
+      return createVertexAdapter();
     default: {
       const exhaustive: never = config.kind;
       throw new Error(`Unknown provider kind: ${String(exhaustive)}`);

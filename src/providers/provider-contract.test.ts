@@ -79,8 +79,29 @@ describe("provider contract", () => {
       expect(adapter.kind).toBe("xai");
     });
 
-    it("rejects vertex until the vertex backend is wired up in a follow-up commit", () => {
-      expect(() => createProvider({ kind: "vertex" })).toThrow(/has not been wired up/);
+    it("constructs a vertex adapter for kind: 'vertex' when project id is configured", () => {
+      const previous = process.env.GROK_VERTEX_PROJECT_ID;
+      process.env.GROK_VERTEX_PROJECT_ID = "test-project";
+      try {
+        const adapter = createProvider({ kind: "vertex" });
+        expect(adapter.kind).toBe("vertex");
+      } finally {
+        if (previous === undefined) delete process.env.GROK_VERTEX_PROJECT_ID;
+        else process.env.GROK_VERTEX_PROJECT_ID = previous;
+      }
+    });
+
+    it("vertex adapter throws a typed error when the batch API is requested", () => {
+      const previous = process.env.GROK_VERTEX_PROJECT_ID;
+      process.env.GROK_VERTEX_PROJECT_ID = "test-project";
+      try {
+        const adapter = createProvider({ kind: "vertex" });
+        expect(adapter.capabilities.batchApi).toBe(false);
+        expect(() => adapter.getBatchClientApiKey?.()).toThrow(/batchApi is not supported by the vertex provider/);
+      } finally {
+        if (previous === undefined) delete process.env.GROK_VERTEX_PROJECT_ID;
+        else process.env.GROK_VERTEX_PROJECT_ID = previous;
+      }
     });
   });
 
