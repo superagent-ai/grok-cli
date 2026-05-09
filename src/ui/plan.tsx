@@ -2,6 +2,7 @@ import type { Plan, PlanQuestion } from "../types/index";
 import type { Theme } from "./theme";
 
 export type PlanAnswers = Record<string, string | string[]>;
+export const PLAN_QUESTION_REQUIRED_NOTICE = "Answer this question before continuing.";
 
 /* ── Plan Steps (inline in chat) ───────────────────────────── */
 
@@ -77,6 +78,7 @@ export interface PlanQuestionsState {
   answers: PlanAnswers;
   customInputs: Record<string, string>;
   editing: boolean;
+  notice?: string;
 }
 
 export function initialPlanQuestionsState(): PlanQuestionsState {
@@ -96,7 +98,7 @@ interface PlanQuestionsPanelProps {
 }
 
 export function PlanQuestionsPanel({ t, questions, state }: PlanQuestionsPanelProps) {
-  const isSingle = questions.length === 1 && questions[0]?.type !== "multiselect";
+  const isSingle = isSinglePlanQuestionSet(questions);
   const isConfirmTab = !isSingle && state.tab === questions.length;
   const q = questions[state.tab];
 
@@ -118,7 +120,7 @@ export function PlanQuestionsPanel({ t, questions, state }: PlanQuestionsPanelPr
         <box flexDirection="row" gap={2} marginBottom={1} flexShrink={0}>
           {questions.map((q, i) => {
             const isActive = i === state.tab;
-            const isAnswered = hasAnswer(state.answers, q);
+            const isAnswered = hasPlanAnswer(state.answers, q);
             const label = tabLabel(q);
             return (
               <text key={q.id}>
@@ -150,6 +152,12 @@ export function PlanQuestionsPanel({ t, questions, state }: PlanQuestionsPanelPr
         <ConfirmView t={t} questions={questions} answers={state.answers} />
       ) : q ? (
         <QuestionBody t={t} question={q} state={state} />
+      ) : null}
+
+      {state.notice ? (
+        <box marginTop={1}>
+          <text fg={t.planTitle}>{state.notice}</text>
+        </box>
       ) : null}
 
       {/* Footer hints */}
@@ -307,11 +315,65 @@ function tabLabel(q: PlanQuestion): string {
   return key ?? words[0] ?? "Question";
 }
 
-function hasAnswer(answers: PlanAnswers, q: PlanQuestion): boolean {
+export function isSinglePlanQuestionSet(questions: PlanQuestion[]): boolean {
+  return questions.length === 1 && questions[0]?.type !== "multiselect";
+}
+
+export function getPlanTabCount(questions: PlanQuestion[]): number {
+  return isSinglePlanQuestionSet(questions) ? 1 : questions.length + 1;
+}
+
+export function hasPlanAnswer(answers: PlanAnswers, q: PlanQuestion): boolean {
   const a = answers[q.id];
   if (!a) return false;
   if (Array.isArray(a)) return a.length > 0;
   return a.trim().length > 0;
+}
+
+export function arePlanQuestionsAnswered(questions: PlanQuestion[], answers: PlanAnswers): boolean {
+  return questions.every((q) => hasPlanAnswer(answers, q));
+}
+
+export function firstUnansweredPlanQuestionIndex(questions: PlanQuestion[], answers: PlanAnswers): number | null {
+  const index = questions.findIndex((q) => !hasPlanAnswer(answers, q));
+  return index >= 0 ? index : null;
+}
+
+export function nextPlanTabAfterAnswer(questions: PlanQuestion[], currentTab: number, answers: PlanAnswers): number {
+  if (isSinglePlanQuestionSet(questions)) return 0;
+
+  for (let i = currentTab + 1; i < questions.length; i++) {
+    if (!hasPlanAnswer(answers, questions[i]!)) return i;
+  }
+  for (let i = 0; i <= currentTab && i < questions.length; i++) {
+    if (!hasPlanAnswer(answers, questions[i]!)) return i;
+  }
+  return questions.length;
+}
+
+export function movePlanQuestionTab(
+  questions: PlanQuestion[],
+  state: PlanQuestionsState,
+  direction: 1 | -1,
+): PlanQuestionsState {
+  const tabCount = getPlanTabCount(questions);
+  if (tabCount <= 1) return state;
+
+  const currentQuestion = questions[state.tab];
+  if (direction > 0 && currentQuestion && !hasPlanAnswer(state.answers, currentQuestion)) {
+    return {
+      ...state,
+      notice: PLAN_QUESTION_REQUIRED_NOTICE,
+    };
+  }
+
+  return {
+    ...state,
+    tab: (state.tab + direction + tabCount) % tabCount,
+    selected: 0,
+    editing: false,
+    notice: undefined,
+  };
 }
 
 function isOptionPicked(answers: PlanAnswers, q: PlanQuestion, optionId: string): boolean {

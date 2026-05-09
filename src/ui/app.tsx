@@ -75,12 +75,21 @@ import { Markdown } from "./markdown";
 import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
 import { createEmptyMcpEditorDraft, type McpEditorDraft, type McpEditorField } from "./mcp-modal-types";
 import {
+  arePlanQuestionsAnswered,
+  firstUnansweredPlanQuestionIndex,
   formatPlanAnswers,
+  hasPlanAnswer,
   initialPlanQuestionsState,
+  isSinglePlanQuestionSet,
+  movePlanQuestionTab,
+  nextPlanTabAfterAnswer,
+  PLAN_QUESTION_REQUIRED_NOTICE,
+  type PlanAnswers,
   PlanQuestionsPanel,
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import { isProcessingStatusNudge } from "./processing-input";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
 import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
@@ -1353,7 +1362,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     } catch {
       /* */
     }
-  }, []);
+
+    try {
+      renderer.requestRender();
+    } catch {
+      /* */
+    }
+  }, [renderer]);
 
   const clearLiveTurnUi = useCallback(() => {
     setStreamContent("");
@@ -2417,8 +2432,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const showPlanPanel = !!activePlan?.questions?.length;
   const planQuestions = activePlan?.questions ?? [];
-  const isSinglePlan = planQuestions.length === 1 && planQuestions[0]?.type !== "multiselect";
-  const planTabCount = isSinglePlan ? 1 : planQuestions.length + 1;
+  const isSinglePlan = isSinglePlanQuestionSet(planQuestions);
   const isPlanConfirmTab = !isSinglePlan && pqs.tab === planQuestions.length;
 
   const dismissPlan = useCallback(() => {
@@ -2426,13 +2440,52 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setPqs(initialPlanQuestionsState());
   }, []);
 
+  const submitPlanAnswersNow = useCallback(
+    (answers: PlanAnswers) => {
+      if (!activePlan?.questions?.length) return;
+      const text = formatPlanAnswers(activePlan.questions, answers);
+      setActivePlan(null);
+      setPqs(initialPlanQuestionsState());
+      processMessage(text);
+    },
+    [activePlan, processMessage],
+  );
+
   const submitPlanAnswers = useCallback(() => {
     if (!activePlan?.questions?.length) return;
-    const text = formatPlanAnswers(activePlan.questions, pqs.answers);
-    setActivePlan(null);
-    setPqs(initialPlanQuestionsState());
-    processMessage(text);
-  }, [activePlan, pqs.answers, processMessage]);
+    if (!arePlanQuestionsAnswered(activePlan.questions, pqs.answers)) {
+      const tab = firstUnansweredPlanQuestionIndex(activePlan.questions, pqs.answers) ?? 0;
+      setPqs((s) => ({
+        ...s,
+        tab,
+        selected: 0,
+        editing: false,
+        notice: PLAN_QUESTION_REQUIRED_NOTICE,
+      }));
+      return;
+    }
+    submitPlanAnswersNow(pqs.answers);
+  }, [activePlan, pqs.answers, submitPlanAnswersNow]);
+
+  const savePlanAnswerAndAdvance = useCallback(
+    (q: PlanQuestion, value: string | string[]) => {
+      const nextAnswers = { ...pqs.answers, [q.id]: value };
+      if (isSinglePlan) {
+        submitPlanAnswersNow(nextAnswers);
+        return;
+      }
+      const nextTab = nextPlanTabAfterAnswer(planQuestions, pqs.tab, nextAnswers);
+      setPqs((s) => ({
+        ...s,
+        answers: nextAnswers,
+        tab: nextTab,
+        selected: 0,
+        editing: false,
+        notice: undefined,
+      }));
+    },
+    [isSinglePlan, planQuestions, pqs.answers, pqs.tab, submitPlanAnswersNow],
+  );
 
   const handlePlanSelect = useCallback(
     (q: PlanQuestion, idx: number, options: { id: string; label: string }[], showCustom: boolean) => {
@@ -2443,15 +2496,20 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           if (customVal) {
             const existing = (pqs.answers[q.id] as string[] | undefined) ?? [];
             if (existing.includes(customVal)) {
-              setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: existing.filter((x) => x !== customVal) } }));
+              const nextAnswers = { ...pqs.answers, [q.id]: existing.filter((x) => x !== customVal) };
+              setPqs((s) => ({
+                ...s,
+                answers: nextAnswers,
+                notice: hasPlanAnswer(nextAnswers, q) ? undefined : s.notice,
+              }));
             } else {
-              setPqs((s) => ({ ...s, editing: true }));
+              setPqs((s) => ({ ...s, editing: true, notice: undefined }));
             }
           } else {
-            setPqs((s) => ({ ...s, editing: true }));
+            setPqs((s) => ({ ...s, editing: true, notice: undefined }));
           }
         } else {
-          setPqs((s) => ({ ...s, editing: true }));
+          setPqs((s) => ({ ...s, editing: true, notice: undefined }));
         }
         return;
       }
@@ -2459,21 +2517,19 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       if (!opt) return;
 
       if (q.type === "multiselect") {
-        setPqs((s) => {
-          const existing = (s.answers[q.id] as string[] | undefined) ?? [];
-          const next = existing.includes(opt.id) ? existing.filter((x) => x !== opt.id) : [...existing, opt.id];
-          return { ...s, answers: { ...s.answers, [q.id]: next } };
-        });
+        const existing = (pqs.answers[q.id] as string[] | undefined) ?? [];
+        const next = existing.includes(opt.id) ? existing.filter((x) => x !== opt.id) : [...existing, opt.id];
+        const nextAnswers = { ...pqs.answers, [q.id]: next };
+        setPqs((s) => ({
+          ...s,
+          answers: nextAnswers,
+          notice: hasPlanAnswer(nextAnswers, q) ? undefined : s.notice,
+        }));
       } else {
-        setPqs((s) => ({ ...s, answers: { ...s.answers, [q.id]: opt.id } }));
-        if (isSinglePlan) {
-          submitPlanAnswers();
-          return;
-        }
-        setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+        savePlanAnswerAndAdvance(q, opt.id);
       }
     },
-    [pqs, isSinglePlan, submitPlanAnswers],
+    [pqs, savePlanAnswerAndAdvance],
   );
 
   const dismissBtw = useCallback(() => {
@@ -2492,6 +2548,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return;
       }
       if (showPlanPanel) {
+        key.preventDefault();
+        key.stopPropagation();
         const q = planQuestions[pqs.tab];
 
         // Escape always dismisses
@@ -2510,24 +2568,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 if (q.type === "multiselect") {
                   const existing = (pqs.answers[qId] as string[] | undefined) ?? [];
                   const next = existing.includes(text) ? existing : [...existing, text];
-                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: next } }));
-                } else if (q.type === "text") {
-                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                  if (isSinglePlan) {
-                    submitPlanAnswers();
-                    return;
-                  }
-                  setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+                  setPqs((s) => ({
+                    ...s,
+                    editing: false,
+                    answers: { ...s.answers, [qId]: next },
+                    notice: undefined,
+                  }));
                 } else {
-                  setPqs((s) => ({ ...s, editing: false, answers: { ...s.answers, [qId]: text } }));
-                  if (isSinglePlan) {
-                    submitPlanAnswers();
-                    return;
-                  }
-                  setPqs((s) => ({ ...s, tab: s.tab + 1, selected: 0 }));
+                  savePlanAnswerAndAdvance(q, text);
                 }
               } else {
-                setPqs((s) => ({ ...s, editing: false }));
+                setPqs((s) => ({ ...s, editing: false, notice: PLAN_QUESTION_REQUIRED_NOTICE }));
               }
             }
             return;
@@ -2556,15 +2607,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         // Tab / left / right — switch between question tabs
         if (key.name === "tab") {
           const dir = key.shift ? -1 : 1;
-          setPqs((s) => ({ ...s, tab: (s.tab + dir + planTabCount) % planTabCount, selected: 0 }));
+          setPqs((s) => movePlanQuestionTab(planQuestions, s, dir));
           return;
         }
         if (key.name === "left" || key.name === "h") {
-          setPqs((s) => ({ ...s, tab: (s.tab - 1 + planTabCount) % planTabCount, selected: 0 }));
+          setPqs((s) => movePlanQuestionTab(planQuestions, s, -1));
           return;
         }
         if (key.name === "right" || key.name === "l") {
-          setPqs((s) => ({ ...s, tab: (s.tab + 1) % planTabCount, selected: 0 }));
+          setPqs((s) => movePlanQuestionTab(planQuestions, s, 1));
           return;
         }
 
@@ -2581,6 +2632,19 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
         // Text-only question (no options)
         if (q.type === "text") {
+          if (key.name === "return") {
+            setPqs((s) => ({ ...s, editing: true, notice: PLAN_QUESTION_REQUIRED_NOTICE }));
+            return;
+          }
+          if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+            setPqs((s) => ({
+              ...s,
+              editing: true,
+              customInputs: { ...s.customInputs, [q.id]: (s.customInputs[q.id] ?? "") + key.sequence },
+              notice: undefined,
+            }));
+            return;
+          }
           setPqs((s) => ({ ...s, editing: true }));
           return;
         }
@@ -3225,7 +3289,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       interruptActiveRun,
       isPlanConfirmTab,
       isProcessing,
-      isSinglePlan,
+      savePlanAnswerAndAdvance,
       mcpEditorField,
       mcpEditorFields,
       mcpModalIndex,
@@ -3245,7 +3309,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       submitMcpEditor,
       submitSubagentEditor,
       planQuestions,
-      planTabCount,
       pqs,
       removeEditingSubagent,
       applySandboxMode,
@@ -3279,6 +3342,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const handlePaste = useCallback(
     (event: PasteEvent) => {
+      if (showPlanPanel) {
+        event.preventDefault();
+        return;
+      }
+
       if (!hasApiKeyRef.current) {
         event.preventDefault();
         openApiKeyModal();
@@ -3304,10 +3372,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       replacePasteBlocks([...pasteBlocksRef.current, block]);
       inputRef.current?.insertText(getPasteBlockToken(block));
     },
-    [openApiKeyModal, replacePasteBlocks],
+    [openApiKeyModal, replacePasteBlocks, showPlanPanel],
   );
 
   const handleSubmit = useCallback(() => {
+    if (showPlanPanel) return;
+
     const raw = inputRef.current?.plainText || "";
     if (!raw.trim() && pasteBlocksRef.current.length === 0) {
       if (queuedMessagesRef.current.length > 0 && isProcessingRef.current) {
@@ -3340,13 +3410,26 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (handleCommand(message)) return;
     const { enhancedMessage } = processAtMentions(message.trim(), agent.getCwd());
     if (isProcessingRef.current) {
+      if (isProcessingStatusNudge(displayText)) {
+        setTimeout(scrollToBottom, 10);
+        return;
+      }
       queuedMessagesRef.current.push({ text: enhancedMessage, displayText });
       setQueuedMessages(queuedMessagesRef.current.map((msg) => msg.displayText));
       setTimeout(scrollToBottom, 10);
       return;
     }
     processMessage(enhancedMessage, displayText);
-  }, [agent, clearLiveTurnUi, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
+  }, [
+    agent,
+    clearLiveTurnUi,
+    handleCommand,
+    openApiKeyModal,
+    processMessage,
+    replacePasteBlocks,
+    scrollToBottom,
+    showPlanPanel,
+  ]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
