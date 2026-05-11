@@ -338,6 +338,8 @@ Grok CLI can run shell commands inside a [Shuru](https://github.com/superhq-ai/s
 
 Enable it with `--sandbox` on the CLI, or toggle it from the TUI with `/sandbox`.
 
+On the first interactive run in a new directory, Grok asks whether to remember sandbox or host mode for that workspace and stores the choice in `~/.grok/workspace-trust.json`. Explicit `--sandbox` / `--no-sandbox` flags and non-interactive commands keep their current behavior.
+
 When sandbox mode is active you can configure:
 
 - **Network** — off by default; enable with `--allow-net`, restrict with `--allow-host`

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { InvalidArgumentError, program } from "commander";
 import * as dotenv from "dotenv";
+import readline from "readline";
 import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
@@ -29,6 +30,11 @@ import {
   saveUserSettings,
 } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
+import {
+  getWorkspaceTrustDecision,
+  isShuruSandboxSupported,
+  saveWorkspaceTrustDecision,
+} from "./utils/workspace-trust";
 import { buildVerifyPrompt, getVerifyCliError } from "./verify/entrypoint";
 
 dotenv.config();
@@ -176,6 +182,81 @@ function resolveCliSandboxMode(value: string | boolean | undefined): SandboxMode
   if (value === true) return "shuru";
   if (value === false) return "off";
   return undefined;
+}
+
+function hasExplicitSandboxOption(options: CliOptions): boolean {
+  return options.sandbox === true || options.sandbox === false;
+}
+
+interface WorkspaceTrustPromptDecision {
+  sandboxMode: SandboxMode;
+  remember: boolean;
+}
+
+async function promptWorkspaceTrust(
+  cwd: string,
+  sandboxSupported = isShuruSandboxSupported(),
+): Promise<WorkspaceTrustPromptDecision> {
+  const message = sandboxSupported
+    ? [
+        "",
+        `Grok has not been run in ${cwd} before.`,
+        "",
+        "Sandbox mode isolates agent shell commands in a Shuru microVM so",
+        "untrusted repos cannot touch your host filesystem or network by default.",
+        "",
+        "Run grok in sandbox mode for this directory?",
+        "",
+        "  [Y] Yes, always in sandbox",
+        "  [n] No, run on host",
+        "  [s] Yes, this session only",
+        "",
+        "Choice [Y/n/s]: ",
+      ].join("\n")
+    : [
+        "",
+        `Grok has not been run in ${cwd} before.`,
+        "",
+        "Sandbox mode is only available on macOS Apple Silicon in this version.",
+        "",
+        "Run grok directly on the host for this directory?",
+        "",
+        "  [Y] Yes, remember host mode",
+        "  [s] Yes, this session only",
+        "",
+        "Choice [Y/s]: ",
+      ].join("\n");
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await new Promise<string>((resolve) => {
+      rl.question(message, resolve);
+    });
+    const normalized = answer.trim().toLowerCase();
+    if (normalized === "s" || normalized === "session") {
+      return { sandboxMode: sandboxSupported ? "shuru" : "off", remember: false };
+    }
+    if (sandboxSupported && (!normalized || normalized === "y" || normalized === "yes")) {
+      return { sandboxMode: "shuru", remember: true };
+    }
+    return { sandboxMode: "off", remember: true };
+  } finally {
+    rl.close();
+  }
+}
+
+async function resolveWorkspaceTrustSandboxMode(sandboxMode: SandboxMode, options: CliOptions): Promise<SandboxMode> {
+  if (sandboxMode === "shuru" || hasExplicitSandboxOption(options)) return sandboxMode;
+  if (process.env.GROK_TRUST_WORKSPACE) return sandboxMode;
+
+  const cwd = process.cwd();
+  const saved = getWorkspaceTrustDecision(cwd);
+  if (saved) return saved;
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return sandboxMode;
+
+  const decision = await promptWorkspaceTrust(cwd);
+  if (decision.remember) saveWorkspaceTrustDecision(cwd, decision.sandboxMode);
+  return decision.sandboxMode;
 }
 
 async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
@@ -353,6 +434,7 @@ program
     }
 
     const initialMessage = message.length > 0 ? message.join(" ") : undefined;
+    config.sandboxMode = await resolveWorkspaceTrustSandboxMode(config.sandboxMode, options);
     await startInteractive(
       config.apiKey,
       config.baseURL,
