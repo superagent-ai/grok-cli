@@ -75,6 +75,12 @@ async function startInteractive(
     },
   });
 
+  // iTerm2 reacts to the cursor hide/show pair OpenTUI emits each frame by flashing
+  // the window. Pinning a non-blinking, terminal-default cursor lets the renderer's
+  // dedup logic (anomalyco/opentui#287) short-circuit those writes after the first
+  // frame, eliminating the chronic blink reported in superagent-ai/grok-cli#292.
+  renderer.setCursorStyle({ style: "default", blinking: false });
+
   const onExit = () => {
     void agent.cleanup().finally(() => {
       renderer.destroy();
