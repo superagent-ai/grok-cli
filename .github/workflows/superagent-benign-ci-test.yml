@@ -1,0 +1,16 @@
+name: Superagent Benign CI Test
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Report safe CI context
+        run: echo "Safe pull_request workflow with read-only permissions"
