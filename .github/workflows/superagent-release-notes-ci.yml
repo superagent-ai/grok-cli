@@ -1,0 +1,32 @@
+name: Superagent Release Notes Preview
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Restore PR metadata artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-metadata
+          path: .tmp/pr
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Build comment body
+        run: |
+          body="$(cat .tmp/pr/body.md)"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
