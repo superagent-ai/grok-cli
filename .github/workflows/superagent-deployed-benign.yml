@@ -1,0 +1,21 @@
+name: Superagent Deployed Benign Test
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  metadata-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Handle PR metadata safely
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.head_ref }}
+        run: |
+          printf 'Title length: %s\n' "${#PR_TITLE}"
+          printf 'Branch: %s\n' "$PR_BRANCH"
