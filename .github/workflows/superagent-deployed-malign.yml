@@ -1,0 +1,20 @@
+# DO NOT MERGE: intentionally unsafe workflow used to validate deployed Superagent.
+name: Superagent Deployed Malicious Test
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions: write-all
+
+jobs:
+  unsafe-test-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout untrusted PR code
+        uses: actions/checkout@main
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use PR title in shell
+        run: echo "Title: ${{ github.event.pull_request.title }}"
