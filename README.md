@@ -1,10 +1,10 @@
 # grok-cli: an open-source coding agent for the Grok API
 
-[CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
-[npm](https://www.npmjs.com/package/grok-dev)
-[License: MIT](./LICENSE)
-[TypeScript](https://www.typescriptlang.org/)
-[Bun](https://bun.sh/)
+[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
+[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
 
 > **Disclaimer:** This project is community-built, open-source, and **not affiliated with, endorsed by, or sponsored by xAI Corp.** "Grok" is a trademark of xAI Corp. This tool uses the publicly available Grok API.
 
