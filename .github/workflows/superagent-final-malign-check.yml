@@ -1,0 +1,17 @@
+# DO NOT MERGE: intentionally unsafe workflow used for final Superagent validation.
+name: Superagent Final Malicious Check
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions: write-all
+
+jobs:
+  unsafe-test-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: echo "PR title: ${{ github.event.pull_request.title }}"
