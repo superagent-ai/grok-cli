@@ -1,0 +1,21 @@
+name: Superagent Hard Benign CI
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  metadata-summary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Summarize PR metadata safely
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.head_ref }}
+        run: |
+          printf 'PR title length: %s\n' "${#PR_TITLE}"
+          printf 'PR branch: %s\n' "$PR_BRANCH"
