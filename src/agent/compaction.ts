@@ -1,5 +1,6 @@
 import { generateText, type ModelMessage } from "ai";
-import { resolveModelRuntime, type XaiProvider } from "../grok/client";
+import { resolveModelRuntime } from "../grok/client";
+import type { GrokProviderAdapter } from "../providers";
 import { containsEncryptedReasoning } from "./reasoning";
 
 export interface CompactionSettings {
@@ -391,7 +392,7 @@ export function serializeConversation(messages: ModelMessage[]): string {
 }
 
 async function summarizeConversation(
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   modelId: string,
   messages: ModelMessage[],
   reserveTokens: number,
@@ -432,7 +433,7 @@ async function summarizeConversation(
 }
 
 export async function generateCompactionSummary(
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   modelId: string,
   preparation: PreparedCompaction,
   customInstructions?: string,

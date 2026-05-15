@@ -1,5 +1,6 @@
 import { generateText } from "ai";
-import { resolveModelRuntime, type XaiProvider } from "../grok/client.js";
+import { resolveModelRuntime } from "../grok/client.js";
+import type { GrokProviderAdapter } from "../providers/index.js";
 
 export interface SideQuestionResult {
   response: string;
@@ -12,7 +13,7 @@ If conversation context is provided below, use it to give a more relevant answer
 
 export async function runSideQuestion(
   question: string,
-  provider: XaiProvider,
+  provider: GrokProviderAdapter,
   modelId: string,
   conversationContext: string,
   signal?: AbortSignal,

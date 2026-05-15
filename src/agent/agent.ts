@@ -18,7 +18,6 @@ import {
   generateRecap as genRecap,
   generateTitle as genTitle,
   resolveModelRuntime,
-  type XaiProvider,
 } from "../grok/client";
 import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
@@ -40,6 +39,7 @@ import type {
 } from "../hooks/types";
 import { shutdownWorkspaceLspManager } from "../lsp/runtime";
 import { buildMcpToolSet } from "../mcp/runtime";
+import { createProvider as createProviderFromKind, type GrokProviderAdapter } from "../providers";
 import {
   appendCompaction,
   appendMessages,
@@ -72,11 +72,13 @@ import type {
 import { loadCustomInstructions } from "../utils/instructions";
 import {
   type CustomSubagentConfig,
+  getActiveProvider,
   getCurrentModel,
   getModeSpecificModel,
   loadMcpServers,
   loadRecapsEnabled,
   loadValidSubAgents,
+  resolveVertexSettings,
   type SandboxMode,
   type SandboxSettings,
 } from "../utils/settings";
@@ -532,8 +534,21 @@ function applyModelConstraints(system: string, modelId: string): string {
   ].join("\n");
 }
 
+function requireResponsesModel(
+  provider: GrokProviderAdapter,
+  contextLabel: string,
+): NonNullable<GrokProviderAdapter["responsesModel"]> {
+  const responsesModel = provider.responsesModel;
+  if (!responsesModel) {
+    throw new Error(
+      `${contextLabel} requires the Responses API, which is not supported by the ${provider.kind} provider.`,
+    );
+  }
+  return responsesModel.bind(provider);
+}
+
 export class Agent {
-  private provider: XaiProvider | null = null;
+  private provider: GrokProviderAdapter | null = null;
   private apiKey: string | null = null;
   private baseURL: string | null = null;
   private bash: BashTool;
@@ -564,8 +579,13 @@ export class Agent {
     options: AgentOptions = {},
   ) {
     this.baseURL = baseURL || null;
+    // For xAI: only construct the provider when an apiKey is supplied.
+    // For Vertex: construct when settings are present, regardless of apiKey
+    // (Vertex auth is handled by Google ADC, not a static key).
     if (apiKey) {
       this.setApiKey(apiKey, baseURL);
+    } else if (this.canBootstrapVertexProvider()) {
+      this.setApiKey("", baseURL);
     }
     this.bash = new BashTool(process.cwd(), {
       sandboxMode: options.sandboxMode ?? "off",
@@ -652,14 +672,37 @@ export class Agent {
     this.sendTelegramFile = fn;
   }
 
+  /**
+   * True when the active provider has the credentials it needs to run.
+   * - xAI:    requires an API key.
+   * - Vertex: requires Vertex settings (project id) regardless of apiKey.
+   *
+   * Kept named hasApiKey() for backward-compat with the existing UI surface
+   * which polls this method to decide whether to render the auth modal.
+   */
   hasApiKey(): boolean {
+    if (getActiveProvider() === "vertex") {
+      return !!this.provider;
+    }
     return !!this.apiKey;
   }
 
   setApiKey(apiKey: string, baseURL = this.baseURL ?? undefined): void {
     this.apiKey = apiKey;
     this.baseURL = baseURL || null;
-    this.provider = createProvider(apiKey, baseURL);
+    this.provider = this.buildProvider(apiKey, baseURL);
+  }
+
+  private buildProvider(apiKey: string, baseURL?: string): GrokProviderAdapter {
+    if (getActiveProvider() === "vertex") {
+      return createProviderFromKind({ kind: "vertex" });
+    }
+    return createProvider(apiKey, baseURL);
+  }
+
+  private canBootstrapVertexProvider(): boolean {
+    if (getActiveProvider() !== "vertex") return false;
+    return !!resolveVertexSettings().projectId;
   }
 
   getCwd(): string {
@@ -954,12 +997,14 @@ export class Agent {
   }
 
   private getBatchClientOptions(signal?: AbortSignal): BatchClientOptions {
-    if (!this.apiKey) {
-      throw new Error("API key required. Add an API key to continue.");
+    const provider = this.requireProvider();
+    if (!provider.capabilities.batchApi || !provider.getBatchClientApiKey) {
+      throw new Error(
+        `xAI Batch API is not available with the ${provider.kind} provider. Use streaming/headless mode, or switch to provider=xai with GROK_API_KEY configured.`,
+      );
     }
-
     return {
-      apiKey: this.apiKey,
+      apiKey: provider.getBatchClientApiKey(),
       baseURL: this.baseURL ?? undefined,
       signal,
     };
@@ -1078,7 +1123,7 @@ export class Agent {
                   childRuntime.modelInfo?.supportsMaxOutputTokens === false
                     ? undefined
                     : Math.min(this.maxTokens, 8_192),
-                reasoningEffort: childRuntime.providerOptions?.xai.reasoningEffort,
+                reasoningEffort: childRuntime.providerOptions?.xai?.reasoningEffort,
                 tools: batchTools,
               }),
             },
@@ -1259,7 +1304,10 @@ export class Agent {
               : this.modelId,
     );
     const childRuntime = isVision
-      ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
+      ? {
+          ...resolveModelRuntime(provider, childModelId),
+          model: requireResponsesModel(provider, "vision sub-agent")(childModelId),
+        }
       : resolveModelRuntime(provider, childModelId);
     if (isComputer && childRuntime.modelInfo?.supportsClientTools === false) {
       return {
@@ -1529,7 +1577,7 @@ export class Agent {
   }
 
   private async compactForContext(
-    provider: XaiProvider,
+    provider: GrokProviderAdapter,
     system: string,
     contextWindow: number,
     signal: AbortSignal,
@@ -1575,7 +1623,7 @@ export class Agent {
   private async *processMessageBatchTurn(args: {
     userModelMessage: ModelMessage;
     observer?: ProcessMessageObserver;
-    provider: XaiProvider;
+    provider: GrokProviderAdapter;
     subagents: CustomSubagentConfig[];
     system: string;
     runtime: ReturnType<typeof resolveModelRuntime>;
@@ -1657,7 +1705,7 @@ export class Agent {
                     messages: [...this.messages, ...turnMessages],
                     temperature: 0.7,
                     maxOutputTokens: runtime.modelInfo?.supportsMaxOutputTokens === false ? undefined : this.maxTokens,
-                    reasoningEffort: runtime.providerOptions?.xai.reasoningEffort,
+                    reasoningEffort: runtime.providerOptions?.xai?.reasoningEffort,
                     tools: batchTools,
                   }),
                 },
@@ -2207,8 +2255,13 @@ export class Agent {
     }
   }
 
-  private requireProvider(): XaiProvider {
+  private requireProvider(): GrokProviderAdapter {
     if (!this.provider) {
+      if (getActiveProvider() === "vertex") {
+        throw new Error(
+          "Vertex AI is selected but no project id is configured. Set GROK_VERTEX_PROJECT_ID (or GCP_PROJECT_ID), or save `vertex.projectId` to ~/.grok/user-settings.json.",
+        );
+      }
       throw new Error("API key required. Add an API key to continue.");
     }
 

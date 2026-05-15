@@ -41,7 +41,9 @@ describe("media tools", () => {
     });
 
     const provider = {
-      image: vi.fn((modelId: string) => ({ modelId })),
+      kind: "xai" as const,
+      capabilities: { imageGeneration: true },
+      imageModel: vi.fn((modelId: string) => ({ modelId })),
     };
 
     const result = await generateImageTool(
@@ -66,7 +68,7 @@ describe("media tools", () => {
         },
       },
     });
-    expect(provider.image).toHaveBeenCalledWith("grok-imagine-image");
+    expect(provider.imageModel).toHaveBeenCalledWith("grok-imagine-image");
 
     const media = result.media ?? [];
     expect(media).toHaveLength(1);
@@ -92,7 +94,9 @@ describe("media tools", () => {
     });
 
     const provider = {
-      video: vi.fn((modelId: string) => ({ modelId })),
+      kind: "xai" as const,
+      capabilities: { videoGeneration: true },
+      videoModel: vi.fn((modelId: string) => ({ modelId })),
     };
 
     const result = await generateVideoTool(
@@ -124,7 +128,7 @@ describe("media tools", () => {
         },
       },
     });
-    expect(provider.video).toHaveBeenCalledWith("grok-imagine-video");
+    expect(provider.videoModel).toHaveBeenCalledWith("grok-imagine-video");
     const prompt = generateVideoMock.mock.calls[0]?.[0]?.prompt as { image?: string };
     expect(prompt.image?.startsWith("data:image/jpeg;base64,")).toBe(true);
 

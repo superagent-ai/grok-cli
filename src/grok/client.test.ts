@@ -1,6 +1,6 @@
-import { createXai } from "@ai-sdk/xai";
 import type { generateText } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProvider } from "../providers";
 import * as settings from "../utils/settings";
 import { generateRecap, resolveModelRuntime } from "./client";
 
@@ -13,7 +13,8 @@ vi.mock("ai", () => {
 });
 
 describe("client", () => {
-  const mockProvider = createXai({
+  const mockProvider = createProvider({
+    kind: "xai",
     apiKey: "test-key",
     baseURL: "https://api.x.ai/v1",
   });

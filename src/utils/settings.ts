@@ -10,11 +10,42 @@ import type {
   LspSettings,
   NormalizedLspSettings,
 } from "../lsp/types";
+import type { ProviderKind } from "../providers/types";
 import type { AgentMode, ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type SandboxMode = "off" | "shuru";
 export type PaymentChain = "base" | "base-sepolia";
+
+/**
+ * Vertex AI auth mode. Currently only Application Default Credentials
+ * (`adc`) is supported. Service-account-bound API keys and pre-minted
+ * OAuth bearer tokens are documented in the Google Cloud quickstart but
+ * deliberately out of scope for this PR — they need additional settings
+ * fields (token / key) and live verification against the Grok-on-Vertex
+ * endpoint before being safe to expose. Tracked as a follow-up.
+ */
+export type VertexAuthMode = "adc";
+
+export const DEFAULT_VERTEX_LOCATION = "global";
+export const DEFAULT_VERTEX_BASE_URL = "https://aiplatform.googleapis.com";
+export const DEFAULT_VERTEX_AUTH_MODE: VertexAuthMode = "adc";
+
+/** Fully resolved Vertex settings used by the Vertex provider at request time. */
+export interface VertexSettings {
+  projectId: string;
+  location: string;
+  baseURL: string;
+  authMode: VertexAuthMode;
+}
+
+/** Vertex configuration as persisted in user-settings.json. All fields optional. */
+export interface VertexUserSettings {
+  projectId?: string;
+  location?: string;
+  baseURL?: string;
+  authMode?: VertexAuthMode;
+}
 
 export interface PaymentApprovalSettings {
   autoApprove?: boolean;
@@ -173,6 +204,10 @@ export interface UserSettings {
   hooks?: HooksConfig;
   payments?: PaymentSettings;
   modeModels?: Partial<Record<AgentMode, string>>;
+  /** Active provider backend. Defaults to "xai" when unset. */
+  provider?: ProviderKind;
+  /** Vertex AI configuration. Only consulted when provider === "vertex". */
+  vertex?: VertexUserSettings;
 }
 
 export interface ProjectSettings {
@@ -280,6 +315,24 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
+    ...(() => {
+      // When the partial supplies a provider value, ALWAYS override the
+      // spread above so an invalid value (e.g. saveUserSettings({ provider:
+      // "anthropic" })) is filtered out. Falls back to the previously saved
+      // provider so an invalid update never clobbers a valid existing one.
+      // JSON.stringify will omit the field entirely if both end up undefined.
+      if (partial.provider === undefined) return {};
+      const normalized = normalizeProviderKind(partial.provider);
+      return { provider: normalized ?? current.provider };
+    })(),
+    ...(partial.vertex !== undefined
+      ? {
+          vertex: normalizeVertexUserSettings({
+            ...current.vertex,
+            ...partial.vertex,
+          }),
+        }
+      : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -315,6 +368,119 @@ export function getApiKey(): string | undefined {
 
 export function getBaseURL(): string {
   return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
+}
+
+function normalizeProviderKind(value: unknown): ProviderKind | undefined {
+  if (value === "xai" || value === "vertex") return value;
+  if (typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    if (lower === "xai" || lower === "vertex") return lower;
+  }
+  return undefined;
+}
+
+function normalizeVertexAuthMode(value: unknown): VertexAuthMode | undefined {
+  if (value === "adc") return value;
+  if (typeof value === "string" && value.trim().toLowerCase() === "adc") return "adc";
+  return undefined;
+}
+
+function normalizeVertexLocation(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeVertexBaseURL(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeVertexProjectId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeVertexUserSettings(raw: VertexUserSettings | undefined): VertexUserSettings {
+  if (!raw) return {};
+  const result: VertexUserSettings = {};
+  const projectId = normalizeVertexProjectId(raw.projectId);
+  if (projectId) result.projectId = projectId;
+  const location = normalizeVertexLocation(raw.location);
+  if (location) result.location = location;
+  const baseURL = normalizeVertexBaseURL(raw.baseURL);
+  if (baseURL) result.baseURL = baseURL;
+  const authMode = normalizeVertexAuthMode(raw.authMode);
+  if (authMode) result.authMode = authMode;
+  return result;
+}
+
+/**
+ * Returns the active provider, resolved from (in priority order):
+ *   1. GROK_PROVIDER env var
+ *   2. UserSettings.provider
+ *   3. Default "xai"
+ */
+export function getActiveProvider(): ProviderKind {
+  const fromEnv = normalizeProviderKind(process.env.GROK_PROVIDER);
+  if (fromEnv) return fromEnv;
+  const fromSettings = normalizeProviderKind(loadUserSettings().provider);
+  return fromSettings ?? "xai";
+}
+
+/** Convenience for capability checks. */
+export function isVertexProviderActive(): boolean {
+  return getActiveProvider() === "vertex";
+}
+
+/**
+ * Resolves the full Vertex settings tuple by merging env vars over saved
+ * settings over defaults. Returns undefined for projectId when neither
+ * env nor saved settings supply one — call sites that require a project
+ * id should use requireVertexSettings instead.
+ */
+export function resolveVertexSettings(userVertex?: VertexUserSettings): {
+  projectId: string | undefined;
+  location: string;
+  baseURL: string;
+  authMode: VertexAuthMode;
+} {
+  const saved = normalizeVertexUserSettings(userVertex ?? loadUserSettings().vertex);
+  return {
+    projectId:
+      normalizeVertexProjectId(process.env.GROK_VERTEX_PROJECT_ID) ??
+      normalizeVertexProjectId(process.env.GCP_PROJECT_ID) ??
+      saved.projectId,
+    location:
+      normalizeVertexLocation(process.env.GROK_VERTEX_LOCATION) ??
+      normalizeVertexLocation(process.env.GCP_VERTEX_LOCATION) ??
+      saved.location ??
+      DEFAULT_VERTEX_LOCATION,
+    baseURL: normalizeVertexBaseURL(process.env.GROK_VERTEX_BASE_URL) ?? saved.baseURL ?? DEFAULT_VERTEX_BASE_URL,
+    authMode: normalizeVertexAuthMode(process.env.GROK_VERTEX_AUTH_MODE) ?? saved.authMode ?? DEFAULT_VERTEX_AUTH_MODE,
+  };
+}
+
+/**
+ * Same as resolveVertexSettings but throws a descriptive error when
+ * projectId is missing. Use this from request-time code paths that
+ * cannot proceed without a project id.
+ */
+export function requireVertexSettings(): VertexSettings {
+  const resolved = resolveVertexSettings();
+  if (!resolved.projectId) {
+    throw new Error(
+      "Vertex AI is selected but no project id is configured. Set GROK_VERTEX_PROJECT_ID (or GCP_PROJECT_ID) in the environment, or save `vertex.projectId` to ~/.grok/user-settings.json.",
+    );
+  }
+  return {
+    projectId: resolved.projectId,
+    location: resolved.location,
+    baseURL: resolved.baseURL,
+    authMode: resolved.authMode,
+  };
 }
 
 export function getCurrentModel(mode?: AgentMode): string {

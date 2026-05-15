@@ -152,6 +152,21 @@ export function getScriptInstallContext(homeDir = os.homedir()): ScriptInstallCo
   return null;
 }
 
+export function getCurrentExecutablePaths(): string[] {
+  return [process.execPath, process.argv[1]].filter((value): value is string => Boolean(value));
+}
+
+export function isCurrentScriptManagedInstall(
+  homeDir = os.homedir(),
+  executablePaths = getCurrentExecutablePaths(),
+): boolean {
+  const context = getScriptInstallContext(homeDir);
+  if (!context) return false;
+
+  const scriptBinaryPath = normalizeComparablePath(context.binaryPath);
+  return executablePaths.some((executablePath) => normalizeComparablePath(executablePath) === scriptBinaryPath);
+}
+
 export async function fetchLatestReleaseVersion(): Promise<string | null> {
   const release = await fetchReleaseJson(`${GROK_RELEASES_API}/latest`);
   return release ? normalizeReleaseVersion(release.tag_name) : null;
@@ -287,6 +302,17 @@ function notScriptManaged(action: string): ScriptUpdateRunResult {
     success: false,
     output: `This install is not script-managed, so \`grok ${action}\` cannot proceed. Use the package manager you installed with, or reinstall via install.sh.`,
   };
+}
+
+function normalizeComparablePath(filePath: string): string {
+  const resolvedPath = path.resolve(filePath);
+  let normalizedPath = resolvedPath;
+  try {
+    normalizedPath = fs.realpathSync.native(resolvedPath);
+  } catch {
+    normalizedPath = resolvedPath;
+  }
+  return process.platform === "win32" ? normalizedPath.toLowerCase() : normalizedPath;
 }
 
 function getReleaseTargetForPlatformKey(key: string): ReleaseTarget | null {

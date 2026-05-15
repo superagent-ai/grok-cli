@@ -8,8 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Vertex AI Grok backend.** Select with `--provider vertex` or `GROK_PROVIDER=vertex`. Authenticates via Google Application Default Credentials (`gcloud auth application-default login`), uses the documented Vertex Grok partner-model endpoint, and exposes the four official SKUs (`grok-4.20-{reasoning,non-reasoning}`, `grok-4.1-fast-{reasoning,non-reasoning}`). xAI behavior is unchanged for existing users; the active provider is settable via env var, the new `--provider` CLI flag, or `provider` in `~/.grok/user-settings.json`.
+- New `GrokProviderAdapter` contract at `src/providers/`. The Agent, tools, media, and helpers now depend on a backend-agnostic interface with explicit capability flags. xAI-only features (Batch API, hosted web/X search, image and video generation, Telegram STT) return typed errors instead of opaque transport failures when used under a Vertex session.
 - Dedicated grep tool powered by npm ripgrep WASM (#263)
 - `/btw` command for side questions (#264)
+
+### Fixed
+- TUI: plan-mode questions no longer leak into the chat input.
+- TUI: async tool-result and plan-question updates now repaint without waiting for a keyboard event.
+- TUI: typing a status nudge ("continue", "status") during an active turn now triggers a repaint instead of enqueueing an accidental follow-up message.
+- npm package no longer ships local agent/editor runtime state, stale dist artifacts, or platform-specific standalone binaries; the installed `grok` entrypoint now retains its executable bit across `tsc` builds.
+- Local PR-tested installs no longer get clobbered by the auto-updater pulling the latest public release.
 
 ### Changed
 - Switched Telegram voice/audio transcription from whisper.cpp to Grok STT (`/v1/stt`); removed `whisper-cli`, `ffmpeg`, and model-download requirements (#266, #265)

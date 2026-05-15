@@ -8,6 +8,7 @@ import {
   getReleaseTargetForPlatform,
   getScriptInstallContext,
   getScriptInstallDir,
+  isCurrentScriptManagedInstall,
   loadScriptInstallMetadata,
   parseChecksumsFile,
   saveScriptInstallMetadata,
@@ -108,6 +109,61 @@ describe("getScriptInstallContext", () => {
 
   it("returns null when no metadata exists", () => {
     expect(getScriptInstallContext(createTempDir("grok-no-ctx-"))).toBeNull();
+  });
+});
+
+describe("isCurrentScriptManagedInstall", () => {
+  it("returns true when the current executable path matches install metadata", () => {
+    const homeDir = createTempDir("grok-current-");
+    const installDir = getScriptInstallDir(homeDir);
+    const currentTarget = getReleaseTargetForPlatform()!;
+    const binaryPath = path.join(installDir, currentTarget.binaryName);
+    fs.mkdirSync(installDir, { recursive: true });
+    fs.writeFileSync(binaryPath, "#!/usr/bin/env bash\n", { mode: 0o755 });
+
+    saveScriptInstallMetadata(
+      {
+        schemaVersion: 1,
+        installMethod: "script" as const,
+        version: "1.2.3",
+        repo: "superagent-ai/grok-cli",
+        binaryPath,
+        installDir,
+        assetName: currentTarget.assetName,
+        target: currentTarget.key,
+        installedAt: "2026-04-03T00:00:00.000Z",
+      },
+      homeDir,
+    );
+
+    expect(isCurrentScriptManagedInstall(homeDir, [binaryPath])).toBe(true);
+  });
+
+  it("returns false when metadata exists for a different binary", () => {
+    const homeDir = createTempDir("grok-other-current-");
+    const installDir = getScriptInstallDir(homeDir);
+    const currentTarget = getReleaseTargetForPlatform()!;
+    const binaryPath = path.join(installDir, currentTarget.binaryName);
+    const sourcePath = path.join(homeDir, "checkout", "dist", "index.js");
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.writeFileSync(sourcePath, "#!/usr/bin/env bun\n", { mode: 0o755 });
+
+    saveScriptInstallMetadata(
+      {
+        schemaVersion: 1,
+        installMethod: "script" as const,
+        version: "1.2.3",
+        repo: "superagent-ai/grok-cli",
+        binaryPath,
+        installDir,
+        assetName: currentTarget.assetName,
+        target: currentTarget.key,
+        installedAt: "2026-04-03T00:00:00.000Z",
+      },
+      homeDir,
+    );
+
+    expect(isCurrentScriptManagedInstall(homeDir, [sourcePath])).toBe(false);
   });
 });
 

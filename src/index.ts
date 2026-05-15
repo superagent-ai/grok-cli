@@ -18,6 +18,7 @@ import { startScheduleDaemon } from "./tools/schedule";
 import { processAtMentions } from "./utils/at-mentions.js";
 import { runScriptManagedUninstall } from "./utils/install-manager";
 import {
+  getActiveProvider,
   getApiKey,
   getBaseURL,
   getCurrentSandboxMode,
@@ -327,9 +328,14 @@ function resolveConfig(options: CliOptions) {
 }
 
 function requireApiKey(apiKey: string | undefined): string {
+  // Vertex mode authenticates via Google ADC, not a static API key. Allow
+  // empty apiKey through so the Agent can construct the Vertex provider.
+  if (getActiveProvider() === "vertex") {
+    return apiKey ?? "";
+  }
   if (!apiKey) {
     console.error(
-      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
+      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json. (To use Vertex AI instead, pass --provider vertex.)",
     );
     process.exit(1);
   }
@@ -343,6 +349,24 @@ function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
   }
 
   throw new InvalidArgumentError(`Invalid headless format "${value}". Expected "text" or "json".`);
+}
+
+function parseProviderKind(value: string): "xai" | "vertex" {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "xai" || normalized === "vertex") return normalized;
+  throw new InvalidArgumentError(`Invalid provider "${value}". Expected "xai" or "vertex".`);
+}
+
+/**
+ * Applies the --provider CLI flag by exporting GROK_PROVIDER for the rest
+ * of the process. Settings reads consult this env var first, so all
+ * downstream provider lookups (Agent, capability checks, etc.) see the
+ * override without further plumbing.
+ */
+function applyProviderOverride(value: string | undefined): void {
+  if (value === "xai" || value === "vertex") {
+    process.env.GROK_PROVIDER = value;
+  }
 }
 
 program
@@ -366,6 +390,11 @@ program
   .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
   .option("--batch-api", "Use xAI Batch API for model calls (async, lower cost)")
+  .option(
+    "--provider <kind>",
+    "Backend provider: 'xai' (default) or 'vertex' (Google Cloud Vertex AI Grok). Equivalent to GROK_PROVIDER env var.",
+    parseProviderKind,
+  )
   .option("--update", "Update grok to the latest version and exit")
   .action(async (message: string[], options) => {
     if (options.update) {
@@ -376,6 +405,7 @@ program
     }
 
     changeDirectoryOrExit(options.directory);
+    applyProviderOverride(stringOption(options.provider));
 
     if (options.backgroundTaskFile) {
       await runBackgroundDelegation(options.backgroundTaskFile, options);
