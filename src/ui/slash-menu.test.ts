@@ -17,4 +17,8 @@ describe("filterSlashMenuItems", () => {
     expect(ids).toContain("sandbox");
     expect(ids.indexOf("models")).toBeLessThan(ids.indexOf("sandbox"));
   });
+
+  it("finds the recaps command from singular aliases", () => {
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "recap")[0]?.id).toBe("recaps");
+  });
 });
