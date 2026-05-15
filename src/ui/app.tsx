@@ -55,6 +55,7 @@ import {
   saveMcpServers,
   savePaymentSettings,
   saveProjectSettings,
+  saveRecapsEnabled,
   saveUserSettings,
 } from "../utils/settings";
 import { discoverSkills, formatSkillsForChat } from "../utils/skills";
@@ -332,6 +333,8 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/model",
   "/models",
   "/sandbox",
+  "/recap",
+  "/recaps",
   "/remote-control",
   "/mcp",
   "/mcps",
@@ -447,6 +450,12 @@ const SANDBOX_ROWS: SandboxRow[] = [
 
 function getSandboxVisibleRows(mode: SandboxMode): SandboxRow[] {
   return mode === "shuru" ? SANDBOX_ROWS : SANDBOX_ROWS.slice(0, 1);
+}
+
+const RECAP_OPTIONS = ["Off", "On"] as const;
+
+function formatRecapsEnabled(enabled: boolean): (typeof RECAP_OPTIONS)[number] {
+  return enabled ? "On" : "Off";
 }
 
 interface WalletDisplayInfo {
@@ -606,6 +615,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [sandboxSettingsFocusIndex, setSandboxSettingsFocusIndex] = useState(0);
   const [sandboxSettingsEditing, setSandboxSettingsEditing] = useState<string | null>(null);
   const [sandboxSettingsEditBuffer, setSandboxSettingsEditBuffer] = useState("");
+  const [showRecapPicker, setShowRecapPicker] = useState(false);
+  const [recapsEnabled, setRecapsEnabledState] = useState(() => agent.getRecapsEnabled());
   const [showWalletPicker, setShowWalletPicker] = useState(false);
   const [walletSettings, setWalletSettings] = useState<Required<PaymentSettings>>(() => loadPaymentSettings());
   const [walletFocusIndex, setWalletFocusIndex] = useState(0);
@@ -853,6 +864,23 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setSandboxSettingsEditing(null);
     setSandboxSettingsEditBuffer("");
     setShowSandboxPicker(true);
+  }, []);
+
+  const applyRecapsEnabled = useCallback(
+    (enabled: boolean) => {
+      agent.setRecapsEnabled(enabled);
+      for (const telegramAgent of telegramAgentsRef.current.values()) {
+        telegramAgent.setRecapsEnabled(enabled);
+      }
+      setRecapsEnabledState(enabled);
+      saveRecapsEnabled(enabled);
+      setSessionRecap(agent.getSessionRecap());
+    },
+    [agent],
+  );
+
+  const openRecapPicker = useCallback(() => {
+    setShowRecapPicker(true);
   }, []);
 
   const applyWalletSettings = useCallback((next: Required<PaymentSettings>) => {
@@ -2007,7 +2035,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     clearLiveTurnUi();
     setSessionTitle(snapshot?.session.title ?? null);
     setSessionId(snapshot?.session.id ?? agent.getSessionId());
-    setSessionRecap(snapshot?.session.recap?.text ?? agent.getSessionRecap());
+    setSessionRecap(agent.getSessionRecap());
     setActivePlan(null);
     setPqs(initialPlanQuestionsState());
     replacePasteBlocks([]);
@@ -2201,6 +2229,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openSandboxPicker();
         return true;
       }
+      if (c === "/recap" || c === "/recaps") {
+        openRecapPicker();
+        return true;
+      }
       if (c === "/wallet") {
         openWalletPicker();
         return true;
@@ -2298,6 +2330,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handleExit,
       openAgentsModal,
       openMcpModal,
+      openRecapPicker,
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
@@ -2322,6 +2355,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           break;
         case "sandbox":
           openSandboxPicker();
+          break;
+        case "recaps":
+          openRecapPicker();
           break;
         case "wallet":
           openWalletPicker();
@@ -2393,6 +2429,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handleExit,
       openAgentsModal,
       openMcpModal,
+      openRecapPicker,
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
@@ -2408,6 +2445,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showTelegramPairModal ||
     showMcpModal ||
     showSandboxPicker ||
+    showRecapPicker ||
     showWalletPicker ||
     !!pendingPaymentApproval ||
     showScheduleModal ||
@@ -2979,6 +3017,29 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
         return;
       }
+      if (showRecapPicker) {
+        if (isEscapeKey(key)) {
+          setShowRecapPicker(false);
+          return;
+        }
+        if (key.name === "left" || key.name === "right") {
+          const current = formatRecapsEnabled(recapsEnabled);
+          const idx = RECAP_OPTIONS.indexOf(current);
+          const next =
+            key.name === "right"
+              ? RECAP_OPTIONS[Math.min(RECAP_OPTIONS.length - 1, idx + 1)]
+              : RECAP_OPTIONS[Math.max(0, idx - 1)];
+          if (next && next !== current) {
+            applyRecapsEnabled(next === "On");
+          }
+          return;
+        }
+        if (key.name === "return") {
+          applyRecapsEnabled(!recapsEnabled);
+          return;
+        }
+        return;
+      }
       if (showWalletPicker) {
         if (isEscapeKey(key)) {
           setShowWalletPicker(false);
@@ -3248,8 +3309,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       planTabCount,
       pqs,
       removeEditingSubagent,
+      applyRecapsEnabled,
       applySandboxMode,
       applySandboxSettings,
+      recapsEnabled,
       sandboxSettings,
       sandboxSettingsEditing,
       sandboxSettingsEditBuffer,
@@ -3257,6 +3320,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       sandboxMode,
       showModelPicker,
       showPlanPanel,
+      showRecapPicker,
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
@@ -3640,6 +3704,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           height={height}
         />
       )}
+      {showRecapPicker && <RecapPickerModal t={t} enabled={recapsEnabled} width={width} height={height} />}
       {showSandboxPicker && (
         <SandboxPickerModal
           t={t}
@@ -5454,6 +5519,67 @@ function SandboxPickerModal({
               ? "type value  enter confirm  esc cancel"
               : "arrows navigate  left/right toggle  enter edit  esc close"}
           </text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
+function RecapPickerModal({
+  t,
+  enabled,
+  width,
+  height,
+}: {
+  t: Theme;
+  enabled: boolean;
+  width: number;
+  height: number;
+}) {
+  const panelHeight = Math.min(7, Math.floor(height * 0.6));
+  const top = bottomAlignedModalTop(height, panelHeight);
+  const overlayBg = "#000000cc" as string;
+  const display = formatRecapsEnabled(enabled);
+
+  return (
+    <box
+      position="absolute"
+      left={0}
+      top={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      paddingTop={top}
+      backgroundColor={overlayBg}
+    >
+      <box
+        width={Math.min(64, width - 6)}
+        height={panelHeight}
+        backgroundColor={t.backgroundPanel}
+        paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+      >
+        <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={2} paddingRight={2}>
+          <text fg={t.primary}>
+            <b>{"Recap settings"}</b>
+          </text>
+          <text fg={t.textMuted}>{"esc"}</text>
+        </box>
+        <box flexGrow={1} minHeight={0}>
+          <box backgroundColor={t.selectedBg} paddingLeft={2} paddingRight={2} width="100%">
+            <box width="100%" flexDirection="row" justifyContent="space-between">
+              <text fg={t.selected}>{"Recaps"}</text>
+              <text fg={t.primary}>
+                {"< "}
+                {display}
+                {" >"}
+              </text>
+            </box>
+          </box>
+        </box>
+        <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
+          <text fg={t.textMuted}>{"left/right toggle  enter cycle  esc close"}</text>
         </box>
       </box>
     </box>

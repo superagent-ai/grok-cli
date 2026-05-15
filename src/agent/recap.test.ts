@@ -115,4 +115,44 @@ describe("Agent session recap", () => {
     expect(mocks.generateRecap).toHaveBeenCalled();
     expect(sessionStore.setRecap).toHaveBeenCalled();
   });
+
+  it("skips recap generation when recaps are disabled", async () => {
+    const { Agent, mocks } = await importAgentModuleWithRecapMocks();
+    const agent = new Agent(undefined, undefined, undefined, undefined, {
+      persistSession: false,
+    });
+    const session = {
+      id: "session-1",
+      workspaceId: "workspace-1",
+      title: null,
+      recap: null,
+      model: "grok-4.3",
+      mode: "agent",
+      cwdAtStart: process.cwd(),
+      cwdLast: process.cwd(),
+      status: "active",
+      createdAt: new Date("2026-04-22T15:00:00.000Z"),
+      updatedAt: new Date("2026-04-22T15:00:00.000Z"),
+    };
+    const sessionStore = {
+      setRecap: vi.fn(),
+      getRequiredSession: vi.fn(() => session),
+    };
+
+    agent.setRecapsEnabled(false);
+    Object.assign(agent as object, {
+      provider: {},
+      session,
+      sessionStore,
+    });
+
+    await (
+      agent as unknown as {
+        refreshSessionRecap: (signal?: AbortSignal) => Promise<void>;
+      }
+    ).refreshSessionRecap();
+
+    expect(mocks.generateRecap).not.toHaveBeenCalled();
+    expect(sessionStore.setRecap).not.toHaveBeenCalled();
+  });
 });
