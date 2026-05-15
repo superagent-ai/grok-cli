@@ -33,6 +33,7 @@ import { runUpdate } from "./utils/update-checker";
 import {
   getWorkspaceTrustDecision,
   isShuruSandboxSupported,
+  resolveWorkspaceTrustPromptAnswer,
   saveWorkspaceTrustDecision,
 } from "./utils/workspace-trust";
 import { buildVerifyPrompt, getVerifyCliError } from "./verify/entrypoint";
@@ -188,15 +189,10 @@ function hasExplicitSandboxOption(options: CliOptions): boolean {
   return options.sandbox === true || options.sandbox === false;
 }
 
-interface WorkspaceTrustPromptDecision {
-  sandboxMode: SandboxMode;
-  remember: boolean;
-}
-
 async function promptWorkspaceTrust(
   cwd: string,
   sandboxSupported = isShuruSandboxSupported(),
-): Promise<WorkspaceTrustPromptDecision> {
+): Promise<ReturnType<typeof resolveWorkspaceTrustPromptAnswer>> {
   const message = sandboxSupported
     ? [
         "",
@@ -232,14 +228,7 @@ async function promptWorkspaceTrust(
     const answer = await new Promise<string>((resolve) => {
       rl.question(message, resolve);
     });
-    const normalized = answer.trim().toLowerCase();
-    if (normalized === "s" || normalized === "session") {
-      return { sandboxMode: sandboxSupported ? "shuru" : "off", remember: false };
-    }
-    if (sandboxSupported && (!normalized || normalized === "y" || normalized === "yes")) {
-      return { sandboxMode: "shuru", remember: true };
-    }
-    return { sandboxMode: "off", remember: true };
+    return resolveWorkspaceTrustPromptAnswer(answer, sandboxSupported);
   } finally {
     rl.close();
   }

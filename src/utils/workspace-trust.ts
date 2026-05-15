@@ -13,6 +13,11 @@ interface WorkspaceTrustStore {
   workspaces: Record<string, WorkspaceTrustEntry>;
 }
 
+export interface WorkspaceTrustPromptDecision {
+  sandboxMode: SandboxMode;
+  remember: boolean;
+}
+
 export const WORKSPACE_TRUST_FILENAME = "workspace-trust.json";
 
 export function isShuruSandboxSupported(platform = process.platform, arch = process.arch): boolean {
@@ -43,6 +48,25 @@ export function getWorkspaceTrustKey(cwd = process.cwd()): string {
   } catch {
     return path.resolve(cwd);
   }
+}
+
+export function resolveWorkspaceTrustPromptAnswer(
+  answer: string,
+  sandboxSupported: boolean,
+): WorkspaceTrustPromptDecision {
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === "s" || normalized === "session") {
+    return { sandboxMode: sandboxSupported ? "shuru" : "off", remember: false };
+  }
+
+  if (sandboxSupported) {
+    if (normalized === "n" || normalized === "no") {
+      return { sandboxMode: "off", remember: true };
+    }
+    return { sandboxMode: "shuru", remember: true };
+  }
+
+  return { sandboxMode: "off", remember: true };
 }
 
 export function loadWorkspaceTrustStore(trustPath = getWorkspaceTrustPath()): WorkspaceTrustStore {

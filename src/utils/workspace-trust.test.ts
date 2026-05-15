@@ -8,6 +8,7 @@ import {
   getWorkspaceTrustPath,
   isShuruSandboxSupported,
   loadWorkspaceTrustStore,
+  resolveWorkspaceTrustPromptAnswer,
   saveWorkspaceTrustDecision,
   WORKSPACE_TRUST_FILENAME,
 } from "./workspace-trust";
@@ -31,6 +32,21 @@ describe("workspace trust settings", () => {
     expect(isShuruSandboxSupported("darwin", "x64")).toBe(false);
     expect(isShuruSandboxSupported("linux", "arm64")).toBe(false);
     expect(isShuruSandboxSupported("win32", "x64")).toBe(false);
+  });
+
+  it("only disables supported sandbox mode on explicit no answers", () => {
+    expect(resolveWorkspaceTrustPromptAnswer("", true)).toEqual({ sandboxMode: "shuru", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("y", true)).toEqual({ sandboxMode: "shuru", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("typo", true)).toEqual({ sandboxMode: "shuru", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("n", true)).toEqual({ sandboxMode: "off", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("no", true)).toEqual({ sandboxMode: "off", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("s", true)).toEqual({ sandboxMode: "shuru", remember: false });
+  });
+
+  it("keeps unsupported sandbox prompt decisions in host mode", () => {
+    expect(resolveWorkspaceTrustPromptAnswer("", false)).toEqual({ sandboxMode: "off", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("typo", false)).toEqual({ sandboxMode: "off", remember: true });
+    expect(resolveWorkspaceTrustPromptAnswer("s", false)).toEqual({ sandboxMode: "off", remember: false });
   });
 
   it("stores sandbox decisions by canonical workspace path", () => {
