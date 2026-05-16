@@ -1,5 +1,7 @@
 # grok-cli: an open-source coding agent for the Grok API
 
+<!-- OpenCLA smoke test. -->
+
 [![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
 [![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
