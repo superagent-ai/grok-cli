@@ -494,3 +494,5 @@ bun run lint
 ## License
 
 MIT
+
+<!-- OpenCLA simple signing test 2026-05-18T17:50:17Z -->
