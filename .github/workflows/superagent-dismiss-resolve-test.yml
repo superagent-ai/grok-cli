@@ -1,0 +1,15 @@
+# Fixture: one CI/CD finding for testing Superagent dismiss via resolve/unresolve.
+name: Superagent dismiss resolve test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dismiss-resolve-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo PR title unsafely
+        run: echo "Reviewing PR titled ${{ github.event.pull_request.title }}"
