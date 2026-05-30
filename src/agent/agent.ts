@@ -75,6 +75,7 @@ import {
   getCurrentModel,
   getModeSpecificModel,
   loadMcpServers,
+  loadRecapsEnabled,
   loadValidSubAgents,
   type SandboxMode,
   type SandboxSettings,
@@ -553,6 +554,7 @@ export class Agent {
   private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
   private batchApi = false;
   private sessionStartHookFired = false;
+  private recapsEnabled = true;
 
   constructor(
     apiKey: string | undefined,
@@ -581,6 +583,7 @@ export class Agent {
     const envMax = Number(process.env.GROK_MAX_TOKENS);
     this.maxTokens = Number.isFinite(envMax) && envMax > 0 ? envMax : 16_384;
     this.batchApi = options.batchApi ?? false;
+    this.recapsEnabled = loadRecapsEnabled();
 
     if (options.persistSession !== false) {
       this.sessionStore = new SessionStore(this.bash.getCwd());
@@ -722,7 +725,15 @@ export class Agent {
   }
 
   getSessionRecap(): string | null {
-    return this.session?.recap?.text || null;
+    return this.recapsEnabled ? this.session?.recap?.text || null : null;
+  }
+
+  getRecapsEnabled(): boolean {
+    return this.recapsEnabled;
+  }
+
+  setRecapsEnabled(enabled: boolean): void {
+    this.recapsEnabled = enabled;
   }
 
   async askSideQuestion(question: string, signal?: AbortSignal): Promise<SideQuestionResult> {
@@ -859,7 +870,7 @@ export class Agent {
   }
 
   private async refreshSessionRecap(signal?: AbortSignal): Promise<void> {
-    if (!this.provider || !this.sessionStore || !this.session) {
+    if (!this.recapsEnabled || !this.provider || !this.sessionStore || !this.session) {
       return;
     }
 

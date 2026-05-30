@@ -1,10 +1,10 @@
 # grok-cli: an open-source coding agent for the Grok API
 
-[CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
-[npm](https://www.npmjs.com/package/grok-dev)
-[License: MIT](./LICENSE)
-[TypeScript](https://www.typescriptlang.org/)
-[Bun](https://bun.sh/)
+[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
+[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
 
 > **Disclaimer:** This project is community-built, open-source, and **not affiliated with, endorsed by, or sponsored by xAI Corp.** "Grok" is a trademark of xAI Corp. This tool uses the publicly available Grok API.
 
@@ -337,6 +337,8 @@ Grok CLI can run shell commands inside a [Shuru](https://github.com/superhq-ai/s
 **Requires macOS 14+ on Apple Silicon.**
 
 Enable it with `--sandbox` on the CLI, or toggle it from the TUI with `/sandbox`.
+
+On the first interactive run in a new directory, Grok asks whether to remember sandbox or host mode for that workspace and stores the choice in `~/.grok/workspace-trust.json`. Explicit `--sandbox` / `--no-sandbox` flags and non-interactive commands keep their current behavior.
 
 When sandbox mode is active you can configure:
 

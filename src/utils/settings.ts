@@ -162,6 +162,7 @@ export function loadValidSubAgents(): CustomSubagentConfig[] {
 export interface UserSettings {
   apiKey?: string;
   defaultModel?: string;
+  recapsEnabled?: boolean;
   sandboxMode?: SandboxMode;
   sandbox?: SandboxSettings;
   lsp?: LspSettings;
@@ -593,6 +594,14 @@ export function getReasoningEffortForModel(modelId: string): ReasoningEffort | u
     savedEfforts[normalizedModelId] ??
     Object.entries(savedEfforts).find(([savedModelId]) => normalizeModelId(savedModelId) === normalizedModelId)?.[1];
   return getEffectiveReasoningEffort(normalizedModelId, effort);
+}
+
+export function loadRecapsEnabled(): boolean {
+  return loadUserSettings().recapsEnabled !== false;
+}
+
+export function saveRecapsEnabled(enabled: boolean): void {
+  saveUserSettings({ recapsEnabled: enabled });
 }
 
 export function getTelegramBotToken(): string | undefined {
