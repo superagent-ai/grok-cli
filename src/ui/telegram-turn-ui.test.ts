@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatEntry, ToolCall } from "../types/index";
 import {
+  buildPhaseEntry,
   buildToolResultEntry,
   decorateTelegramEntries,
   getTelegramSourceLabel,
@@ -42,6 +43,18 @@ describe("telegram turn ui helpers", () => {
     });
     expect(decorated[2]).toMatchObject({
       remoteKey: "telegram:42:1",
+    });
+  });
+
+  it("builds phase entries with decoration metadata", () => {
+    expect(
+      buildPhaseEntry("inspect", "inspect: Preparing context", { modeColor: "#abc", remoteKey: "turn-1" }),
+    ).toMatchObject({
+      type: "phase",
+      phase: "inspect",
+      content: "inspect: Preparing context",
+      modeColor: "#abc",
+      remoteKey: "turn-1",
     });
   });
 

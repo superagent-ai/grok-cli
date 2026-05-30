@@ -1,5 +1,5 @@
 import type { ProcessMessageObserver, ProcessMessageStepFinish, ProcessMessageStepStart } from "../agent/agent";
-import type { StreamChunk, ToolCall, ToolResult } from "../types";
+import type { AgentProcessPhase, StreamChunk, ToolCall, ToolExecutionPhase, ToolResult } from "../types";
 
 export type HeadlessOutputFormat = "text" | "json";
 
@@ -36,6 +36,21 @@ export type HeadlessJsonEvent =
         finishedAt?: number;
         durationMs?: number;
       };
+    }
+  | {
+      type: "process_phase";
+      sessionID?: string;
+      phase: AgentProcessPhase;
+      detail?: string;
+      timestamp: number;
+    }
+  | {
+      type: "tool_phase";
+      sessionID?: string;
+      phase: ToolExecutionPhase;
+      toolCall: ToolCall;
+      detail?: string;
+      timestamp: number;
     }
   | {
       type: "step_finish";
@@ -104,6 +119,16 @@ export function renderHeadlessChunk(chunk: StreamChunk): HeadlessWrites {
       return { stderr: `${stderr}\n` };
     }
 
+    case "process_phase":
+      return chunk.processPhase
+        ? { stderr: `\x1b[2m• ${formatProcessPhase(chunk.processPhase)}${formatDetail(chunk.detail)}\x1b[0m\n` }
+        : {};
+
+    case "tool_phase":
+      return chunk.toolPhase
+        ? { stderr: `\x1b[2m• ${formatToolPhase(chunk.toolPhase)}${formatDetail(chunk.detail)}\x1b[0m\n` }
+        : {};
+
     case "error":
       return chunk.content ? { stderr: `\x1b[31m${chunk.content}\x1b[0m\n` } : {};
 
@@ -142,6 +167,18 @@ function formatToolCallLabel(tc: ToolCall): string {
     }
   } catch {}
   return name;
+}
+
+function formatProcessPhase(phase: AgentProcessPhase): string {
+  return phase.replace(/_/g, " ");
+}
+
+function formatToolPhase(phase: ToolExecutionPhase): string {
+  return `tool ${phase}`;
+}
+
+function formatDetail(detail: string | undefined): string {
+  return detail ? `: ${detail}` : "";
 }
 
 function jsonLine(event: HeadlessJsonEvent): string {
@@ -211,6 +248,27 @@ export function createHeadlessJsonlEmitter(sessionId?: string): {
     onToolFinish(info) {
       const prev = toolTiming.get(info.toolCall.id) ?? {};
       toolTiming.set(info.toolCall.id, { ...prev, finishedAt: info.timestamp });
+    },
+    onProcessPhase(info) {
+      pending += jsonLine(
+        withSession({
+          type: "process_phase",
+          phase: info.phase,
+          ...(info.detail ? { detail: info.detail } : {}),
+          timestamp: info.timestamp,
+        }) as HeadlessJsonEvent,
+      );
+    },
+    onToolPhase(info) {
+      pending += jsonLine(
+        withSession({
+          type: "tool_phase",
+          phase: info.phase,
+          toolCall: info.toolCall,
+          ...(info.detail ? { detail: info.detail } : {}),
+          timestamp: info.timestamp,
+        }) as HeadlessJsonEvent,
+      );
     },
   };
 
@@ -282,6 +340,10 @@ export function createHeadlessJsonlEmitter(sessionId?: string): {
         }
         break;
       }
+
+      case "process_phase":
+      case "tool_phase":
+        break;
 
       case "error":
         stdout += jsonLine(

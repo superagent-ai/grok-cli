@@ -87,6 +87,19 @@ describe("headless output helpers", () => {
     });
   });
 
+  it("renders process and tool phases for text mode", () => {
+    expect(
+      renderHeadlessChunk({ type: "process_phase", processPhase: "inspect", detail: "Preparing context" }),
+    ).toEqual({
+      stderr: "\u001b[2m• inspect: Preparing context\u001b[0m\n",
+    });
+    expect(renderHeadlessChunk({ type: "tool_phase", toolPhase: "started", detail: "Tool execution started" })).toEqual(
+      {
+        stderr: "\u001b[2m• tool started: Tool execution started\u001b[0m\n",
+      },
+    );
+  });
+
   it("emits semantic JSONL for a single step with text and tool (json emitter)", () => {
     const sessionId = "jsonl-test-session";
     const tc = toolCall("bash");
@@ -146,6 +159,37 @@ describe("headless output helpers", () => {
       finishReason: "stop",
       usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
       timestamp: 200,
+    });
+  });
+
+  it("emits process and tool phase JSONL events from observer hooks", () => {
+    const sessionId = "phase-session";
+    const tc = toolCall("bash");
+    const { observer, flush } = createHeadlessJsonlEmitter(sessionId);
+
+    observer.onProcessPhase?.({ phase: "inspect", detail: "Preparing context", timestamp: 10 });
+    observer.onToolPhase?.({ phase: "started", toolCall: tc, detail: "Tool execution started", timestamp: 20 });
+
+    const events = (flush().stdout ?? "")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(events.map((e) => e.type)).toEqual(["process_phase", "tool_phase"]);
+    expect(events[0]).toMatchObject({
+      type: "process_phase",
+      sessionID: sessionId,
+      phase: "inspect",
+      detail: "Preparing context",
+      timestamp: 10,
+    });
+    expect(events[1]).toMatchObject({
+      type: "tool_phase",
+      sessionID: sessionId,
+      phase: "started",
+      toolCall: tc,
+      detail: "Tool execution started",
+      timestamp: 20,
     });
   });
 

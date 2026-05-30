@@ -1,4 +1,4 @@
-import type { ChatEntry, ToolCall, ToolResult } from "../types/index";
+import type { AgentProcessPhase, ChatEntry, ToolCall, ToolExecutionPhase, ToolResult } from "../types/index";
 
 export interface EntryDecoration {
   modeColor?: string;
@@ -46,6 +46,22 @@ export function buildToolResultEntry(
     sourceLabel: decoration.sourceLabel,
     toolCall,
     toolResult,
+  };
+}
+
+export function buildPhaseEntry(
+  phase: AgentProcessPhase | ToolExecutionPhase,
+  content: string,
+  decoration: EntryDecoration = {},
+): ChatEntry {
+  return {
+    type: "phase",
+    content,
+    timestamp: new Date(),
+    modeColor: decoration.modeColor,
+    remoteKey: decoration.remoteKey,
+    sourceLabel: decoration.sourceLabel,
+    phase,
   };
 }
 

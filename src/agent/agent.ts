@@ -56,6 +56,7 @@ import { BashTool } from "../tools/bash";
 import { type ScheduleDaemonStatus, ScheduleManager, type StoredSchedule } from "../tools/schedule";
 import type {
   AgentMode,
+  AgentProcessPhase,
   ChatEntry,
   Plan,
   SessionInfo,
@@ -64,6 +65,7 @@ import type {
   SubagentStatus,
   TaskRequest,
   ToolCall,
+  ToolExecutionPhase,
   ToolResult,
   UsageSource,
   VerifyRecipe,
@@ -148,7 +150,22 @@ export interface ProcessMessageError {
   timestamp: number;
 }
 
+export interface ProcessMessageProcessPhase {
+  phase: AgentProcessPhase;
+  detail?: string;
+  timestamp: number;
+}
+
+export interface ProcessMessageToolPhase {
+  phase: ToolExecutionPhase;
+  toolCall: ToolCall;
+  detail?: string;
+  timestamp: number;
+}
+
 export interface ProcessMessageObserver {
+  onProcessPhase?(info: ProcessMessageProcessPhase): void;
+  onToolPhase?(info: ProcessMessageToolPhase): void;
   onStepStart?(info: ProcessMessageStepStart): void;
   onStepFinish?(info: ProcessMessageStepFinish): void;
   onToolStart?(info: ProcessMessageToolStart): void;
@@ -1594,6 +1611,7 @@ export class Agent {
         const settings = attemptedOverflowRecovery
           ? relaxCompactionSettings(this.getCompactionSettings())
           : this.getCompactionSettings();
+        yield processPhaseChunk(observer, "inspect", "Preparing batch context and tools");
         if (modelInfo) {
           await this.compactForContext(
             provider,
@@ -1704,18 +1722,22 @@ export class Agent {
             }
             this.appendCompletedTurn(userModelMessage, turnMessages);
             await this.refreshSessionRecap(signal);
+            yield processPhaseChunk(observer, "summarize", "Turn complete");
             yield { type: "done" };
             return;
           }
 
+          yield processPhaseChunk(observer, "execute_tools", "Executing requested tools");
           yield { type: "tool_calls", toolCalls };
 
           const toolParts: ExecutedBatchTool[] = [];
           for (const toolCall of toolCalls) {
+            yield toolPhaseChunk(observer, "queued", toolCall, "Tool queued");
             notifyObserver(observer?.onToolStart, {
               toolCall,
               timestamp: Date.now(),
             });
+            yield toolPhaseChunk(observer, "started", toolCall, "Tool execution started");
 
             const executed = await this.executeBatchToolCall(tools, toolCall, requestMessages, signal);
             notifyObserver(observer?.onToolFinish, {
@@ -1723,6 +1745,12 @@ export class Agent {
               toolResult: executed.result,
               timestamp: Date.now(),
             });
+            yield toolPhaseChunk(
+              observer,
+              executed.result.success ? "finished" : "failed",
+              toolCall,
+              executed.result.success ? "Tool completed" : "Tool failed",
+            );
             yield { type: "tool_result", toolCall, toolResult: executed.result };
             toolParts.push({
               toolCall,
@@ -1752,6 +1780,7 @@ export class Agent {
           this.recordUsage(totalUsage, "message", runtime.modelId);
         }
         this.appendCompletedTurn(userModelMessage, turnMessages);
+        yield processPhaseChunk(observer, "summarize", "Turn failed");
         yield { type: "error", content: message };
         yield { type: "done" };
         return;
@@ -1778,6 +1807,7 @@ export class Agent {
           this.recordUsage(totalUsage, "message", runtime.modelId);
         }
         this.appendCompletedTurn(userModelMessage, turnMessages);
+        yield processPhaseChunk(observer, "summarize", "Turn failed");
         yield {
           type: "error",
           content: friendly,
@@ -1850,6 +1880,13 @@ export class Agent {
     await this.fireHook(promptInput, signal).catch(() => {});
 
     await this.consumeBackgroundNotifications();
+    yield processPhaseChunk(observer, "understand", "Prompt accepted");
+    if (isReviewRequest(userMessage)) {
+      yield processPhaseChunk(observer, "review", "Review loop requested");
+    }
+    if (isVerifyRequest(userMessage)) {
+      yield processPhaseChunk(observer, "verify", "Verification requested");
+    }
     const userModelMessages = await buildVisionUserMessages(userMessage, this.bash.getCwd(), signal);
     const userModelMessage = userModelMessages[0] ?? ({ role: "user", content: userMessage } satisfies ModelMessage);
     this.messages.push(userModelMessage);
@@ -1907,6 +1944,7 @@ export class Agent {
           const settings = attemptedOverflowRecovery
             ? relaxCompactionSettings(this.getCompactionSettings())
             : this.getCompactionSettings();
+          yield processPhaseChunk(observer, "inspect", "Preparing context and tools");
           if (modelInfo) {
             await this.compactForContext(
               provider,
@@ -1972,6 +2010,7 @@ export class Agent {
             },
           });
 
+          let emittedExecutePhase = false;
           for await (const part of result.fullStream) {
             if (signal.aborted) {
               yield { type: "content", content: "\n\n[Cancelled]" };
@@ -1999,11 +2038,17 @@ export class Agent {
               case "tool-call": {
                 const tc = toToolCall(part);
                 activeToolCalls.push(tc);
+                if (!emittedExecutePhase) {
+                  emittedExecutePhase = true;
+                  yield processPhaseChunk(observer, "execute_tools", "Executing requested tools");
+                }
                 notifyObserver(observer?.onToolStart, {
                   toolCall: tc,
                   timestamp: Date.now(),
                 });
                 yield { type: "tool_calls", toolCalls: [tc] };
+                yield toolPhaseChunk(observer, "queued", tc, "Tool queued");
+                yield toolPhaseChunk(observer, "started", tc, "Tool execution started");
                 break;
               }
 
@@ -2019,6 +2064,12 @@ export class Agent {
                   toolResult: tr,
                   timestamp: Date.now(),
                 });
+                yield toolPhaseChunk(
+                  observer,
+                  tr.success ? "finished" : "failed",
+                  tc,
+                  tr.success ? "Tool completed" : "Tool failed",
+                );
                 yield { type: "tool_result", toolCall: tc, toolResult: tr };
                 break;
               }
@@ -2156,6 +2207,7 @@ export class Agent {
           };
           await this.fireHook(stopInput, signal).catch(() => {});
 
+          yield processPhaseChunk(observer, "summarize", "Turn complete");
           yield { type: "done" };
           return;
         } catch (err: unknown) {
@@ -2194,6 +2246,7 @@ export class Agent {
           };
           await this.fireHook(stopFailureInput, signal).catch(() => {});
 
+          yield processPhaseChunk(observer, "summarize", "Turn failed");
           yield { type: "done" };
           return;
         } finally {
@@ -2587,6 +2640,35 @@ function notifyObserver<T>(listener: ((payload: T) => void) | undefined, payload
   } catch {
     // Observer failures should never break generation.
   }
+}
+
+function processPhaseChunk(
+  observer: ProcessMessageObserver | undefined,
+  phase: AgentProcessPhase,
+  detail?: string,
+): StreamChunk {
+  const timestamp = Date.now();
+  notifyObserver(observer?.onProcessPhase, { phase, detail, timestamp });
+  return { type: "process_phase", processPhase: phase, detail };
+}
+
+function toolPhaseChunk(
+  observer: ProcessMessageObserver | undefined,
+  phase: ToolExecutionPhase,
+  toolCall: ToolCall,
+  detail?: string,
+): StreamChunk {
+  const timestamp = Date.now();
+  notifyObserver(observer?.onToolPhase, { phase, toolCall, detail, timestamp });
+  return { type: "tool_phase", toolPhase: phase, toolCall, detail };
+}
+
+function isReviewRequest(message: string): boolean {
+  return /^\s*review\b/i.test(message) || message.includes("Review Report");
+}
+
+function isVerifyRequest(message: string): boolean {
+  return /^\s*(\/verify|run a local verification pass)\b/i.test(message);
 }
 
 function getStepNumber(event: unknown, fallback: number): number {

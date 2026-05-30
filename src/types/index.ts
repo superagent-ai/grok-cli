@@ -188,8 +188,11 @@ export interface ToolCall {
   };
 }
 
+export type AgentProcessPhase = "understand" | "inspect" | "execute_tools" | "review" | "verify" | "summarize";
+export type ToolExecutionPhase = "queued" | "started" | "finished" | "failed";
+
 export interface ChatEntry {
-  type: "user" | "assistant" | "tool_call" | "tool_result";
+  type: "user" | "assistant" | "tool_call" | "tool_result" | "phase";
   content: string;
   timestamp: Date;
   modeColor?: string;
@@ -199,6 +202,7 @@ export interface ChatEntry {
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
+  phase?: AgentProcessPhase | ToolExecutionPhase;
 }
 
 export interface PaymentPrecheck {
@@ -212,11 +216,23 @@ export interface PaymentPrecheck {
 }
 
 export interface StreamChunk {
-  type: "content" | "tool_calls" | "tool_result" | "tool_approval_request" | "done" | "error" | "reasoning";
+  type:
+    | "content"
+    | "tool_calls"
+    | "tool_result"
+    | "tool_approval_request"
+    | "process_phase"
+    | "tool_phase"
+    | "done"
+    | "error"
+    | "reasoning";
   content?: string;
   toolCalls?: ToolCall[];
   toolCall?: ToolCall;
   toolResult?: ToolResult;
+  processPhase?: AgentProcessPhase;
+  toolPhase?: ToolExecutionPhase;
+  detail?: string;
   approvalId?: string;
   paymentPrecheck?: PaymentPrecheck;
   isAuthError?: boolean;

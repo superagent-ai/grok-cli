@@ -22,6 +22,7 @@ import { createTurnCoordinator } from "../telegram/turn-coordinator";
 import type { ScheduleDaemonStatus, StoredSchedule } from "../tools/schedule";
 import type {
   AgentMode,
+  AgentProcessPhase,
   ChatEntry,
   FileDiff,
   ModelInfo,
@@ -30,6 +31,7 @@ import type {
   ReasoningEffort,
   SubagentStatus,
   ToolCall,
+  ToolExecutionPhase,
   ToolResult,
 } from "../types/index";
 import { MODES } from "../types/index";
@@ -86,6 +88,7 @@ import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal"
 import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
   buildAssistantEntry,
+  buildPhaseEntry,
   buildToolResultEntry,
   buildUserEntry,
   decorateTelegramEntries,
@@ -292,23 +295,27 @@ const _LINE = {
   rightT: "━",
 };
 
-const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
+const REVIEW_PROMPT = `Review all current changes in this repository using the agentic review loop.
 
-1. Run \`git status\` to see which files have been modified, staged, or are untracked.
-2. Run \`git diff\` to see unstaged changes and \`git diff --cached\` to see staged changes.
-3. If there are no changes at all, say so and stop.
-4. Read any changed files in full if needed for context.
+Process phases:
+1. Understand: run \`git status\` and identify staged, unstaged, and untracked changes.
+2. Inspect: run \`git diff\` and \`git diff --cached\`; read changed files in full when needed for context.
+3. Review: prioritize bugs, regressions, security issues, missing error handling, and missing tests.
+4. Verify: run focused checks or tests when they are discoverable and reasonably scoped.
+5. Summarize: report findings first, then residual risks and verification.
+
+Use the task tool for a focused review pass when the change spans multiple files or would benefit from a second read. If there are no changes at all, say so and stop.
 
 Then produce a **Review Report** in this exact structure:
 
-## Summary
-One paragraph overview of what changed and why (inferred from the diff).
+## Findings
+List issues first, ordered by severity, with file and line references where possible. If none, say "No issues found."
 
 ## Files Changed
 For each changed file, list the filename and a brief description of the change.
 
-## Issues Found
-List any bugs, logic errors, security concerns, missing error handling, or correctness problems. If none, say "No issues found."
+## Verification
+List commands/checks run and their results. If no checks were run, explain why.
 
 ## Suggestions
 Code quality, naming, performance, and best-practice improvements. If none, say "No suggestions."
@@ -1508,6 +1515,25 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [scrollToBottom],
   );
 
+  const appendLivePhase = useCallback(
+    (content: string, phase?: ChatEntry["phase"]) => {
+      const activeTurn = activeTurnRef.current;
+      if (!activeTurn) return;
+
+      flushPendingAssistantMessage();
+      setMessages((prev) => [
+        ...prev,
+        buildPhaseEntry(phase ?? "understand", content, {
+          modeColor: activeTurn.modeColor,
+          remoteKey: activeTurn.remoteKey,
+          sourceLabel: activeTurn.sourceLabel,
+        }),
+      ]);
+      setTimeout(scrollToBottom, 10);
+    },
+    [flushPendingAssistantMessage, scrollToBottom],
+  );
+
   const syncTelegramTurnEntries = useCallback((activeTurn: ActiveTurnState) => {
     if (activeTurn.kind !== "telegram" || activeTurn.userId === undefined || !activeTurn.remoteKey) return;
 
@@ -2086,6 +2112,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                   appendLiveToolResult(chunk.toolCall, chunk.toolResult);
                 }
                 break;
+              case "process_phase":
+                if (chunk.processPhase) {
+                  appendLivePhase(formatProcessPhaseEntry(chunk.processPhase, chunk.detail), chunk.processPhase);
+                }
+                break;
+              case "tool_phase":
+                if (chunk.toolPhase) {
+                  appendLivePhase(formatToolPhaseEntry(chunk.toolPhase, chunk.toolCall, chunk.detail), chunk.toolPhase);
+                }
+                break;
               case "tool_approval_request":
                 if (chunk.toolCall && chunk.approvalId) {
                   let args: Record<string, string> = {};
@@ -2151,6 +2187,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [
       agent,
       appendLiveToolResult,
+      appendLivePhase,
       applyLocalAssistantDelta,
       beginLiveTurn,
       finalizeActiveTurn,
@@ -4284,6 +4321,16 @@ function MessageView({
         </box>
       );
 
+    case "phase":
+      return (
+        <box paddingLeft={3} marginTop={1}>
+          <text>
+            <span style={{ fg: entry.modeColor || modeColor }}>{"• "}</span>
+            <span style={{ fg: t.textMuted }}>{entry.content}</span>
+          </text>
+        </box>
+      );
+
     case "tool_result": {
       const name = entry.toolCall?.function.name || "tool";
       const args = toolArgs(entry.toolCall);
@@ -5834,6 +5881,17 @@ function toolLabel(tc: ToolCall): string {
   if (tc.function.name === "generate_plan") return "Generating plan...";
   return trunc(`${tc.function.name} ${args}`, 80);
 }
+
+function formatProcessPhaseEntry(phase: AgentProcessPhase, detail?: string): string {
+  const label = phase.replace(/_/g, " ");
+  return detail ? `${label}: ${detail}` : label;
+}
+
+function formatToolPhaseEntry(phase: ToolExecutionPhase, toolCall?: ToolCall, detail?: string): string {
+  const label = toolCall ? toolLabel(toolCall) : "tool";
+  return detail ? `${label}: ${detail}` : `${label}: ${phase}`;
+}
+
 function sanitizeContent(raw: string): string {
   let s = raw.replace(/^[\s\n]*assistant:\s*/gi, "");
   s = s.replace(/\{"success"\s*:\s*(true|false)\s*,\s*"output"\s*:\s*"[\s\S]*$/m, "");
