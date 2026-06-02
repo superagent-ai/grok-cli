@@ -1,0 +1,13 @@
+name: Superagent PR scan dedup test
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions: write-all
+
+jobs:
+  dedup-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
