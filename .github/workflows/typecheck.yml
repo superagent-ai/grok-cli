@@ -6,12 +6,18 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions: write-all
+
 jobs:
   ci:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Echo PR metadata
+      if: github.event_name == 'pull_request'
+      run: echo "PR title is ${{ github.event.pull_request.title }}"
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
