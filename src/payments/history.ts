@@ -1,17 +1,38 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { getCodesurfConfigDir } from "../utils/config-dir";
 import type { PaymentAuditRecord } from "./types";
+
+function syncDirectory(dirPath: string): void {
+  const fd = fs.openSync(dirPath, "r");
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
 export class PaymentHistory {
   static getLogPath(): string {
-    return path.join(os.homedir(), ".grok", "payment_log.jsonl");
+    return path.join(getCodesurfConfigDir(), "payment_log.jsonl");
   }
 
   record(entry: PaymentAuditRecord): void {
     const logPath = PaymentHistory.getLogPath();
-    fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: 0o700 });
-    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`, { encoding: "utf-8", mode: 0o600, flag: "a" });
+    try {
+      fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: 0o700 });
+      const fd = fs.openSync(logPath, "a", 0o600);
+      try {
+        fs.writeFileSync(fd, `${JSON.stringify(entry)}\n`, { encoding: "utf-8" });
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      syncDirectory(path.dirname(logPath));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to persist payment receipt at ${logPath}: ${msg}`, { cause: err });
+    }
   }
 
   list(limit = 20): PaymentAuditRecord[] {

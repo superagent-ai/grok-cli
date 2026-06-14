@@ -3,7 +3,7 @@ import { WalletManager } from "../wallet/manager";
 import { createX402Fetch } from "./agentkit-loader";
 import { type BrinScanResult, scanUrl } from "./brin";
 import { PaymentHistory } from "./history";
-import type { PaymentInspectionResult, PaymentOption } from "./types";
+import type { PaymentAuditRecord, PaymentInspectionResult, PaymentOption } from "./types";
 
 interface RequestArgs {
   url: string;
@@ -24,6 +24,16 @@ function getDomain(url: string): string {
 
 function getAmountLabel(option: PaymentOption): string {
   return option.amount ?? option.maxAmountRequired ?? option.price ?? "0";
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function parsePaymentResponseTxHash(header: string): string | null {
+  const proof = JSON.parse(Buffer.from(header, "base64").toString("utf-8")) as Record<string, unknown>;
+  const txHash = proof.transaction ?? proof.txHash ?? proof.tx_hash ?? proof.hash;
+  return typeof txHash === "string" && txHash.trim().length > 0 ? txHash : null;
 }
 
 function parsePaymentTerms(response: Response): {
@@ -168,14 +178,30 @@ export class X402Service {
     let txHash: string | null = null;
     if (paymentResponseHeader) {
       try {
-        const proof = JSON.parse(Buffer.from(paymentResponseHeader, "base64").toString("utf-8"));
-        txHash = proof.transaction ?? proof.txHash ?? proof.tx_hash ?? proof.hash ?? null;
-      } catch {
-        // ignore
+        txHash = parsePaymentResponseTxHash(paymentResponseHeader);
+      } catch (err: unknown) {
+        if (success) {
+          throw new Error(
+            `Payment succeeded, but the payment proof header could not be parsed. Receipt was not recorded as a clean success without a transaction hash. Original error: ${getErrorMessage(err)}`,
+            { cause: err },
+          );
+        }
       }
     }
 
-    this.history.record({
+    if (success && !paymentResponseHeader) {
+      throw new Error(
+        "Payment succeeded, but no payment proof header was returned. Receipt was not recorded as a clean success without a transaction hash.",
+      );
+    }
+
+    if (success && !txHash) {
+      throw new Error(
+        "Payment succeeded, but the payment proof did not include a transaction hash. Receipt was not recorded as a clean success without a transaction hash.",
+      );
+    }
+
+    const auditRecord: PaymentAuditRecord = {
       id: crypto.randomUUID(),
       sessionId: sessionId ?? null,
       url: args.url,
@@ -188,7 +214,17 @@ export class X402Service {
       txHash,
       status: success ? "success" : "failed",
       createdAt: new Date().toISOString(),
-    });
+    };
+
+    try {
+      this.history.record(auditRecord);
+    } catch (err: unknown) {
+      const txPart = txHash ? ` tx=${txHash}` : "";
+      throw new Error(
+        `Payment ${success ? "succeeded" : "completed"} but the receipt could not be persisted (${method} ${args.url}, ${amount} ${selected.asset} on ${selected.network}${txPart}). Original error: ${getErrorMessage(err)}`,
+        { cause: err },
+      );
+    }
 
     const lines = [responseText];
     if (txHash) {
