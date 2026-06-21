@@ -183,7 +183,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 | **Remote control**                | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, `**/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone.                                             |
 | **No “mystery meat” UI**          | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of.                                                                                                                            |
 | **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/`** (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
-| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json`** (`mcpServers`).                                                                                               |
+| **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**~/.grok/user-settings.json`** (`mcp.servers`).                                                                                       |
 | **Sessions**                      | Conversations persist; `**--session latest`** picks up where you left off.                                                                                                                                                 |
 | **Headless**                      | `**--prompt`** / `**-p`** for non-interactive runs—pipe it, script it, bench it.                                                                                                                                           |
 | **Hackable**                      | TypeScript, clear agent loop, bash-first tools—fork it, shamelessly.                                                                                                                                                       |
@@ -236,6 +236,25 @@ Optional `**subAgents**` — custom foreground sub-agents. Each entry needs `**n
 ```
 
 Names cannot be `general`, `explore`, `vision`, `verify`, or `computer` because those are reserved for the built-in sub-agents.
+
+Optional `**mcp.servers**` — Model Context Protocol servers. Each entry needs `**id**`, `**label**`, `**enabled**`, and `**transport**` (`stdio`, `http`, or `sse`); `stdio` adds `**command**`/`**args**`/`**env**`/`**cwd**`, while `http`/`sse` add `**url**`/`**headers**`:
+
+```json
+{
+  "mcp": {
+    "servers": [
+      {
+        "id": "filesystem",
+        "label": "Filesystem",
+        "enabled": true,
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      }
+    ]
+  }
+}
+```
 
 Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`, `**GROK_MAX_TOKENS**`.
 
