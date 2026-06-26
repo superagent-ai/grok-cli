@@ -568,8 +568,6 @@ export function mergeLspSettings(
 }
 
 export function getCurrentSandboxMode(): SandboxMode {
-  const project = loadProjectSettings();
-  if (project.sandboxMode) return normalizeSandboxMode(project.sandboxMode);
   const user = loadUserSettings();
   if (user.sandboxMode) return normalizeSandboxMode(user.sandboxMode);
   return "off";
@@ -577,8 +575,9 @@ export function getCurrentSandboxMode(): SandboxMode {
 
 export function getCurrentSandboxSettings(): SandboxSettings {
   const user = loadUserSettings();
-  const project = loadProjectSettings();
-  return mergeSandboxSettings(user.sandbox, project.sandbox);
+  // Sandbox security posture is user-controlled only; project .grok/settings.json
+  // is repo-committed and untrusted (see project-hooks exclusion in src/hooks/config.ts).
+  return user.sandbox ?? {};
 }
 
 export function getCurrentLspSettings(): NormalizedLspSettings {
