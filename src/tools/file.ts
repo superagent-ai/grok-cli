@@ -1,6 +1,6 @@
 import { createTwoFilesPatch } from "diff";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, isAbsolute, resolve } from "path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "fs";
+import { dirname, isAbsolute, relative, resolve } from "path";
 import { summarizeDiagnostics, syncFileWithLsp } from "../lsp/runtime";
 import type { LspDiagnosticFile } from "../lsp/types";
 
@@ -19,7 +19,39 @@ export interface FileResult {
   lspDiagnostics?: LspDiagnosticFile[];
 }
 
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
+/**
+ * Ensure a user/agent-supplied path cannot escape the workspace, whether via
+ * lexical traversal (e.g. `../../.ssh/id_rsa`) or a symlink that crosses
+ * outside the workspace root. Mirrors the directory-prefix guards applied
+ * elsewhere in this repo (e.g. `assertInsideSchedulesDir`). Throws on escape
+ * so the calling tool surfaces a clean failure instead of touching the host.
+ */
+function assertInsideWorkspace(filePath: string, cwd: string): void {
+  const root = safeRealpath(cwd);
+  const full = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+
+  const rel = relative(root, full);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`Path "${filePath}" resolves outside the workspace and was rejected.`);
+  }
+
+  const realTarget = safeRealpath(full);
+  const realRel = relative(root, realTarget);
+  if (realRel.startsWith("..") || isAbsolute(realRel)) {
+    throw new Error(`Path "${filePath}" points outside the workspace via a symlink and was rejected.`);
+  }
+}
+
 function resolvePath(filePath: string, cwd: string): string {
+  assertInsideWorkspace(filePath, cwd);
   return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
 }
 
