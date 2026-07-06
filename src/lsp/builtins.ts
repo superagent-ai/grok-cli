@@ -318,8 +318,13 @@ function createCustomRuntimeDefinition(cwd: string, config: LspCustomServerConfi
 }
 
 async function resolveCommand(root: string, binary: string): Promise<string | null> {
-  const localBinary = await findLocalBinary(root, binary);
-  if (localBinary) return localBinary;
+  // Do not resolve or spawn binaries from the project's own node_modules/.bin.
+  // A malicious repository can plant an executable there that would run on the
+  // host with the developer's privileges, outside the Shuru sandbox and with no
+  // workspace-trust gate (LSP servers are always spawned on the host). Project
+  // pinned language servers must be configured explicitly via the
+  // builtins.<id>.command override in .grok/settings.json instead.
+  void root;
   return findCommandOnPath(binary);
 }
 
@@ -336,12 +341,6 @@ async function resolveTypeScriptServer(root: string): Promise<string | null> {
   }
 
   return null;
-}
-
-async function findLocalBinary(root: string, binary: string): Promise<string | null> {
-  const ext = process.platform === "win32" ? ".cmd" : "";
-  const candidate = path.join(root, "node_modules", ".bin", `${binary}${ext}`);
-  return (await pathExists(candidate)) ? candidate : null;
 }
 
 async function resolveNodeServerLaunch(
