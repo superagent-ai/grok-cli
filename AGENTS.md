@@ -28,3 +28,10 @@ Grok CLI (`@vibe-kit/grok-cli`) is a single-package TypeScript CLI tool — no d
 
 - **Bun** must be installed (not pre-installed on Cloud VMs). The update script handles this.
 - `GROK_API_KEY` environment variable is required for API calls. Set it as a secret.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

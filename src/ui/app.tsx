@@ -82,6 +82,13 @@ import {
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import {
+  deriveUserPromptIndex,
+  findNearestPrompt,
+  getPromptNavigationDirection,
+  type PromptAnchor,
+  type PromptNavigationDirection,
+} from "./prompt-navigation";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
 import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
@@ -661,6 +668,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
+  const [promptFlashMessageIndex, setPromptFlashMessageIndex] = useState<number | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(() => new Set());
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
@@ -669,6 +677,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const apiKeyInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const promptFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
   const contentAccRef = useRef("");
@@ -1375,12 +1384,34 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setScheduleModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, scheduleRows.length - 1))));
   }, [scheduleRows.length]);
 
+  const userPromptIndex = useMemo(() => deriveUserPromptIndex(messages), [messages]);
+
   const scrollToBottom = useCallback(() => {
     try {
       scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
     } catch {
       /* */
     }
+  }, []);
+
+  const flashPrompt = useCallback((messageIndex: number) => {
+    if (promptFlashTimeoutRef.current) {
+      clearTimeout(promptFlashTimeoutRef.current);
+    }
+
+    setPromptFlashMessageIndex(messageIndex);
+    promptFlashTimeoutRef.current = setTimeout(() => {
+      setPromptFlashMessageIndex(null);
+      promptFlashTimeoutRef.current = null;
+    }, 600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (promptFlashTimeoutRef.current) {
+        clearTimeout(promptFlashTimeoutRef.current);
+      }
+    };
   }, []);
 
   const clearLiveTurnUi = useCallback(() => {
@@ -1464,7 +1495,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const applyTelegramAssistantPreview = useCallback(
     (fullContent: string) => {
       const activeTurn = activeTurnRef.current;
-      if (!activeTurn || activeTurn.kind !== "telegram") return;
+      if (activeTurn?.kind !== "telegram") return;
 
       activeTurn.latestAssistantText = fullContent;
       contentAccRef.current = getUnflushedTelegramAssistantContent(fullContent, activeTurn.flushedAssistantChars);
@@ -2521,6 +2552,52 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setBtwState(null);
   }, []);
 
+  const navigateToPrompt = useCallback(
+    (direction: PromptNavigationDirection) => {
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+
+      const currentScrollTop = scrollBox.scrollTop;
+      const children = scrollBox.getChildren();
+      const anchors = userPromptIndex.flatMap<PromptAnchor>((messageIndex) => {
+        const child = children[messageIndex];
+        if (!child) return [];
+
+        return [
+          {
+            messageIndex,
+            offset: currentScrollTop + child.y - scrollBox.viewport.y,
+          },
+        ];
+      });
+      const target = findNearestPrompt(anchors, currentScrollTop, direction);
+      if (!target) return;
+
+      scrollBox.scrollTo(target.offset);
+      flashPrompt(target.messageIndex);
+    },
+    [flashPrompt, userPromptIndex],
+  );
+
+  // Intercept the raw control bytes before OpenTUI routes them to the focused
+  // textarea or scrollbox. This keeps prompt navigation separate from
+  // composer history and ordinary arrow movement.
+  useEffect(() => {
+    const onRawPromptNavigation = (sequence: string) => {
+      const parsed = parseKeypress(sequence, { useKittyKeyboard: renderer.useKittyKeyboard });
+      const direction = parsed ? getPromptNavigationDirection(parsed) : null;
+      if (!direction) return false;
+
+      navigateToPrompt(direction);
+      return true;
+    };
+
+    renderer.prependInputHandler(onRawPromptNavigation);
+    return () => {
+      renderer.removeInputHandler(onRawPromptNavigation);
+    };
+  }, [navigateToPrompt, renderer]);
+
   const handleKey = useCallback(
     (key: KeyEvent) => {
       if (btwState) {
@@ -3183,6 +3260,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
       }
 
+      const promptNavigationDirection = getPromptNavigationDirection(key);
+      if (promptNavigationDirection) {
+        navigateToPrompt(promptNavigationDirection);
+        key.preventDefault();
+        key.stopPropagation();
+        return;
+      }
+
       if (key.name === "e" && key.ctrl) {
         let lastUserIdx = -1;
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -3324,6 +3409,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
+      navigateToPrompt,
       showWalletPicker,
       walletSettings,
       walletFocusIndex,
@@ -3439,6 +3525,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                   t={t}
                   modeColor={modeInfo.color}
                   expandedMessages={expandedMessages}
+                  highlightedPrompt={promptFlashMessageIndex === i}
                 />
               ))}
               {liveTurnSourceLabel && (activeToolCalls.length > 0 || streamContent || isProcessing) && (
@@ -4235,12 +4322,14 @@ function MessageView({
   t,
   modeColor,
   expandedMessages,
+  highlightedPrompt,
 }: {
   entry: ChatEntry;
   index: number;
   t: Theme;
   modeColor: string;
   expandedMessages?: Set<number>;
+  highlightedPrompt?: boolean;
 }) {
   switch (entry.type) {
     case "user":
@@ -4248,7 +4337,7 @@ function MessageView({
         <box
           border={["left"]}
           customBorderChars={SPLIT}
-          borderColor={entry.modeColor || modeColor}
+          borderColor={highlightedPrompt ? t.accent : entry.modeColor || modeColor}
           marginTop={index === 0 ? 0 : 1}
           marginBottom={1}
         >
@@ -4256,7 +4345,7 @@ function MessageView({
             paddingTop={1}
             paddingBottom={1}
             paddingLeft={2}
-            backgroundColor={t.backgroundPanel}
+            backgroundColor={highlightedPrompt ? t.selectedBg : t.backgroundPanel}
             flexShrink={0}
             flexDirection="column"
           >
