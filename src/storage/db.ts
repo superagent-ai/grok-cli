@@ -127,13 +127,13 @@ class NodeSqliteDatabase implements Database {
   }
 
   run(sql: string, params?: unknown): unknown {
-    const statement = this.db.prepare(sql);
+    const statement = this.prepareWithBareNamedParameters(sql);
     if (params === undefined) return statement.run();
     return Array.isArray(params) ? statement.run(...(params as never[])) : statement.run(params as never);
   }
 
   query(sql: string): { get(params?: unknown): unknown; all(params?: unknown): unknown[] } {
-    const statement = this.db.prepare(sql);
+    const statement = this.prepareWithBareNamedParameters(sql);
     return {
       get: (params?: unknown) => {
         if (params === undefined) return statement.get();
@@ -144,6 +144,12 @@ class NodeSqliteDatabase implements Database {
         return Array.isArray(params) ? statement.all(...(params as never[])) : statement.all(params as never);
       },
     };
+  }
+
+  private prepareWithBareNamedParameters(sql: string): ReturnType<DatabaseSync["prepare"]> {
+    const statement = this.db.prepare(sql);
+    statement.setAllowBareNamedParameters?.(true);
+    return statement;
   }
 
   transaction<T>(fn: () => T): () => T {
