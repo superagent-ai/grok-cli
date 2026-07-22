@@ -669,6 +669,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
   const [promptFlashMessageIndex, setPromptFlashMessageIndex] = useState<number | null>(null);
+  const [isReviewingPrompts, setIsReviewingPrompts] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(() => new Set());
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
@@ -678,6 +679,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const promptFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isReviewingPromptsRef = useRef(false);
   const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
   const contentAccRef = useRef("");
@@ -1102,6 +1104,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       void agent
         .getScheduleDaemonStatus()
         .then((status) => {
+          isReviewingPromptsRef.current = false;
+          setIsReviewingPrompts(false);
           setMessages((prev) => [...prev, buildAssistantEntry(formatScheduleDetails(schedule, status))]);
           setShowScheduleModal(false);
           setScheduleSearchQuery("");
@@ -1128,6 +1132,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         .then(async (message) => {
           const latest = await agent.listSchedules();
           setSchedules(latest);
+          isReviewingPromptsRef.current = false;
+          setIsReviewingPrompts(false);
           setScheduleModalIndex((index) => Math.max(0, Math.min(index, Math.max(0, latest.length - 1))));
           setMessages((prev) => [...prev, buildAssistantEntry(message)]);
           setTimeout(() => {
@@ -1386,13 +1392,42 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const userPromptIndex = useMemo(() => deriveUserPromptIndex(messages), [messages]);
 
+  const setPromptReviewing = useCallback((reviewing: boolean) => {
+    isReviewingPromptsRef.current = reviewing;
+    setIsReviewingPrompts(reviewing);
+  }, []);
+
+  const isAtTranscriptBottom = useCallback((scrollBox: ScrollBoxRenderable) => {
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    return scrollBox.scrollTop >= maxScrollTop;
+  }, []);
+
+  const syncPromptReview = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || (!isReviewingPromptsRef.current && !isReviewingPrompts)) return;
+    if (isAtTranscriptBottom(scrollBox)) {
+      setPromptReviewing(false);
+    }
+  }, [isAtTranscriptBottom, isReviewingPrompts, setPromptReviewing]);
+
+  const schedulePromptReviewSync = useCallback(() => {
+    if (!isReviewingPromptsRef.current) return;
+    setTimeout(syncPromptReview, 0);
+  }, [syncPromptReview]);
+
   const scrollToBottom = useCallback(() => {
     try {
-      scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+      if (isReviewingPromptsRef.current || isReviewingPrompts) {
+        if (!isAtTranscriptBottom(scrollBox)) return;
+        setPromptReviewing(false);
+      }
+      scrollBox.scrollTo(scrollBox.scrollHeight ?? 99999);
     } catch {
       /* */
     }
-  }, []);
+  }, [isAtTranscriptBottom, isReviewingPrompts, setPromptReviewing]);
 
   const flashPrompt = useCallback((messageIndex: number) => {
     if (promptFlashTimeoutRef.current) {
@@ -2059,6 +2094,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, [interruptActiveRun, renderer]);
 
   const resetToNewSession = useCallback(() => {
+    setPromptReviewing(false);
     const snapshot = agent.startNewSession();
     setMessages(snapshot?.entries ?? []);
     setExpandedMessages(new Set());
@@ -2072,11 +2108,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     replacePasteBlocks([]);
     queuedMessagesRef.current = [];
     setQueuedMessages([]);
-  }, [agent, clearLiveTurnUi, replacePasteBlocks]);
+  }, [agent, clearLiveTurnUi, replacePasteBlocks, setPromptReviewing]);
 
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
       if (!text.trim() || isProcessingRef.current) return;
+      setPromptReviewing(false);
       const runId = ++activeRunIdRef.current;
       const isStale = () => activeRunIdRef.current !== runId;
       isProcessingRef.current = true;
@@ -2187,6 +2224,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       finalizeActiveTurn,
       scrollToBottom,
       sessionTitle,
+      setPromptReviewing,
       showLiveToolCalls,
     ],
   );
@@ -2573,10 +2611,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       const target = findNearestPrompt(anchors, currentScrollTop, direction);
       if (!target) return;
 
+      setPromptReviewing(true);
       scrollBox.scrollTo(target.offset);
       flashPrompt(target.messageIndex);
     },
-    [flashPrompt, userPromptIndex],
+    [flashPrompt, setPromptReviewing, userPromptIndex],
   );
 
   // Intercept the raw control bytes before OpenTUI routes them to the focused
@@ -2600,6 +2639,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (isReviewingPromptsRef.current) {
+        schedulePromptReviewSync();
+      }
       if (btwState) {
         if (isEscapeKey(key) || key.name === "return") {
           dismissBtw();
@@ -3260,14 +3302,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
       }
 
-      const promptNavigationDirection = getPromptNavigationDirection(key);
-      if (promptNavigationDirection) {
-        navigateToPrompt(promptNavigationDirection);
-        key.preventDefault();
-        key.stopPropagation();
-        return;
-      }
-
       if (key.name === "e" && key.ctrl) {
         let lastUserIdx = -1;
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -3369,6 +3403,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handlePlanSelect,
       handleSlashMenuSelect,
       interruptActiveRun,
+      schedulePromptReviewSync,
       isPlanConfirmTab,
       isProcessing,
       isSinglePlan,
@@ -3409,7 +3444,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
-      navigateToPrompt,
       showWalletPicker,
       walletSettings,
       walletFocusIndex,
@@ -3483,6 +3517,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       message = message.replace(getFileMentionToken(block), `@${block.path}`);
     }
     if (!message.trim()) return;
+    setPromptReviewing(false);
     if (!hasApiKeyRef.current) {
       openApiKeyModal();
       return;
@@ -3496,7 +3531,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     processMessage(enhancedMessage, displayText);
-  }, [agent, clearLiveTurnUi, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
+  }, [
+    agent,
+    clearLiveTurnUi,
+    handleCommand,
+    openApiKeyModal,
+    processMessage,
+    replacePasteBlocks,
+    scrollToBottom,
+    setPromptReviewing,
+  ]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -3515,8 +3559,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} sessionId={sessionId} />
           <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
             {/* Scrollable messages */}
-            {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
-            <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
+            <scrollbox
+              ref={scrollRef}
+              flexGrow={1}
+              stickyScroll={true}
+              stickyStart="bottom"
+              onMouseScroll={schedulePromptReviewSync}
+            >
               {messages.map((msg, i) => (
                 <MessageView
                   key={`${msg.timestamp.getTime()}-${msg.type}-${msg.remoteKey ?? ""}-${msg.content.slice(0, 24)}`}
