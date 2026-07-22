@@ -28,3 +28,11 @@ Grok CLI (`@vibe-kit/grok-cli`) is a single-package TypeScript CLI tool — no d
 
 - **Bun** must be installed (not pre-installed on Cloud VMs). The update script handles this.
 - `GROK_API_KEY` environment variable is required for API calls. Set it as a secret.
+- `src/storage/db.ts` runtime-loads `bun:sqlite` and falls back to `node:sqlite` when unavailable, so the storage layer also works under Node. Note `bun run test` (`bunx vitest run`) still executes under the Bun runtime; to actually exercise the Node fallback path, run `node node_modules/.bin/vitest run`.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
