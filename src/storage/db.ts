@@ -1,8 +1,11 @@
-import { Database } from "bun:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import fs from "fs";
+import { createRequire } from "module";
 import os from "os";
 import path from "path";
 import { applyMigrations } from "./migrations";
+
+const require = createRequire(import.meta.url);
 
 export interface SQLiteStatement {
   run(...params: unknown[]): unknown;
@@ -53,7 +56,10 @@ class BunSqliteDatabase implements SQLiteDatabase {
   private readonly db: Database;
 
   constructor(filename: string) {
-    this.db = new Database(filename, { create: true, strict: true });
+    const BunDatabase = loadBunDatabase();
+    this.db = BunDatabase
+      ? new BunDatabase(filename, { create: true, strict: true })
+      : new NodeSqliteDatabase(filename);
   }
 
   exec(sql: string): void {
@@ -82,6 +88,76 @@ class BunSqliteDatabase implements SQLiteDatabase {
 
   transaction<T>(fn: () => T): () => T {
     return this.db.transaction(fn);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
+type Database = {
+  exec(sql: string): void;
+  run(sql: string, params?: unknown): unknown;
+  query(sql: string): { get(params?: unknown): unknown; all(params?: unknown): unknown[] };
+  transaction<T>(fn: () => T): () => T;
+  close(): void;
+};
+
+function loadBunDatabase(): (new (filename: string, options: { create: boolean; strict: boolean }) => Database) | null {
+  try {
+    return require("bun:sqlite").Database as new (
+      filename: string,
+      options: { create: boolean; strict: boolean },
+    ) => Database;
+  } catch {
+    return null;
+  }
+}
+
+class NodeSqliteDatabase implements Database {
+  private readonly db: DatabaseSync;
+
+  constructor(filename: string) {
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    this.db = new DatabaseSync(filename);
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  run(sql: string, params?: unknown): unknown {
+    const statement = this.db.prepare(sql);
+    if (params === undefined) return statement.run();
+    return Array.isArray(params) ? statement.run(...(params as never[])) : statement.run(params as never);
+  }
+
+  query(sql: string): { get(params?: unknown): unknown; all(params?: unknown): unknown[] } {
+    const statement = this.db.prepare(sql);
+    return {
+      get: (params?: unknown) => {
+        if (params === undefined) return statement.get();
+        return Array.isArray(params) ? statement.get(...(params as never[])) : statement.get(params as never);
+      },
+      all: (params?: unknown) => {
+        if (params === undefined) return statement.all();
+        return Array.isArray(params) ? statement.all(...(params as never[])) : statement.all(params as never);
+      },
+    };
+  }
+
+  transaction<T>(fn: () => T): () => T {
+    return () => {
+      this.db.exec("BEGIN");
+      try {
+        const result = fn();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    };
   }
 
   close(): void {
