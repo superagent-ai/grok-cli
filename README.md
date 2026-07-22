@@ -47,6 +47,8 @@ grok uninstall --keep-config
 grok
 ```
 
+While reviewing the transcript, use `Ctrl+P` and `Ctrl+N` to move to the previous or next user prompt.
+
 ### Supported terminals
 
 For the most reliable interactive OpenTUI experience, use a modern terminal emulator. We currently document and recommend:

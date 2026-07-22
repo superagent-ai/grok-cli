@@ -82,6 +82,13 @@ import {
   type PlanQuestionsState,
   PlanView,
 } from "./plan";
+import {
+  deriveUserPromptIndex,
+  findNearestPrompt,
+  getPromptNavigationDirection,
+  type PromptAnchor,
+  type PromptNavigationDirection,
+} from "./prompt-navigation";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
 import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
@@ -661,6 +668,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
+  const [promptFlashMessageIndex, setPromptFlashMessageIndex] = useState<number | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(() => new Set());
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
@@ -669,6 +677,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const apiKeyInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const promptFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isReviewingPromptsRef = useRef(false);
   const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
   const contentAccRef = useRef("");
@@ -1093,6 +1103,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       void agent
         .getScheduleDaemonStatus()
         .then((status) => {
+          isReviewingPromptsRef.current = false;
           setMessages((prev) => [...prev, buildAssistantEntry(formatScheduleDetails(schedule, status))]);
           setShowScheduleModal(false);
           setScheduleSearchQuery("");
@@ -1119,6 +1130,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         .then(async (message) => {
           const latest = await agent.listSchedules();
           setSchedules(latest);
+          isReviewingPromptsRef.current = false;
           setScheduleModalIndex((index) => Math.max(0, Math.min(index, Math.max(0, latest.length - 1))));
           setMessages((prev) => [...prev, buildAssistantEntry(message)]);
           setTimeout(() => {
@@ -1375,12 +1387,62 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setScheduleModalIndex((idx) => Math.max(0, Math.min(idx, Math.max(0, scheduleRows.length - 1))));
   }, [scheduleRows.length]);
 
+  const userPromptIndex = useMemo(() => deriveUserPromptIndex(messages), [messages]);
+
+  const setPromptReviewing = useCallback((reviewing: boolean) => {
+    isReviewingPromptsRef.current = reviewing;
+  }, []);
+
+  const isAtTranscriptBottom = useCallback((scrollBox: ScrollBoxRenderable) => {
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    return scrollBox.scrollTop >= maxScrollTop;
+  }, []);
+
+  const syncPromptReview = useCallback(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || !isReviewingPromptsRef.current) return;
+    if (isAtTranscriptBottom(scrollBox)) {
+      setPromptReviewing(false);
+    }
+  }, [isAtTranscriptBottom, setPromptReviewing]);
+
+  const schedulePromptReviewSync = useCallback(() => {
+    if (!isReviewingPromptsRef.current) return;
+    setTimeout(syncPromptReview, 0);
+  }, [syncPromptReview]);
+
   const scrollToBottom = useCallback(() => {
     try {
-      scrollRef.current?.scrollTo(scrollRef.current?.scrollHeight ?? 99999);
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+      if (isReviewingPromptsRef.current) {
+        if (!isAtTranscriptBottom(scrollBox)) return;
+        setPromptReviewing(false);
+      }
+      scrollBox.scrollTo(scrollBox.scrollHeight ?? 99999);
     } catch {
       /* */
     }
+  }, [isAtTranscriptBottom, setPromptReviewing]);
+
+  const flashPrompt = useCallback((messageIndex: number) => {
+    if (promptFlashTimeoutRef.current) {
+      clearTimeout(promptFlashTimeoutRef.current);
+    }
+
+    setPromptFlashMessageIndex(messageIndex);
+    promptFlashTimeoutRef.current = setTimeout(() => {
+      setPromptFlashMessageIndex(null);
+      promptFlashTimeoutRef.current = null;
+    }, 600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (promptFlashTimeoutRef.current) {
+        clearTimeout(promptFlashTimeoutRef.current);
+      }
+    };
   }, []);
 
   const clearLiveTurnUi = useCallback(() => {
@@ -1464,7 +1526,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const applyTelegramAssistantPreview = useCallback(
     (fullContent: string) => {
       const activeTurn = activeTurnRef.current;
-      if (!activeTurn || activeTurn.kind !== "telegram") return;
+      if (activeTurn?.kind !== "telegram") return;
 
       activeTurn.latestAssistantText = fullContent;
       contentAccRef.current = getUnflushedTelegramAssistantContent(fullContent, activeTurn.flushedAssistantChars);
@@ -2028,6 +2090,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   }, [interruptActiveRun, renderer]);
 
   const resetToNewSession = useCallback(() => {
+    setPromptReviewing(false);
     const snapshot = agent.startNewSession();
     setMessages(snapshot?.entries ?? []);
     setExpandedMessages(new Set());
@@ -2041,11 +2104,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     replacePasteBlocks([]);
     queuedMessagesRef.current = [];
     setQueuedMessages([]);
-  }, [agent, clearLiveTurnUi, replacePasteBlocks]);
+  }, [agent, clearLiveTurnUi, replacePasteBlocks, setPromptReviewing]);
 
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
       if (!text.trim() || isProcessingRef.current) return;
+      setPromptReviewing(false);
       const runId = ++activeRunIdRef.current;
       const isStale = () => activeRunIdRef.current !== runId;
       isProcessingRef.current = true;
@@ -2156,6 +2220,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       finalizeActiveTurn,
       scrollToBottom,
       sessionTitle,
+      setPromptReviewing,
       showLiveToolCalls,
     ],
   );
@@ -2521,8 +2586,58 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setBtwState(null);
   }, []);
 
+  const navigateToPrompt = useCallback(
+    (direction: PromptNavigationDirection) => {
+      const scrollBox = scrollRef.current;
+      if (!scrollBox) return;
+
+      const currentScrollTop = scrollBox.scrollTop;
+      const children = scrollBox.getChildren();
+      const anchors = userPromptIndex.flatMap<PromptAnchor>((messageIndex) => {
+        const child = children[messageIndex];
+        if (!child) return [];
+
+        return [
+          {
+            messageIndex,
+            offset: currentScrollTop + child.y - scrollBox.viewport.y,
+          },
+        ];
+      });
+      const target = findNearestPrompt(anchors, currentScrollTop, direction);
+      if (!target) return;
+
+      setPromptReviewing(true);
+      scrollBox.scrollTo(target.offset);
+      flashPrompt(target.messageIndex);
+    },
+    [flashPrompt, setPromptReviewing, userPromptIndex],
+  );
+
+  // Intercept the raw control bytes before OpenTUI routes them to the focused
+  // textarea or scrollbox. This keeps prompt navigation separate from
+  // composer history and ordinary arrow movement.
+  useEffect(() => {
+    const onRawPromptNavigation = (sequence: string) => {
+      const parsed = parseKeypress(sequence, { useKittyKeyboard: renderer.useKittyKeyboard });
+      const direction = parsed ? getPromptNavigationDirection(parsed) : null;
+      if (!direction) return false;
+
+      navigateToPrompt(direction);
+      return true;
+    };
+
+    renderer.prependInputHandler(onRawPromptNavigation);
+    return () => {
+      renderer.removeInputHandler(onRawPromptNavigation);
+    };
+  }, [navigateToPrompt, renderer]);
+
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (isReviewingPromptsRef.current) {
+        schedulePromptReviewSync();
+      }
       if (btwState) {
         if (isEscapeKey(key) || key.name === "return") {
           dismissBtw();
@@ -3284,6 +3399,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       handlePlanSelect,
       handleSlashMenuSelect,
       interruptActiveRun,
+      schedulePromptReviewSync,
       isPlanConfirmTab,
       isProcessing,
       isSinglePlan,
@@ -3397,6 +3513,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       message = message.replace(getFileMentionToken(block), `@${block.path}`);
     }
     if (!message.trim()) return;
+    setPromptReviewing(false);
     if (!hasApiKeyRef.current) {
       openApiKeyModal();
       return;
@@ -3410,7 +3527,16 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     processMessage(enhancedMessage, displayText);
-  }, [agent, clearLiveTurnUi, handleCommand, openApiKeyModal, processMessage, replacePasteBlocks, scrollToBottom]);
+  }, [
+    agent,
+    clearLiveTurnUi,
+    handleCommand,
+    openApiKeyModal,
+    processMessage,
+    replacePasteBlocks,
+    scrollToBottom,
+    setPromptReviewing,
+  ]);
 
   const hasMessages = messages.length > 0 || streamContent || isProcessing;
 
@@ -3429,8 +3555,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           <SessionHeader t={t} modeInfo={modeInfo} sessionTitle={sessionTitle} sessionId={sessionId} />
           <box flexGrow={1} paddingBottom={1} paddingTop={1} paddingLeft={2} paddingRight={2} gap={1}>
             {/* Scrollable messages */}
-            {/* biome-ignore lint/suspicious/noExplicitAny: OpenTUI type mismatch for stickyStart */}
-            <scrollbox ref={scrollRef} flexGrow={1} stickyScroll={true} stickyStart={"bottom" as any}>
+            <scrollbox
+              ref={scrollRef}
+              flexGrow={1}
+              stickyScroll={true}
+              stickyStart="bottom"
+              onMouseScroll={schedulePromptReviewSync}
+            >
               {messages.map((msg, i) => (
                 <MessageView
                   key={`${msg.timestamp.getTime()}-${msg.type}-${msg.remoteKey ?? ""}-${msg.content.slice(0, 24)}`}
@@ -3439,6 +3570,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                   t={t}
                   modeColor={modeInfo.color}
                   expandedMessages={expandedMessages}
+                  highlightedPrompt={promptFlashMessageIndex === i}
                 />
               ))}
               {liveTurnSourceLabel && (activeToolCalls.length > 0 || streamContent || isProcessing) && (
@@ -4235,12 +4367,14 @@ function MessageView({
   t,
   modeColor,
   expandedMessages,
+  highlightedPrompt,
 }: {
   entry: ChatEntry;
   index: number;
   t: Theme;
   modeColor: string;
   expandedMessages?: Set<number>;
+  highlightedPrompt?: boolean;
 }) {
   switch (entry.type) {
     case "user":
@@ -4248,7 +4382,7 @@ function MessageView({
         <box
           border={["left"]}
           customBorderChars={SPLIT}
-          borderColor={entry.modeColor || modeColor}
+          borderColor={highlightedPrompt ? t.accent : entry.modeColor || modeColor}
           marginTop={index === 0 ? 0 : 1}
           marginBottom={1}
         >
@@ -4256,7 +4390,7 @@ function MessageView({
             paddingTop={1}
             paddingBottom={1}
             paddingLeft={2}
-            backgroundColor={t.backgroundPanel}
+            backgroundColor={highlightedPrompt ? t.selectedBg : t.backgroundPanel}
             flexShrink={0}
             flexDirection="column"
           >
