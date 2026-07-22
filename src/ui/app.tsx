@@ -669,7 +669,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   /** Incremented on each successful TUI copy; drives a brief "Copied" banner. */
   const [copyFlashId, setCopyFlashId] = useState(0);
   const [promptFlashMessageIndex, setPromptFlashMessageIndex] = useState<number | null>(null);
-  const [isReviewingPrompts, setIsReviewingPrompts] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState<Set<number>>(() => new Set());
   const [activeSubagent, setActiveSubagent] = useState<SubagentStatus | null>(null);
   const [pqs, setPqs] = useState<PlanQuestionsState>(initialPlanQuestionsState());
@@ -1105,7 +1104,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         .getScheduleDaemonStatus()
         .then((status) => {
           isReviewingPromptsRef.current = false;
-          setIsReviewingPrompts(false);
           setMessages((prev) => [...prev, buildAssistantEntry(formatScheduleDetails(schedule, status))]);
           setShowScheduleModal(false);
           setScheduleSearchQuery("");
@@ -1133,7 +1131,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           const latest = await agent.listSchedules();
           setSchedules(latest);
           isReviewingPromptsRef.current = false;
-          setIsReviewingPrompts(false);
           setScheduleModalIndex((index) => Math.max(0, Math.min(index, Math.max(0, latest.length - 1))));
           setMessages((prev) => [...prev, buildAssistantEntry(message)]);
           setTimeout(() => {
@@ -1394,7 +1391,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const setPromptReviewing = useCallback((reviewing: boolean) => {
     isReviewingPromptsRef.current = reviewing;
-    setIsReviewingPrompts(reviewing);
   }, []);
 
   const isAtTranscriptBottom = useCallback((scrollBox: ScrollBoxRenderable) => {
@@ -1404,11 +1400,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const syncPromptReview = useCallback(() => {
     const scrollBox = scrollRef.current;
-    if (!scrollBox || (!isReviewingPromptsRef.current && !isReviewingPrompts)) return;
+    if (!scrollBox || !isReviewingPromptsRef.current) return;
     if (isAtTranscriptBottom(scrollBox)) {
       setPromptReviewing(false);
     }
-  }, [isAtTranscriptBottom, isReviewingPrompts, setPromptReviewing]);
+  }, [isAtTranscriptBottom, setPromptReviewing]);
 
   const schedulePromptReviewSync = useCallback(() => {
     if (!isReviewingPromptsRef.current) return;
@@ -1419,7 +1415,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     try {
       const scrollBox = scrollRef.current;
       if (!scrollBox) return;
-      if (isReviewingPromptsRef.current || isReviewingPrompts) {
+      if (isReviewingPromptsRef.current) {
         if (!isAtTranscriptBottom(scrollBox)) return;
         setPromptReviewing(false);
       }
@@ -1427,7 +1423,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     } catch {
       /* */
     }
-  }, [isAtTranscriptBottom, isReviewingPrompts, setPromptReviewing]);
+  }, [isAtTranscriptBottom, setPromptReviewing]);
 
   const flashPrompt = useCallback((messageIndex: number) => {
     if (promptFlashTimeoutRef.current) {
