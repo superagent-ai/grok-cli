@@ -5,7 +5,6 @@ import os from "os";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
 import {
-  DEFAULT_MODEL,
   getEffectiveReasoningEffort,
   getModelIds,
   getModelInfo,
@@ -27,6 +26,7 @@ import type {
   ModelInfo,
   Plan,
   PlanQuestion,
+  ProviderKind,
   ReasoningEffort,
   SubagentStatus,
   ToolCall,
@@ -570,6 +570,7 @@ export interface AppStartupConfig {
   apiKey: string | undefined;
   baseURL: string;
   model: string;
+  provider: ProviderKind;
   sandboxMode: SandboxMode;
   sandboxSettings: SandboxSettings;
   maxToolRounds: number;
@@ -596,6 +597,11 @@ interface ActiveTurnState {
 
 export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) {
   const t = dark;
+  const providerLabel = startupConfig.provider === "minimax" ? "MiniMax" : "xAI";
+  const providerModels = useMemo(
+    () => MODELS.filter((candidate) => (candidate.provider ?? "xai") === startupConfig.provider),
+    [startupConfig.provider],
+  );
   const renderer = useRenderer();
   const initialHasApiKey = agent.hasApiKey();
   const [hasApiKey, setHasApiKey] = useState(initialHasApiKey);
@@ -720,7 +726,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const mcpEnvRef = useRef<TextareaRenderable>(null);
   const [showAgentsModal, setShowAgentsModal] = useState(false);
   const [showAgentsEditor, setShowAgentsEditor] = useState(false);
-  const [subAgents, setSubAgents] = useState<CustomSubagentConfig[]>(() => loadValidSubAgents());
+  const [subAgents, setSubAgents] = useState<CustomSubagentConfig[]>(() => loadValidSubAgents(startupConfig.provider));
   const [agentsSearchQuery, setAgentsSearchQuery] = useState("");
   const [agentsModalIndex, setAgentsModalIndex] = useState(0);
   const [editingSubagent, setEditingSubagent] = useState<CustomSubagentConfig | null>(null);
@@ -729,7 +735,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [agentsEditorModelIndex, setAgentsEditorModelIndex] = useState(() =>
     Math.max(
       0,
-      MODELS.findIndex((model) => model.id === DEFAULT_MODEL),
+      providerModels.findIndex((candidate) => candidate.id === agent.getModel()),
     ),
   );
   const [agentsEditorSyncKey, setAgentsEditorSyncKey] = useState(0);
@@ -807,14 +813,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   modeInfoRef.current = modeInfo;
   const modelInfo = getModelInfo(model);
   const contextStats = modelInfo ? agent.getContextStats(modelInfo.contextWindow, streamContent) : null;
-  const _flatModels = MODELS.map((m) => m.id);
+  const _flatModels = providerModels.map((m) => m.id);
   const filteredModels = modelSearchQuery
-    ? MODELS.filter(
+    ? providerModels.filter(
         (m) =>
           m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
           m.id.toLowerCase().includes(modelSearchQuery.toLowerCase()),
       )
-    : MODELS;
+    : providerModels;
   const filteredModelIds = filteredModels.map((m) => m.id);
   const filteredSlashItems = filterSlashMenuItems(SLASH_MENU_ITEMS, slashSearchQuery);
   const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
@@ -1064,14 +1070,14 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   );
 
   const openAgentsModal = useCallback(() => {
-    setSubAgents(loadValidSubAgents());
+    setSubAgents(loadValidSubAgents(startupConfig.provider));
     setAgentsSearchQuery("");
     setAgentsModalIndex(0);
     setEditingSubagent(null);
     setAgentsEditorError(null);
     setShowAgentsEditor(false);
     setShowAgentsModal(true);
-  }, []);
+  }, [startupConfig.provider]);
 
   const openScheduleModal = useCallback(() => {
     void agent
@@ -1137,36 +1143,39 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     [agent],
   );
 
-  const openSubagentEditor = useCallback((agent: CustomSubagentConfig | null) => {
-    setEditingSubagent(agent);
-    if (agent) {
-      setAgentsEditorDraft({ name: agent.name, instruction: agent.instruction });
-      setAgentsEditorModelIndex(
-        Math.max(
-          0,
-          MODELS.findIndex((model) => model.id === normalizeModelId(agent.model)),
-        ),
-      );
-    } else {
-      setAgentsEditorDraft({ name: "", instruction: "" });
-      setAgentsEditorModelIndex(
-        Math.max(
-          0,
-          MODELS.findIndex((model) => model.id === DEFAULT_MODEL),
-        ),
-      );
-    }
-    setAgentsEditorField("name");
-    setAgentsEditorError(null);
-    setAgentsEditorSyncKey((n) => n + 1);
-    setShowAgentsEditor(true);
-    setShowAgentsModal(true);
-  }, []);
+  const openSubagentEditor = useCallback(
+    (subagent: CustomSubagentConfig | null) => {
+      setEditingSubagent(subagent);
+      if (subagent) {
+        setAgentsEditorDraft({ name: subagent.name, instruction: subagent.instruction });
+        setAgentsEditorModelIndex(
+          Math.max(
+            0,
+            providerModels.findIndex((candidate) => candidate.id === normalizeModelId(subagent.model)),
+          ),
+        );
+      } else {
+        setAgentsEditorDraft({ name: "", instruction: "" });
+        setAgentsEditorModelIndex(
+          Math.max(
+            0,
+            providerModels.findIndex((candidate) => candidate.id === agent.getModel()),
+          ),
+        );
+      }
+      setAgentsEditorField("name");
+      setAgentsEditorError(null);
+      setAgentsEditorSyncKey((n) => n + 1);
+      setShowAgentsEditor(true);
+      setShowAgentsModal(true);
+    },
+    [agent, providerModels],
+  );
 
   const submitSubagentEditor = useCallback(() => {
     const name = (subagentNameRef.current?.plainText || "").trim();
     const instruction = subagentInstructionRef.current?.plainText || "";
-    const model = MODELS[agentsEditorModelIndex]?.id;
+    const model = providerModels[agentsEditorModelIndex]?.id;
 
     if (!name) {
       setAgentsEditorError("Name is required.");
@@ -1176,7 +1185,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setAgentsEditorError('Names "general" and "explore" are reserved.');
       return;
     }
-    if (!model || !getModelIds().includes(model)) {
+    if (!model || !getModelIds(startupConfig.provider).includes(model)) {
       setAgentsEditorError("Pick a valid model.");
       return;
     }
@@ -1194,23 +1203,23 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
     next.push({ name, model, instruction });
     saveUserSettings({ subAgents: next });
-    setSubAgents(loadValidSubAgents());
+    setSubAgents(loadValidSubAgents(startupConfig.provider));
     setShowAgentsEditor(false);
     setEditingSubagent(null);
     setAgentsEditorError(null);
-  }, [agentsEditorModelIndex, editingSubagent, subAgents]);
+  }, [agentsEditorModelIndex, editingSubagent, providerModels, startupConfig.provider, subAgents]);
 
   const removeEditingSubagent = useCallback(() => {
     if (!editingSubagent) return;
 
     const next = subAgents.filter((item) => item.name !== editingSubagent.name);
     saveUserSettings({ subAgents: next });
-    setSubAgents(loadValidSubAgents());
+    setSubAgents(loadValidSubAgents(startupConfig.provider));
     setShowAgentsEditor(false);
     setEditingSubagent(null);
     setAgentsEditorError(null);
     setAgentsModalIndex(0);
-  }, [editingSubagent, subAgents]);
+  }, [editingSubagent, startupConfig.provider, subAgents]);
 
   const submitMcpEditor = useCallback(() => {
     const draft: McpEditorDraft = {
@@ -1596,9 +1605,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         return existing;
       }
 
-      const apiKey = getApiKey();
+      const apiKey = getApiKey(startupConfig.provider);
       if (!apiKey) {
-        throw new Error("Grok API key required. Add it in the CLI or set GROK_API_KEY.");
+        throw new Error(`${providerLabel} API key required. Add it in the CLI or configure the provider key.`);
       }
 
       const u = loadUserSettings();
@@ -1607,6 +1616,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         session: sid,
         sandboxMode,
         sandboxSettings,
+        provider: startupConfig.provider,
       });
       if (!sid && a.getSessionId()) {
         saveUserSettings({
@@ -1623,7 +1633,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       map.set(userId, a);
       return a;
     },
-    [sandboxMode, sandboxSettings, startupConfig, wireTelegramAgentUi],
+    [providerLabel, sandboxMode, sandboxSettings, startupConfig, wireTelegramAgentUi],
   );
 
   const appendTelegramUserMessage = useCallback(
@@ -1705,11 +1715,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const startTelegramBridge = useCallback(() => {
     const token = getTelegramBotToken();
-    if (!token || !getApiKey()) return;
+    if (!token || !getApiKey(startupConfig.provider)) return;
     if (bridgeRef.current) return;
 
     const bridge = createTelegramBridge({
       token,
+      provider: startupConfig.provider,
       getApprovedUserIds: () => loadUserSettings().telegram?.approvedUserIds ?? [],
       coordinator: coordinatorRef.current,
       getTelegramAgent,
@@ -1728,6 +1739,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     appendTelegramUserMessage,
     getTelegramAgent,
     showTelegramToolCalls,
+    startupConfig.provider,
     upsertTelegramAssistantMessage,
   ]);
 
@@ -1789,12 +1801,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setApiKeyError("Enter an API key to continue.");
       return;
     }
-    if (!apiKey.startsWith("xai-")) {
+    if (startupConfig.provider === "xai" && !apiKey.startsWith("xai-")) {
       setApiKeyError("API keys should start with xai-.");
       return;
     }
 
-    saveUserSettings({ apiKey });
+    saveUserSettings({ apiKey, provider: startupConfig.provider });
     agent.setApiKey(apiKey);
     hasApiKeyRef.current = true;
     showApiKeyModalRef.current = false;
@@ -1805,7 +1817,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     if (getTelegramBotToken()) {
       startTelegramBridge();
     }
-  }, [agent, startTelegramBridge]);
+  }, [agent, startTelegramBridge, startupConfig.provider]);
 
   useEffect(() => {
     hasApiKeyRef.current = hasApiKey;
@@ -1868,8 +1880,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setTelegramTokenError("Paste your bot token from @BotFather.");
       return;
     }
-    if (!getApiKey()) {
-      setTelegramTokenError("Add a Grok API key first.");
+    if (!getApiKey(startupConfig.provider)) {
+      setTelegramTokenError("Add a provider API key first.");
       return;
     }
     const u = loadUserSettings();
@@ -1889,7 +1901,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         timestamp: new Date(),
       },
     ]);
-  }, [startTelegramBridge]);
+  }, [startTelegramBridge, startupConfig.provider]);
 
   const submitTelegramPair = useCallback(async () => {
     const code = (telegramPairInputRef.current?.plainText || "").trim();
@@ -1923,8 +1935,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const beginTelegramFromConnect = useCallback(() => {
     setShowConnectModal(false);
-    if (!getApiKey()) {
-      setMessages((p) => [...p, { type: "assistant", content: "Add a Grok API key first.", timestamp: new Date() }]);
+    if (!getApiKey(startupConfig.provider)) {
+      setMessages((p) => [
+        ...p,
+        { type: "assistant", content: "Add a provider API key first.", timestamp: new Date() },
+      ]);
       openApiKeyModal();
       return;
     }
@@ -1957,7 +1972,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         },
       ]);
     }
-  }, [openApiKeyModal, startTelegramBridge]);
+  }, [openApiKeyModal, startTelegramBridge, startupConfig.provider]);
 
   const interruptActiveRun = useCallback(
     (key?: KeyEvent) => {
@@ -2720,7 +2735,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         ) {
           const decrement = key.name === "up" || key.name === "left" || key.name === "k";
           setAgentsEditorModelIndex((index) =>
-            decrement ? Math.max(0, index - 1) : Math.min(MODELS.length - 1, index + 1),
+            decrement ? Math.max(0, index - 1) : Math.min(providerModels.length - 1, index + 1),
           );
           return;
         }
@@ -3324,6 +3339,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
+      providerModels.length,
       showWalletPicker,
       walletSettings,
       walletFocusIndex,
@@ -3593,6 +3609,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           height={height}
           inputRef={apiKeyInputRef}
           error={apiKeyError}
+          provider={startupConfig.provider}
           onSubmit={submitApiKey}
         />
       )}
@@ -3674,6 +3691,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           draft={agentsEditorDraft}
           focusedField={agentsEditorField}
           modelIndex={agentsEditorModelIndex}
+          models={providerModels}
           error={agentsEditorError}
           title={editingSubagent ? `Edit sub-agent: ${formatSubagentName(editingSubagent.name)}` : "Add sub-agent"}
           nameRef={subagentNameRef}
@@ -4111,6 +4129,7 @@ function ApiKeyModal({
   height,
   inputRef,
   error,
+  provider,
   onSubmit,
 }: {
   t: Theme;
@@ -4118,12 +4137,14 @@ function ApiKeyModal({
   height: number;
   inputRef: React.RefObject<TextareaRenderable | null>;
   error: string | null;
+  provider: ProviderKind;
   onSubmit: () => void;
 }) {
   const overlayBg = "#000000cc" as string;
   const panelWidth = Math.min(68, width - 6);
   const panelHeight = 13;
   const top = bottomAlignedModalTop(height, panelHeight);
+  const providerLabel = provider === "minimax" ? "MiniMax" : "xAI";
 
   return (
     <box
@@ -4151,14 +4172,16 @@ function ApiKeyModal({
           <text fg={t.textMuted}>{"esc"}</text>
         </box>
         <box paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <text fg={t.text}>{"Paste your xAI API key to unlock chat. You can hide this prompt with esc."}</text>
+          <text
+            fg={t.text}
+          >{`Paste your ${providerLabel} API key to unlock chat. You can hide this prompt with esc.`}</text>
         </box>
         <box paddingLeft={2} paddingRight={2} paddingTop={1}>
           <box backgroundColor={t.backgroundElement} paddingLeft={1} paddingRight={1} width="100%">
             <textarea
               ref={inputRef}
               focused={true}
-              placeholder="xai-..."
+              placeholder={provider === "xai" ? "xai-..." : "API key"}
               textColor={t.text}
               backgroundColor={t.backgroundElement}
               placeholderColor={t.textMuted}

@@ -62,14 +62,23 @@ export function createTools(
     abortSignal?: AbortSignal,
   ): Promise<{ success: boolean; output: string }> => {
     try {
+      const responsesModel = provider.responsesModel?.bind(provider);
+      const hostedTools = provider.hostedTools;
+      if (!provider.capabilities.hostedSearch || !responsesModel || !hostedTools) {
+        const label = toolName === "web_search" ? "Web search" : "X search";
+        return {
+          success: false,
+          output: `${label} is not supported by the ${provider.kind} provider.`,
+        };
+      }
       const { text } = await generateText({
-        model: provider.responses(RESPONSES_SEARCH_MODEL),
+        model: responsesModel(RESPONSES_SEARCH_MODEL),
         maxOutputTokens: 4096,
         prompt: query,
         abortSignal,
         tools: {
-          ...(toolName === "web_search" ? { web_search: provider.tools.webSearch() } : {}),
-          ...(toolName === "x_search" ? { x_search: provider.tools.xSearch() } : {}),
+          ...(toolName === "web_search" ? { web_search: hostedTools.webSearch() } : {}),
+          ...(toolName === "x_search" ? { x_search: hostedTools.xSearch() } : {}),
         },
       });
 

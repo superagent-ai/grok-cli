@@ -1,4 +1,10 @@
-import type { ModelInfo, ReasoningEffort } from "../types/index";
+import type { ModelInfo, ProviderKind, ReasoningEffort } from "../types/index";
+
+export const MINIMAX_BASE_URLS = {
+  global_en: "https://api.minimax.io/v1",
+  cn_zh: "https://api.minimaxi.com/v1",
+} as const;
+export type MiniMaxRegion = keyof typeof MINIMAX_BASE_URLS;
 
 export const MODELS: ModelInfo[] = [
   {
@@ -65,9 +71,37 @@ export const MODELS: ModelInfo[] = [
     aliases: ["grok-3-mini-fast"],
     supportsReasoningEffort: true,
   },
+  {
+    id: "MiniMax-M3",
+    name: "MiniMax M3",
+    provider: "minimax",
+    contextWindow: 1_000_000,
+    inputPrice: 0.6,
+    outputPrice: 2.4,
+    cacheReadPrice: 0.12,
+    cacheWritePrice: null,
+    inputModalities: ["text", "image", "video"],
+    thinking: ["adaptive", "disabled"],
+    reasoning: true,
+    description: "MiniMax multimodal flagship model",
+  },
+  {
+    id: "MiniMax-M2.7",
+    name: "MiniMax M2.7",
+    provider: "minimax",
+    contextWindow: 204_800,
+    inputPrice: 0.3,
+    outputPrice: 1.2,
+    cacheReadPrice: 0.06,
+    cacheWritePrice: 0.375,
+    inputModalities: ["text"],
+    thinking: ["always_on"],
+    reasoning: true,
+    description: "MiniMax text reasoning model",
+  },
 ];
 
-const PROVIDER_PREFIX_RE = /^(x-ai|xai)\//i;
+const PROVIDER_PREFIX_RE = /^(x-ai|xai|minimax)\//i;
 const aliasMap = new Map<string, string>();
 
 for (const model of MODELS) {
@@ -78,6 +112,10 @@ for (const model of MODELS) {
 }
 
 export const DEFAULT_MODEL = MODELS.find((model) => model.id === "grok-4.3")?.id ?? MODELS[0]?.id ?? "grok-4.3";
+export const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
+  xai: DEFAULT_MODEL,
+  minimax: "MiniMax-M3",
+};
 
 export function normalizeModelId(modelId: string): string {
   const trimmed = modelId.trim();
@@ -92,8 +130,17 @@ export function getModelInfo(modelId: string): ModelInfo | undefined {
   return MODELS.find((m) => m.id === normalized);
 }
 
-export function getModelIds(): string[] {
-  return MODELS.map((m) => m.id);
+export function getModelIds(provider?: ProviderKind): string[] {
+  return MODELS.filter((model) => !provider || (model.provider ?? "xai") === provider).map((model) => model.id);
+}
+
+export function getModelProvider(modelId: string): ProviderKind | undefined {
+  const modelInfo = getModelInfo(modelId);
+  return modelInfo ? (modelInfo.provider ?? "xai") : undefined;
+}
+
+export function getDefaultModel(provider: ProviderKind): string {
+  return DEFAULT_MODEL_BY_PROVIDER[provider];
 }
 
 export function isKnownModelId(modelId: string): boolean {

@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe("Agent batch mode", () => {
-  it("throws when a child batch response has no choices", async () => {
+  it("handles xAI batch responses and rejects unsupported providers", async () => {
     const { Agent, mocks } = await importAgentModuleWithBatchMocks();
     const agent = new Agent("test-key", "https://api.x.ai/v1", undefined, undefined, {
       persistSession: false,
@@ -126,5 +126,22 @@ describe("Agent batch mode", () => {
     expect(mocks.addBatchRequests).toHaveBeenCalled();
     expect(mocks.pollBatchRequestResult).toHaveBeenCalled();
     expect(mocks.getBatchChatCompletion).toHaveBeenCalled();
+
+    const createBatchCalls = mocks.createBatch.mock.calls.length;
+    const minimaxAgent = new Agent("test-key", "https://api.minimax.io/v1", "MiniMax-M3", undefined, {
+      persistSession: false,
+      provider: "minimax",
+    });
+    const getBatchClientOptions = (
+      minimaxAgent as unknown as { getBatchClientOptions: () => unknown }
+    ).getBatchClientOptions.bind(minimaxAgent);
+
+    expect(getBatchClientOptions).toThrow("Batch API is not supported by the minimax provider.");
+    expect(mocks.createBatch).toHaveBeenCalledTimes(createBatchCalls);
+    expect(() => minimaxAgent.setModel("grok-4.3")).toThrow(
+      "Model grok-4.3 is not available from the minimax provider.",
+    );
+    expect(minimaxAgent.getProviderKind()).toBe("minimax");
+    expect(minimaxAgent.getModel()).toBe("MiniMax-M3");
   });
 });

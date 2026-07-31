@@ -5,7 +5,7 @@ import readline from "readline";
 import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
 import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
-import { MODELS, normalizeModelId } from "./grok/models";
+import { getModelProvider, MODELS, normalizeModelId } from "./grok/models";
 import {
   createHeadlessJsonlEmitter,
   type HeadlessOutputFormat,
@@ -15,11 +15,14 @@ import {
 } from "./headless/output";
 import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
 import { startScheduleDaemon } from "./tools/schedule";
+import type { ProviderKind } from "./types/index";
 import { processAtMentions } from "./utils/at-mentions.js";
 import { runScriptManagedUninstall } from "./utils/install-manager";
 import {
+  getActiveProvider,
   getApiKey,
   getBaseURL,
+  getCurrentModel,
   getCurrentSandboxMode,
   getCurrentSandboxSettings,
   loadPaymentSettings,
@@ -59,7 +62,8 @@ process.on("unhandledRejection", (reason) => {
 async function startInteractive(
   apiKey: string | undefined,
   baseURL: string,
-  model: string | undefined,
+  model: string,
+  provider: ProviderKind,
   maxToolRounds: number,
   batchApi: boolean,
   sandboxMode: SandboxMode,
@@ -67,7 +71,13 @@ async function startInteractive(
   session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings, batchApi });
+  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
+    session,
+    sandboxMode,
+    sandboxSettings,
+    batchApi,
+    provider,
+  });
   const { createCliRenderer } = await import("@opentui/core");
   const { createRoot } = await import("@opentui/react");
   const { createElement } = await import("react");
@@ -96,6 +106,7 @@ async function startInteractive(
         apiKey,
         baseURL,
         model: agent.getModel(),
+        provider,
         maxToolRounds,
         sandboxMode,
         sandboxSettings,
@@ -111,7 +122,8 @@ async function runHeadless(
   prompt: string,
   apiKey: string,
   baseURL: string,
-  model: string | undefined,
+  model: string,
+  provider: ProviderKind,
   maxToolRounds: number,
   batchApi: boolean,
   sandboxMode: SandboxMode,
@@ -124,6 +136,7 @@ async function runHeadless(
     sandboxMode,
     sandboxSettings,
     batchApi,
+    provider,
   });
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
@@ -254,14 +267,15 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
 
   try {
     const delegation = await loadDelegation(jobPath);
-    const apiKey = stringOption(options.apiKey) || getApiKey();
+    const explicitModel = stringOption(options.model) || delegation.model;
+    const model = normalizeModelId(explicitModel);
+    const provider = providerOption(options.provider) ?? getActiveProvider(model);
+    const apiKey = stringOption(options.apiKey) || getApiKey(provider);
     if (!apiKey) {
-      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
+      throw new Error(`API key required for the ${provider} provider.`);
     }
 
-    const baseURL = stringOption(options.baseUrl) || getBaseURL();
-    const explicitModel = stringOption(options.model) || delegation.model;
-    const model = explicitModel ? normalizeModelId(explicitModel) : undefined;
+    const baseURL = stringOption(options.baseUrl) || getBaseURL(provider);
     const maxToolRounds =
       parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
     const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
@@ -271,6 +285,7 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
       sandboxMode,
       sandboxSettings,
       batchApi: Boolean(delegation.batchApi ?? options.batchApi === true),
+      provider,
     });
     const result = await agent.runTaskRequest({
       agent: delegation.agent,
@@ -300,10 +315,15 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
 }
 
 function resolveConfig(options: CliOptions) {
-  const apiKey = stringOption(options.apiKey) || getApiKey();
-  const baseURL = stringOption(options.baseUrl) || getBaseURL();
   const explicitModel = stringOption(options.model);
-  const model = explicitModel ? normalizeModelId(explicitModel) : undefined;
+  const provider = providerOption(options.provider) ?? getActiveProvider(explicitModel);
+  const model = explicitModel ? normalizeModelId(explicitModel) : getCurrentModel(undefined, provider);
+  const modelProvider = getModelProvider(model);
+  if (modelProvider && modelProvider !== provider) {
+    throw new InvalidArgumentError(`Model ${model} is not available from the ${provider} provider.`);
+  }
+  const apiKey = stringOption(options.apiKey) || getApiKey(provider);
+  const baseURL = stringOption(options.baseUrl) || getBaseURL(provider);
   const maxToolRounds = parseInt(stringOption(options.maxToolRounds) || "400", 10) || 400;
   const sandboxMode = resolveCliSandboxMode(options.sandbox) || getCurrentSandboxMode();
 
@@ -320,21 +340,29 @@ function resolveConfig(options: CliOptions) {
   }
   const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), cliOverrides);
 
-  if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey });
+  if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey, provider });
+  else if (typeof options.provider === "string" || (typeof options.model === "string" && modelProvider)) {
+    saveUserSettings({ provider });
+  }
   if (typeof options.model === "string") saveUserSettings({ defaultModel: normalizeModelId(options.model) });
 
-  return { apiKey, baseURL, model, maxToolRounds, sandboxMode, sandboxSettings };
+  return { apiKey, baseURL, model, provider, maxToolRounds, sandboxMode, sandboxSettings };
 }
 
-function requireApiKey(apiKey: string | undefined): string {
+function requireApiKey(apiKey: string | undefined, provider: ProviderKind): string {
   if (!apiKey) {
-    console.error(
-      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
-    );
+    const environmentVariable = provider === "minimax" ? "MINIMAX_API_KEY" : "GROK_API_KEY";
+    console.error(`Error: API key required. Set ${environmentVariable}, use --api-key, or save it in user settings.`);
     process.exit(1);
   }
 
   return apiKey;
+}
+
+function providerOption(value: string | boolean | undefined): ProviderKind | undefined {
+  if (value === undefined) return undefined;
+  if (value === "xai" || value === "minimax") return value;
+  throw new InvalidArgumentError(`Invalid provider "${String(value)}". Expected "xai" or "minimax".`);
 }
 
 function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
@@ -350,9 +378,10 @@ program
   .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
   .version(packageJson.version)
   .argument("[message...]", "Initial message to send")
-  .option("-k, --api-key <key>", "Grok API key")
+  .option("-k, --api-key <key>", "Provider API key")
   .option("-u, --base-url <url>", "API base URL")
   .option("-m, --model <model>", "Model to use")
+  .option("--provider <provider>", "Provider to use: xai or minimax")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
   .option("--verify", "Run the built-in verify flow headlessly")
@@ -393,9 +422,10 @@ program
 
       await runHeadless(
         buildVerifyPrompt(process.cwd()),
-        requireApiKey(config.apiKey),
+        requireApiKey(config.apiKey, config.provider),
         config.baseURL,
         config.model,
+        config.provider,
         config.maxToolRounds,
         options.batchApi === true,
         config.sandboxMode,
@@ -409,9 +439,10 @@ program
     if (options.prompt) {
       await runHeadless(
         options.prompt,
-        requireApiKey(config.apiKey),
+        requireApiKey(config.apiKey, config.provider),
         config.baseURL,
         config.model,
+        config.provider,
         config.maxToolRounds,
         options.batchApi === true,
         config.sandboxMode,
@@ -428,6 +459,7 @@ program
       config.apiKey,
       config.baseURL,
       config.model,
+      config.provider,
       config.maxToolRounds,
       options.batchApi === true,
       config.sandboxMode,
@@ -440,9 +472,10 @@ program
 program
   .command("telegram-bridge")
   .description("Start the Telegram remote-control bridge without opening the TUI")
-  .option("-k, --api-key <key>", "Grok API key")
+  .option("-k, --api-key <key>", "Provider API key")
   .option("-u, --base-url <url>", "API base URL")
   .option("-m, --model <model>", "Model to use")
+  .option("--provider <provider>", "Provider to use: xai or minimax")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
   .option("--no-sandbox", "Run agent shell commands directly on the host")
@@ -456,9 +489,10 @@ program
     process.off("SIGTERM", exitCleanlyOnSigterm);
     try {
       await runTelegramHeadlessBridge({
-        apiKey: requireApiKey(config.apiKey),
+        apiKey: requireApiKey(config.apiKey, config.provider),
         baseURL: config.baseURL,
         model: config.model,
+        provider: config.provider,
         maxToolRounds: config.maxToolRounds,
         sandboxMode: config.sandboxMode,
         sandboxSettings: config.sandboxSettings,
@@ -472,11 +506,12 @@ program
 
 program
   .command("models")
-  .description("List available Grok models")
+  .description("List available models")
   .action(() => {
-    console.log("\nAvailable Grok Models:\n");
+    console.log("\nAvailable Models:\n");
     for (const m of MODELS) {
       const tags = [
+        m.provider ?? "xai",
         m.reasoning ? "reasoning" : "non-reasoning",
         m.multiAgent ? "multi-agent" : null,
         m.responsesOnly ? "responses-only" : null,
