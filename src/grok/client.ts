@@ -1,16 +1,6 @@
-import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
-import type { ModelInfo, ReasoningEffort } from "../types/index";
-import { getReasoningEffortForModel } from "../utils/settings";
-import { getEffectiveReasoningEffort, getModelInfo, normalizeModelId } from "./models";
-
-export type XaiProvider = ReturnType<typeof createXai>;
-export type XaiChatModel = ReturnType<XaiProvider>;
-export type XaiResponsesModel = ReturnType<XaiProvider["responses"]>;
-export type GrokRuntimeModel = XaiChatModel | XaiResponsesModel;
-
-const DEFAULT_TITLE_MODEL = "grok-4.20-non-reasoning";
-const DEFAULT_RECAP_MODEL = "grok-4.20-non-reasoning";
+import { createProvider as createProviderAdapter, type ProviderAdapter, type ResolvedModelRuntime } from "../providers";
+import type { ProviderKind } from "../types/index";
 
 interface GeneratedTextResult {
   modelId: string;
@@ -29,45 +19,19 @@ export interface GeneratedRecap extends GeneratedTextResult {
   recap: string;
 }
 
-export interface ResolvedModelRuntime {
-  model: GrokRuntimeModel;
-  modelId: string;
-  modelInfo?: ModelInfo;
-  providerOptions?: {
-    xai: {
-      reasoningEffort: ReasoningEffort;
-    };
-  };
+export type XaiProvider = ProviderAdapter;
+export type { ProviderAdapter, ResolvedModelRuntime } from "../providers";
+
+export function createProvider(apiKey: string, baseURL?: string, kind: ProviderKind = "xai"): ProviderAdapter {
+  return createProviderAdapter({ kind, apiKey, baseURL });
 }
 
-export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
-  return createXai({
-    apiKey,
-    baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-  });
+export function resolveModelRuntime(provider: ProviderAdapter, requestedModelId: string): ResolvedModelRuntime {
+  return provider.resolveRuntime(requestedModelId);
 }
 
-export function resolveModelRuntime(provider: XaiProvider, requestedModelId: string): ResolvedModelRuntime {
-  const modelId = normalizeModelId(requestedModelId);
-  const modelInfo = getModelInfo(modelId);
-  const reasoningEffort = getEffectiveReasoningEffort(modelId, getReasoningEffortForModel(modelId));
-
-  return {
-    model: modelInfo?.responsesOnly ? provider.responses(modelId) : provider(modelId),
-    modelId,
-    modelInfo,
-    providerOptions: reasoningEffort
-      ? {
-          xai: {
-            reasoningEffort,
-          },
-        }
-      : undefined,
-  };
-}
-
-export async function generateTitle(provider: XaiProvider, userMessage: string): Promise<GeneratedTitle> {
-  const runtime = resolveModelRuntime(provider, DEFAULT_TITLE_MODEL);
+export async function generateTitle(provider: ProviderAdapter, userMessage: string): Promise<GeneratedTitle> {
+  const runtime = resolveModelRuntime(provider, provider.defaultTitleModelId);
   try {
     const { text, usage } = await generateText({
       model: runtime.model,
@@ -98,11 +62,11 @@ export async function generateTitle(provider: XaiProvider, userMessage: string):
 }
 
 export async function generateRecap(
-  provider: XaiProvider,
+  provider: ProviderAdapter,
   transcript: string,
   signal?: AbortSignal,
 ): Promise<GeneratedRecap> {
-  const runtime = resolveModelRuntime(provider, DEFAULT_RECAP_MODEL);
+  const runtime = resolveModelRuntime(provider, provider.defaultRecapModelId);
   try {
     const { text, usage } = await generateText({
       model: runtime.model,

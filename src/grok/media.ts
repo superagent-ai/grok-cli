@@ -69,10 +69,16 @@ export async function generateImageTool(
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
+    if (!provider.capabilities.imageGeneration || !provider.imageModel) {
+      return failureResult(
+        "Image generation failed",
+        `Image generation is not supported by the ${provider.kind} provider.`,
+      );
+    }
     const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
     const prompt = source ? { text: input.prompt, images: [source.data] } : input.prompt;
     const response = await generateImage({
-      model: provider.image(IMAGE_MODEL_ID),
+      model: provider.imageModel(IMAGE_MODEL_ID),
       prompt,
       n: input.n,
       aspectRatio: toSdkAspectRatio(input.aspect_ratio),
@@ -127,10 +133,16 @@ export async function generateVideoTool(
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
+    if (!provider.capabilities.videoGeneration || !provider.videoModel) {
+      return failureResult(
+        "Video generation failed",
+        `Video generation is not supported by the ${provider.kind} provider.`,
+      );
+    }
     const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
     const prompt = source ? { text: input.prompt, image: source.dataUrl } : input.prompt;
     const response = await generateVideo({
-      model: provider.video(VIDEO_MODEL_ID),
+      model: provider.videoModel(VIDEO_MODEL_ID),
       prompt,
       duration: input.duration,
       aspectRatio: input.aspect_ratio,

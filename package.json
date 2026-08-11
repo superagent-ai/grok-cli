@@ -44,6 +44,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/mcp": "^1.0.25",
+    "@ai-sdk/openai-compatible": "2.0.35",
     "@ai-sdk/provider-utils": "^4.0.21",
     "@ai-sdk/xai": "^3.0.67",
     "@coinbase/agentkit": "^0.10.4",

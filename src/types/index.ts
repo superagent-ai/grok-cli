@@ -223,13 +223,21 @@ export interface StreamChunk {
 }
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ProviderKind = "xai" | "minimax";
+export type ModelInputModality = "text" | "image" | "video";
+export type ModelThinkingMode = "adaptive" | "disabled" | "always_on";
 
 export interface ModelInfo {
   id: string;
   name: string;
+  provider?: ProviderKind;
   contextWindow: number;
   inputPrice: number;
   outputPrice: number;
+  cacheReadPrice?: number;
+  cacheWritePrice?: number | null;
+  inputModalities?: ModelInputModality[];
+  thinking?: ModelThinkingMode[];
   reasoning: boolean;
   description: string;
   aliases?: string[];

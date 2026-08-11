@@ -1,7 +1,16 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { DEFAULT_MODEL, getEffectiveReasoningEffort, getModelIds, normalizeModelId } from "../grok/models";
+import {
+  DEFAULT_MODEL,
+  getDefaultModel,
+  getEffectiveReasoningEffort,
+  getModelIds,
+  getModelProvider,
+  MINIMAX_BASE_URLS,
+  type MiniMaxRegion,
+  normalizeModelId,
+} from "../grok/models";
 import type { HooksConfig } from "../hooks/types";
 import type {
   LspBuiltInServerId,
@@ -10,7 +19,7 @@ import type {
   LspSettings,
   NormalizedLspSettings,
 } from "../lsp/types";
-import type { AgentMode, ReasoningEffort } from "../types/index";
+import type { AgentMode, ProviderKind, ReasoningEffort } from "../types/index";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type SandboxMode = "off" | "shuru";
@@ -126,10 +135,10 @@ export function isReservedSubagentName(name: string): boolean {
   return RESERVED_SUBAGENT_NAMES.has(name.trim().toLowerCase());
 }
 
-export function parseSubAgentsRawList(raw: unknown): CustomSubagentConfig[] {
+export function parseSubAgentsRawList(raw: unknown, provider?: ProviderKind): CustomSubagentConfig[] {
   if (!Array.isArray(raw)) return [];
 
-  const validModels = new Set(getModelIds());
+  const validModels = new Set(getModelIds(provider));
   const seen = new Set<string>();
   const agents: CustomSubagentConfig[] = [];
 
@@ -155,12 +164,13 @@ export function parseSubAgentsRawList(raw: unknown): CustomSubagentConfig[] {
   return agents;
 }
 
-export function loadValidSubAgents(): CustomSubagentConfig[] {
-  return parseSubAgentsRawList(loadUserSettings().subAgents);
+export function loadValidSubAgents(provider?: ProviderKind): CustomSubagentConfig[] {
+  return parseSubAgentsRawList(loadUserSettings().subAgents, provider);
 }
 
 export interface UserSettings {
   apiKey?: string;
+  provider?: ProviderKind;
   defaultModel?: string;
   recapsEnabled?: boolean;
   sandboxMode?: SandboxMode;
@@ -215,6 +225,7 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
     ...current,
     ...partial,
     ...(partial.apiKey !== undefined ? { apiKey: partial.apiKey } : {}),
+    ...(partial.provider !== undefined ? { provider: normalizeProvider(partial.provider) } : {}),
     ...(partial.defaultModel !== undefined ? { defaultModel: normalizeModelId(partial.defaultModel) } : {}),
     ...(partial.sandboxMode !== undefined ? { sandboxMode: normalizeSandboxMode(partial.sandboxMode) } : {}),
     ...(partial.reasoningEffortByModel !== undefined
@@ -309,30 +320,74 @@ export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
   });
 }
 
-export function getApiKey(): string | undefined {
-  return process.env.GROK_API_KEY || loadUserSettings().apiKey;
+export function getActiveProvider(modelId?: string): ProviderKind {
+  const envProvider = normalizeProvider(process.env.GROK_PROVIDER);
+  if (process.env.GROK_PROVIDER === "minimax" || process.env.GROK_PROVIDER === "xai") return envProvider;
+
+  const inferred = getModelProvider(modelId || process.env.GROK_MODEL || "");
+  if (inferred) return inferred;
+
+  const settings = loadUserSettings();
+  return normalizeProvider(settings.provider);
 }
 
-export function getBaseURL(): string {
+export function getApiKey(provider: ProviderKind = getActiveProvider()): string | undefined {
+  const environmentKey = provider === "minimax" ? process.env.MINIMAX_API_KEY : process.env.GROK_API_KEY;
+  if (environmentKey) return environmentKey;
+
+  const settings = loadUserSettings();
+  if (settings.provider === "minimax" || settings.provider === "xai") {
+    return settings.provider === provider ? settings.apiKey : undefined;
+  }
+
+  return provider === "xai" ? settings.apiKey : undefined;
+}
+
+export function getBaseURL(provider: ProviderKind = getActiveProvider()): string {
+  if (provider === "minimax") {
+    const custom = process.env.MINIMAX_BASE_URL?.trim();
+    if (custom) return custom.replace(/\/+$/, "");
+    return MINIMAX_BASE_URLS[resolveMiniMaxRegion()];
+  }
   return process.env.GROK_BASE_URL || "https://api.x.ai/v1";
 }
 
-export function getCurrentModel(mode?: AgentMode): string {
-  if (process.env.GROK_MODEL) return normalizeModelId(process.env.GROK_MODEL);
+export function getCurrentModel(mode?: AgentMode, provider?: ProviderKind): string {
+  const resolveForProvider = (value: string): string => {
+    const normalized = normalizeModelId(value);
+    const modelProvider = getModelProvider(normalized);
+    return provider && modelProvider && modelProvider !== provider ? getDefaultModel(provider) : normalized;
+  };
+
+  if (process.env.GROK_MODEL) return resolveForProvider(process.env.GROK_MODEL);
 
   const project = loadProjectSettings();
-  if (project.model) return normalizeModelId(project.model);
+  if (project.model) return resolveForProvider(project.model);
 
   if (mode) {
     const user = loadUserSettings();
     const modeModel = user.modeModels?.[mode];
     if (modeModel) {
-      return normalizeModelId(modeModel);
+      return resolveForProvider(modeModel);
     }
   }
 
   const user = loadUserSettings();
-  return user.defaultModel ? normalizeModelId(user.defaultModel) : DEFAULT_MODEL;
+  return user.defaultModel
+    ? resolveForProvider(user.defaultModel)
+    : provider
+      ? getDefaultModel(provider)
+      : DEFAULT_MODEL;
+}
+
+function normalizeProvider(value: unknown): ProviderKind {
+  return value === "minimax" ? "minimax" : "xai";
+}
+
+function resolveMiniMaxRegion(value = process.env.MINIMAX_REGION): MiniMaxRegion {
+  if (!value) return "global_en";
+  if (value === "global_en" || value === "cn_zh") return value;
+  throw new Error('MINIMAX_REGION must be either "global_en" or "cn_zh".');
 }
 
 /**
@@ -340,12 +395,16 @@ export function getCurrentModel(mode?: AgentMode): string {
  * Only GROK_MODEL env var suppresses this (absolute override). Project-level model
  * does NOT suppress — modeModels is an explicit per-mode config that applies on mode switch.
  */
-export function getModeSpecificModel(mode: AgentMode): string | undefined {
+export function getModeSpecificModel(mode: AgentMode, provider?: ProviderKind): string | undefined {
   if (process.env.GROK_MODEL) return undefined;
 
   const user = loadUserSettings();
   const modeModel = user.modeModels?.[mode];
-  return modeModel ? normalizeModelId(modeModel) : undefined;
+  if (!modeModel) return undefined;
+
+  const normalized = normalizeModelId(modeModel);
+  const modelProvider = getModelProvider(normalized);
+  return provider && modelProvider && modelProvider !== provider ? undefined : normalized;
 }
 
 export function normalizeSandboxMode(value: unknown): SandboxMode {

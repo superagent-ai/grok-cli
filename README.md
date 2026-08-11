@@ -239,6 +239,26 @@ Names cannot be `general`, `explore`, `vision`, `verify`, or `computer` because 
 
 Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`, `**GROK_MAX_TOKENS**`.
 
+### MiniMax provider
+
+Select the MiniMax OpenAI-compatible provider with `--provider minimax` or `GROK_PROVIDER=minimax`.
+
+```bash
+MINIMAX_API_KEY=your-key grok --provider minimax --model MiniMax-M3
+```
+
+Supported text models:
+
+- `MiniMax-M3` with a 1,000,000-token context window and text, image, and video input metadata.
+- `MiniMax-M2.7` with a 204,800-token context window and text input.
+
+`MINIMAX_REGION` selects the official endpoint:
+
+- `global_en` (default): `https://api.minimax.io/v1`
+- `cn_zh`: `https://api.minimaxi.com/v1`
+
+Use `MINIMAX_BASE_URL` only when an explicit OpenAI-compatible proxy or endpoint override is required. MiniMax sessions support chat completions and local CLI tools. Provider-hosted search, media generation, batch requests, and Telegram audio transcription are disabled when the provider does not expose those capabilities.
+
 ---
 
 ## Telegram (remote control) — short version

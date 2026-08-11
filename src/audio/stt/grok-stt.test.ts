@@ -2,7 +2,16 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTelegramAudioInputEngine } from "./engine";
 import { GrokSttEngine, inferMimeTypeFromFileName } from "./grok-stt";
+
+describe("createTelegramAudioInputEngine", () => {
+  it("rejects providers without audio transcription support before reading credentials", () => {
+    expect(() => createTelegramAudioInputEngine(undefined, "minimax")).toThrow(
+      "Telegram audio transcription is not supported by the minimax provider.",
+    );
+  });
+});
 
 describe("GrokSttEngine", () => {
   let tempDir: string;

@@ -20,7 +20,7 @@ import {
   resolveModelRuntime,
   type XaiProvider,
 } from "../grok/client";
-import { DEFAULT_MODEL, getModelInfo, normalizeModelId } from "../grok/models";
+import { getModelInfo, getModelProvider, normalizeModelId } from "../grok/models";
 import { toolSetToBatchTools } from "../grok/tool-schemas";
 import { createTools } from "../grok/tools";
 import { executeEventHooks } from "../hooks/index";
@@ -58,6 +58,7 @@ import type {
   AgentMode,
   ChatEntry,
   Plan,
+  ProviderKind,
   SessionInfo,
   SessionSnapshot,
   StreamChunk,
@@ -100,15 +101,13 @@ import { containsEncryptedReasoning, sanitizeModelMessages } from "./reasoning";
 import { buildVisionUserMessages } from "./vision-input";
 
 const MAX_TOOL_ROUNDS = 400;
-const VISION_MODEL = "grok-4.3";
-const COMPUTER_MODEL = "grok-4.3";
-
 interface AgentOptions {
   persistSession?: boolean;
   session?: string;
   sandboxMode?: SandboxMode;
   sandboxSettings?: SandboxSettings;
   batchApi?: boolean;
+  provider?: ProviderKind;
 }
 
 type ProcessMessageFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
@@ -532,8 +531,16 @@ function applyModelConstraints(system: string, modelId: string): string {
   ].join("\n");
 }
 
+function hasImageInput(message: ModelMessage): boolean {
+  if (!Array.isArray(message.content)) return false;
+  return message.content.some(
+    (part) => part.type === "file" && typeof part.mediaType === "string" && part.mediaType.startsWith("image/"),
+  );
+}
+
 export class Agent {
   private provider: XaiProvider | null = null;
+  private providerKind: ProviderKind;
   private apiKey: string | null = null;
   private baseURL: string | null = null;
   private bash: BashTool;
@@ -564,6 +571,9 @@ export class Agent {
     options: AgentOptions = {},
   ) {
     this.baseURL = baseURL || null;
+    const initialMode: AgentMode = "agent";
+    this.modelId = normalizeModelId(model || getCurrentModel(initialMode, options.provider));
+    this.providerKind = options.provider ?? getModelProvider(this.modelId) ?? "xai";
     if (apiKey) {
       this.setApiKey(apiKey, baseURL);
     }
@@ -573,8 +583,6 @@ export class Agent {
     });
     this.delegations = new DelegationManager(() => this.bash.getCwd());
 
-    const initialMode: AgentMode = "agent";
-    this.modelId = normalizeModelId(model || getCurrentModel(initialMode));
     this.schedules = new ScheduleManager(
       () => this.bash.getCwd(),
       () => this.modelId,
@@ -601,8 +609,17 @@ export class Agent {
     return this.modelId;
   }
 
+  getProviderKind(): ProviderKind {
+    return this.providerKind;
+  }
+
   setModel(model: string): void {
-    this.modelId = normalizeModelId(model);
+    const modelId = normalizeModelId(model);
+    const modelProvider = getModelProvider(modelId);
+    if (modelProvider && modelProvider !== this.providerKind) {
+      throw new Error(`Model ${modelId} is not available from the ${this.providerKind} provider.`);
+    }
+    this.modelId = modelId;
     if (this.sessionStore && this.session) {
       this.sessionStore.setModel(this.session.id, this.modelId);
       this.session = this.sessionStore.getRequiredSession(this.session.id);
@@ -632,9 +649,9 @@ export class Agent {
   setMode(mode: AgentMode): void {
     if (mode !== this.mode) {
       this.mode = mode;
-      const modeModel = getModeSpecificModel(mode);
+      const modeModel = getModeSpecificModel(mode, this.providerKind);
       if (modeModel) {
-        this.modelId = normalizeModelId(modeModel);
+        this.setModel(modeModel);
       }
       if (this.sessionStore && this.session) {
         this.sessionStore.setMode(this.session.id, mode);
@@ -659,7 +676,7 @@ export class Agent {
   setApiKey(apiKey: string, baseURL = this.baseURL ?? undefined): void {
     this.apiKey = apiKey;
     this.baseURL = baseURL || null;
-    this.provider = createProvider(apiKey, baseURL);
+    this.provider = createProvider(apiKey, baseURL, this.providerKind);
   }
 
   getCwd(): string {
@@ -954,12 +971,13 @@ export class Agent {
   }
 
   private getBatchClientOptions(signal?: AbortSignal): BatchClientOptions {
-    if (!this.apiKey) {
-      throw new Error("API key required. Add an API key to continue.");
+    const provider = this.requireProvider();
+    if (!provider.capabilities.batchApi || !provider.getBatchClientApiKey) {
+      throw new Error(`Batch API is not supported by the ${provider.kind} provider.`);
     }
 
     return {
-      apiKey: this.apiKey,
+      apiKey: provider.getBatchClientApiKey(),
       baseURL: this.baseURL ?? undefined,
       signal,
     };
@@ -1078,7 +1096,7 @@ export class Agent {
                   childRuntime.modelInfo?.supportsMaxOutputTokens === false
                     ? undefined
                     : Math.min(this.maxTokens, 8_192),
-                reasoningEffort: childRuntime.providerOptions?.xai.reasoningEffort,
+                reasoningEffort: childRuntime.providerOptions?.xai?.reasoningEffort,
                 tools: batchTools,
               }),
             },
@@ -1181,7 +1199,7 @@ export class Agent {
     const isVerifyDetect = agentKey === "verify-detect";
     const isVerifyManifest = agentKey === "verify-manifest";
     const isComputer = agentKey === "computer";
-    const subagents = loadValidSubAgents();
+    const subagents = loadValidSubAgents(this.providerKind);
     const custom =
       !isExplore && !isGeneral && !isVision && !isVerify && !isVerifyDetect && !isVerifyManifest && !isComputer
         ? findCustomSubagent(agentKey, subagents)
@@ -1249,18 +1267,20 @@ export class Agent {
     let closeMcp: (() => Promise<void>) | undefined;
     const childModelId = normalizeModelId(
       isVision
-        ? VISION_MODEL
+        ? provider.defaultModelId
         : isComputer
-          ? COMPUTER_MODEL
+          ? provider.defaultModelId
           : isExplore
-            ? DEFAULT_MODEL
+            ? provider.defaultModelId
             : custom
               ? custom.model
               : this.modelId,
     );
-    const childRuntime = isVision
-      ? { ...resolveModelRuntime(provider, childModelId), model: provider.responses(childModelId) }
-      : resolveModelRuntime(provider, childModelId);
+    const resolvedChildRuntime = resolveModelRuntime(provider, childModelId);
+    const childRuntime =
+      isVision && provider.responsesModel
+        ? { ...resolvedChildRuntime, model: provider.responsesModel(childModelId) }
+        : resolvedChildRuntime;
     if (isComputer && childRuntime.modelInfo?.supportsClientTools === false) {
       return {
         success: false,
@@ -1657,7 +1677,7 @@ export class Agent {
                     messages: [...this.messages, ...turnMessages],
                     temperature: 0.7,
                     maxOutputTokens: runtime.modelInfo?.supportsMaxOutputTokens === false ? undefined : this.maxTokens,
-                    reasoningEffort: runtime.providerOptions?.xai.reasoningEffort,
+                    reasoningEffort: runtime.providerOptions?.xai?.reasoningEffort,
                     tools: batchTools,
                   }),
                 },
@@ -1856,7 +1876,7 @@ export class Agent {
     this.messageSeqs.push(null);
 
     const provider = this.requireProvider();
-    const subagents = loadValidSubAgents();
+    const subagents = loadValidSubAgents(this.providerKind);
     const system = applyModelConstraints(
       buildSystemPrompt(
         this.bash.getCwd(),
@@ -1872,6 +1892,18 @@ export class Agent {
     const modelInfo = runtime.modelInfo;
     this.planContext = null;
     let attemptedOverflowRecovery = false;
+
+    if (hasImageInput(userModelMessage) && modelInfo?.inputModalities && !modelInfo.inputModalities.includes("image")) {
+      yield {
+        type: "error",
+        content: `Model ${runtime.modelId} does not support image input. Select an image-capable model and retry.`,
+      };
+      yield { type: "done" };
+      if (this.abortController?.signal === signal) {
+        this.abortController = null;
+      }
+      return;
+    }
 
     if (this.batchApi) {
       try {
