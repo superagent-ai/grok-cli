@@ -1,10 +1,15 @@
 import type { FetchFunction } from "@ai-sdk/provider-utils";
 import { generateText } from "ai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModelInfo, normalizeModelId } from "../grok/models";
 import { createMiniMaxAdapter, MINIMAX_ENDPOINTS, resolveMiniMaxBaseURL, resolveMiniMaxRegion } from "./minimax";
 
 describe("MiniMax provider adapter", () => {
+  beforeEach(() => {
+    delete process.env.MINIMAX_REGION;
+    delete process.env.MINIMAX_BASE_URL;
+  });
+
   afterEach(() => {
     delete process.env.MINIMAX_REGION;
     delete process.env.MINIMAX_BASE_URL;
