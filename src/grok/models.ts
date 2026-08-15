@@ -2,6 +2,25 @@ import type { ModelInfo, ReasoningEffort } from "../types/index";
 
 export const MODELS: ModelInfo[] = [
   {
+    id: "grok-4.6",
+    name: "Grok 4.6",
+    contextWindow: 500_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Latest flagship reasoning model",
+  },
+  {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    contextWindow: 500_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Flagship reasoning model",
+    aliases: ["grok-4.5-latest", "grok-build-latest"],
+  },
+  {
     id: "grok-4.3",
     name: "Grok 4.3",
     contextWindow: 1_000_000,
