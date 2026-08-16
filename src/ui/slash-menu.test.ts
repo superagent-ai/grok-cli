@@ -21,4 +21,20 @@ describe("filterSlashMenuItems", () => {
   it("finds the recaps command from singular aliases", () => {
     expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "recap")[0]?.id).toBe("recaps");
   });
+
+  it("finds the install command", () => {
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "/install")[0]?.id).toBe("install");
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "plugin")[0]?.id).toBe("plugins");
+  });
+
+  it("finds the resume command from session aliases", () => {
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "/resume")[0]?.id).toBe("resume");
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "sessions")[0]?.id).toBe("resume");
+    expect(filterSlashMenuItems(SLASH_MENU_ITEMS, "session")[0]?.id).toBe("resume");
+  });
+
+  it("ranks resume ahead of new session for the session alias", () => {
+    const ids = filterSlashMenuItems(SLASH_MENU_ITEMS, "session").map((item) => item.id);
+    expect(ids.indexOf("resume")).toBeLessThan(ids.indexOf("new"));
+  });
 });

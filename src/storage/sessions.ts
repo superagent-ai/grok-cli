@@ -74,18 +74,27 @@ export class SessionStore {
     return this.getRequiredSession(id);
   }
 
-  getLatestSession(): SessionInfo | null {
-    const row = getDatabase()
-      .prepare(`
+  listSessions(options: { limit?: number } = {}): SessionInfo[] {
+    const limit =
+      Number.isFinite(options.limit) && (options.limit as number) > 0 ? Math.floor(options.limit as number) : null;
+    const sql = `
       SELECT id, workspace_id, title, recap_text, recap_model, recap_updated_at, model, mode, cwd_at_start, cwd_last, status, created_at, updated_at
       FROM sessions
       WHERE workspace_id = ?
       ORDER BY updated_at DESC
-      LIMIT 1
-    `)
-      .get(this.workspace.id) as SessionRow | undefined;
+      ${limit ? "LIMIT ?" : ""}
+    `;
+    const rows = (
+      limit
+        ? getDatabase().prepare(sql).all(this.workspace.id, limit)
+        : getDatabase().prepare(sql).all(this.workspace.id)
+    ) as SessionRow[];
 
-    return row ? toSessionInfo(row) : null;
+    return rows.map(toSessionInfo);
+  }
+
+  getLatestSession(): SessionInfo | null {
+    return this.listSessions({ limit: 1 })[0] ?? null;
   }
 
   getSessionById(id: string): SessionInfo | null {

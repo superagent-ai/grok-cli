@@ -2,13 +2,33 @@ import type { ModelInfo, ReasoningEffort } from "../types/index";
 
 export const MODELS: ModelInfo[] = [
   {
+    id: "grok-4.6",
+    name: "Grok 4.6",
+    contextWindow: 500_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Current flagship — long-horizon agents, self-verification, polished apps",
+    aliases: ["grok-4.6-latest", "grok-4-6"],
+  },
+  {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    contextWindow: 500_000,
+    inputPrice: 2.0,
+    outputPrice: 6.0,
+    reasoning: true,
+    description: "Strong coding/agentic model (Cursor-trained)",
+    aliases: ["grok-4.5-latest", "grok-4-5"],
+  },
+  {
     id: "grok-4.3",
     name: "Grok 4.3",
     contextWindow: 1_000_000,
     inputPrice: 1.25,
     outputPrice: 2.5,
     reasoning: true,
-    description: "Recommended flagship reasoning model",
+    description: "Legacy flagship reasoning model",
     aliases: [
       "grok-4-1-fast-reasoning",
       "grok-4-1-fast",
@@ -77,7 +97,7 @@ for (const model of MODELS) {
   }
 }
 
-export const DEFAULT_MODEL = MODELS.find((model) => model.id === "grok-4.3")?.id ?? MODELS[0]?.id ?? "grok-4.3";
+export const DEFAULT_MODEL = MODELS.find((model) => model.id === "grok-4.6")?.id ?? MODELS[0]?.id ?? "grok-4.6";
 
 export function normalizeModelId(modelId: string): string {
   const trimmed = modelId.trim();

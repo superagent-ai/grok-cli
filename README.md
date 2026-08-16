@@ -1,7 +1,8 @@
-# grok-cli: an open-source coding agent for the Grok API
+# grok-kev
 
-[![CI](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml/badge.svg)](https://github.com/superagent-ai/grok-cli/actions/workflows/typecheck.yml)
-[![npm](https://img.shields.io/npm/v/grok-dev.svg)](https://www.npmjs.com/package/grok-dev)
+Personal fork of [superagent-ai/grok-cli](https://github.com/superagent-ai/grok-cli).
+The local command is `grok-kev`. Stock `grok` / `grok-dev` stay untouched.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
@@ -44,7 +45,7 @@ grok uninstall --keep-config
 **Interactive (default)** — launches the OpenTUI coding agent:
 
 ```bash
-grok
+grok-kev
 ```
 
 ### Supported terminals
@@ -86,7 +87,9 @@ grok --session latest
 grok -s <session-id>
 ```
 
-Works in interactive mode too—same flag.
+Works in interactive mode too—same flag. Inside the TUI, `/resume` opens a
+searchable picker of this workspace's sessions. `/resume latest` and
+`/resume <session-id>` switch immediately.
 
 **Structured headless output:**
 
@@ -142,6 +145,44 @@ Use `/schedule` in the TUI to browse saved schedules. One-time schedules start
 immediately in the background; recurring schedules keep running as long as the
 daemon is active.
 
+**Next-prompt suggestions** — bundled plugin, off until you install it:
+
+```text
+/install suggester
+```
+
+After each interactive turn, the TUI may ghost a likely next user prompt
+into the empty editor. It also keeps a background project-intent seed and
+learns if you accept or rewrite suggestions. `Esc` clears an untouched fill.
+It never auto-sends. `/suggester reseed` refreshes the seed;
+`/suggester instruction set ...` adds a preference; `/suggester ghost` goes
+back to dim placeholder + `Space`. `/uninstall suggester` removes it.
+Headless `--prompt` mode is unchanged.
+
+The suggester is a complete Grok CLI port of
+[pi-prompt-suggester](https://github.com/guwidoe/pi-prompt-suggester)
+by **Guido Witt-Dörring** (MIT). See [`NOTICE.md`](./NOTICE.md).
+
+**GitHub plugins** — `/install owner/repo[@ref]` fetches `plugin.json` plus a
+relative `.js` entry from GitHub and loads it into the current TUI session.
+HTTPS GitHub only. The repo needs:
+
+```json
+{
+  "id": "weather",
+  "name": "Weather",
+  "description": "Look up the weather",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "commands": ["weather"]
+}
+```
+
+`index.js` must export `createPlugin()` and return a plugin object with `id`
+and optional `handleCommand`. Files land in `~/.grok/plugins/`.
+`/uninstall weather` removes them. This is an in-process JS loader, not a
+sandbox. Only install repos you trust.
+
 **List Grok models and pricing hints:**
 
 ```bash
@@ -181,6 +222,7 @@ You keep using a text model for the session, and Grok saves generated media unde
 | **Computer use**                  | Built-in `**computer`** sub-agent for host desktop automation via `**agent-desktop`**. It prefers semantic accessibility snapshots and stable refs, with screenshots saved under `**.grok/computer/**` when requested.     |
 | **Custom sub-agents**             | Define named agents with `**subAgents`** in `**~/.grok/user-settings.json`** and manage them from the TUI with `**/agents**`.                                                                                              |
 | **Remote control**                | Pair **Telegram** from the TUI (`/remote-control` → Telegram): DM your bot, `**/pair`**, approve the code in-terminal. Keep the CLI running while you ping it from your phone.                                             |
+| **Next-prompt suggestions**       | Bundled plugin. `/install suggester`, then the TUI ghosts a likely next prompt after each turn. `/suggester` for status/reseed/instruction. Never auto-sends.                                                               |
 | **No “mystery meat” UI**          | OpenTUI React terminal UI—fast, keyboard-driven, not whatever glitchy thing you’re thinking of.                                                                                                                            |
 | **Skills**                        | Agent Skills under `**.agents/skills/<name>/SKILL.md`** (project) or `**~/.agents/skills/`** (user). Use `**/skills**` in the TUI to list what’s installed.                                                                |
 | **MCPs**                          | Extend with Model Context Protocol servers—configure via `**/mcps`** in the TUI or `**.grok/settings.json`** (`mcpServers`).                                                                                               |
@@ -219,6 +261,19 @@ grok -k your_key_here
 
 ```json
 { "apiKey": "your_key_here" }
+```
+
+Optional `**suggester**` — next-prompt ghosts after `/install suggester`.
+`enabled` still defaults to `true` once the plugin is installed:
+
+```json
+{
+  "suggester": {
+    "enabled": true,
+    "model": "grok-3-mini",
+    "maxSuggestionChars": 200
+  }
+}
 ```
 
 Optional `**subAgents**` — custom foreground sub-agents. Each entry needs `**name**`, `**model**`, and `**instruction**`:
@@ -470,14 +525,16 @@ From a clone:
 
 ```bash
 bun install
-bun run build
 bun run start
-# or: node dist/index.js
+# or: grok-kev / grok after bun link
 ```
+
+`grok` and `grok-kev` rebuild `dist/` automatically when source files are newer. Skip that with `GROK_SKIP_REBUILD=1`.
 
 Other useful commands:
 
 ```bash
+bun run build
 bun run dev      # run from source (Bun)
 bun run typecheck
 bun run lint

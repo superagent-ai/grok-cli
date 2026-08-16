@@ -28,6 +28,8 @@ import type {
   Plan,
   PlanQuestion,
   ReasoningEffort,
+  SessionInfo,
+  SessionSnapshot,
   SubagentStatus,
   ToolCall,
   ToolResult,
@@ -70,7 +72,9 @@ import {
   SubagentsBrowserModal,
 } from "./agents-modal";
 import { BtwOverlay, type BtwState } from "./components/btw-overlay.js";
+import { GhostPromptHint } from "./components/GhostPromptHint.js";
 import { SuggestionOverlay } from "./components/SuggestionOverlay.js";
+import { pluginReservedCommands, usePluginHost } from "./hooks/usePluginHost.js";
 import { type TypeaheadState, useTypeahead } from "./hooks/useTypeahead.js";
 import { Markdown } from "./markdown";
 import { buildMcpBrowseRows, McpBrowserModal, McpEditorModal } from "./mcp-modal";
@@ -83,6 +87,7 @@ import {
   PlanView,
 } from "./plan";
 import { buildScheduleBrowseRows, ScheduleBrowserModal } from "./schedule-modal";
+import { buildSessionBrowseRows, SessionBrowserModal } from "./session-modal";
 import { filterSlashMenuItems, SLASH_MENU_ITEMS, type SlashMenuItem } from "./slash-menu";
 import {
   buildAssistantEntry,
@@ -95,6 +100,7 @@ import {
 } from "./telegram-turn-ui";
 import { getCompactTuiSelectionText } from "./terminal-selection-text";
 import { dark, type Theme } from "./theme";
+import { isCtrlU } from "./update-hotkey";
 
 const STAR_PALETTE = ["#777777", "#666666", "#4a4a4a", "#333333", "#222222"];
 const LOADING_SPINNER_FRAMES = ["⬒", "⬔", "⬓", "⬕"];
@@ -351,6 +357,10 @@ const BUILTIN_TYPED_SLASH_COMMANDS = new Set([
   "/commit-pr",
   "/wallet",
   "/btw",
+  "/resume",
+  "/sessions",
+  "/session",
+  "/update",
 ]);
 
 interface SandboxRow {
@@ -521,6 +531,7 @@ const WALLET_ROWS: WalletRow[] = [
 function parseCustomSubagentSlashCommand(
   cmd: string,
   subagents: CustomSubagentConfig[],
+  reservedCommands: Iterable<string> = [],
 ): { agentName: string; prompt: string } | null {
   const trimmed = cmd.trim();
   if (!trimmed.startsWith("/")) return null;
@@ -529,7 +540,8 @@ function parseCustomSubagentSlashCommand(
   if (!body) return null;
 
   const commandToken = body.split(/\s+/, 1)[0]?.toLowerCase();
-  if (commandToken && BUILTIN_TYPED_SLASH_COMMANDS.has(`/${commandToken}`)) {
+  const reserved = new Set([...BUILTIN_TYPED_SLASH_COMMANDS, ...reservedCommands]);
+  if (commandToken && reserved.has(`/${commandToken}`)) {
     return null;
   }
 
@@ -743,6 +755,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [scheduleSearchQuery, setScheduleSearchQuery] = useState("");
   const [scheduleModalIndex, setScheduleModalIndex] = useState(0);
   const showScheduleModalRef = useRef(false);
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sessionSearchQuery, setSessionSearchQuery] = useState("");
+  const [sessionModalIndex, setSessionModalIndex] = useState(0);
+  const showSessionModalRef = useRef(false);
 
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -777,6 +794,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const typeahead = useTypeahead(inputRef, fileIndexRef.current, handleFileAccept);
   const typeaheadRef = useRef(typeahead);
   typeaheadRef.current = typeahead;
+  const pluginHost = usePluginHost(inputRef, agent.getCwd(), sessionId, startupConfig.baseURL);
+  const pluginHostRef = useRef(pluginHost);
+  pluginHostRef.current = pluginHost;
 
   const setMode = useCallback(
     (m: AgentMode) => {
@@ -816,7 +836,21 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       )
     : MODELS;
   const filteredModelIds = filteredModels.map((m) => m.id);
-  const filteredSlashItems = filterSlashMenuItems(SLASH_MENU_ITEMS, slashSearchQuery);
+  const slashMenuItems = useMemo(
+    () => [
+      ...SLASH_MENU_ITEMS,
+      ...pluginHost.slashCommands
+        .filter((command) => !SLASH_MENU_ITEMS.some((item) => item.id === command.id))
+        .map((command) => ({
+          id: command.id,
+          label: command.id,
+          description: command.description,
+          aliases: command.aliases,
+        })),
+    ],
+    [pluginHost.slashCommands],
+  );
+  const filteredSlashItems = filterSlashMenuItems(slashMenuItems, slashSearchQuery);
   const mcpRows = buildMcpBrowseRows(mcpServers, POPULAR_MCP_CATALOG, mcpSearchQuery);
   const mcpEditorFields = mcpEditorDraft.transport === "stdio" ? MCP_STDIO_FIELDS : MCP_REMOTE_FIELDS;
   const agentRows = useMemo(
@@ -826,6 +860,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const scheduleRows = useMemo(
     () => buildScheduleBrowseRows(schedules, scheduleSearchQuery),
     [schedules, scheduleSearchQuery],
+  );
+  const sessionRows = useMemo(
+    () => buildSessionBrowseRows(sessions, sessionSearchQuery),
+    [sessions, sessionSearchQuery],
   );
 
   const syncStoredMcpServers = useCallback((servers: McpServerConfig[]) => {
@@ -1563,6 +1601,15 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         }
       }
 
+      if (activeTurn.kind === "local" && queuedMessagesRef.current.length === 0) {
+        const status = wasInterrupted ? "aborted" : hadError ? "error" : "success";
+        pluginHostRef.current.requestAfterTurn(
+          activeTurn.agent.getChatEntries(),
+          status,
+          wasInterrupted ? "User interrupted the previous turn." : undefined,
+        );
+      }
+
       activeTurnRef.current = null;
       clearLiveTurnUi();
       finishTurnProcessing();
@@ -1840,15 +1887,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showScheduleModalRef.current = showScheduleModal;
   }, [showScheduleModal]);
   useEffect(() => {
+    showSessionModalRef.current = showSessionModal;
+  }, [showSessionModal]);
+  useEffect(() => {
     showUpdateModalRef.current = showUpdateModal;
   }, [showUpdateModal]);
 
   useEffect(() => {
     let cancelled = false;
     checkForUpdate(startupConfig.version).then((result) => {
-      if (cancelled || !result?.hasUpdate) return;
+      if (cancelled || !result) return;
       setUpdateInfo(result);
-      setShowUpdateModal(true);
     });
     return () => {
       cancelled = true;
@@ -2027,21 +2076,103 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     };
   }, [interruptActiveRun, renderer]);
 
+  const applySessionSnapshot = useCallback(
+    (snapshot: SessionSnapshot | null) => {
+      setMessages(snapshot?.entries ?? []);
+      setExpandedMessages(new Set());
+      activeTurnRef.current = null;
+      clearLiveTurnUi();
+      setSessionTitle(snapshot?.session.title ?? null);
+      setSessionId(snapshot?.session.id ?? agent.getSessionId());
+      setSessionRecap(agent.getSessionRecap());
+      setModeState(agent.getMode());
+      setModel(agent.getModel());
+      setActivePlan(null);
+      setPqs(initialPlanQuestionsState());
+      replacePasteBlocks([]);
+      queuedMessagesRef.current = [];
+      setQueuedMessages([]);
+      pluginHostRef.current.cancel();
+      pluginHostRef.current.dismiss();
+      btwAbortRef.current?.abort();
+      btwAbortRef.current = null;
+      btwStateRef.current = null;
+      setBtwState(null);
+    },
+    [agent, clearLiveTurnUi, replacePasteBlocks],
+  );
+
   const resetToNewSession = useCallback(() => {
-    const snapshot = agent.startNewSession();
-    setMessages(snapshot?.entries ?? []);
-    setExpandedMessages(new Set());
-    activeTurnRef.current = null;
-    clearLiveTurnUi();
-    setSessionTitle(snapshot?.session.title ?? null);
-    setSessionId(snapshot?.session.id ?? agent.getSessionId());
-    setSessionRecap(agent.getSessionRecap());
-    setActivePlan(null);
-    setPqs(initialPlanQuestionsState());
-    replacePasteBlocks([]);
-    queuedMessagesRef.current = [];
-    setQueuedMessages([]);
-  }, [agent, clearLiveTurnUi, replacePasteBlocks]);
+    applySessionSnapshot(agent.startNewSession());
+  }, [agent, applySessionSnapshot]);
+
+  const beginUpdate = useCallback(() => {
+    if (isUpdating) return;
+    setShowUpdateModal(false);
+    setIsUpdating(true);
+    setUpdateOutput(null);
+    runUpdate(startupConfig.version).then((result) => {
+      setIsUpdating(false);
+      setUpdateOutput(result.success ? result.output : `Update failed: ${result.output}`);
+    });
+  }, [isUpdating, startupConfig.version]);
+
+  const formatResumedSessionLabel = useCallback((session: SessionInfo): string => {
+    const title = session.title?.trim();
+    return title ? `${title} (${session.id})` : session.id;
+  }, []);
+
+  const switchToSession = useCallback(
+    (selector: string): boolean => {
+      if (isProcessingRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          buildAssistantEntry("Finish or Esc the current turn before resuming another session."),
+        ]);
+        return false;
+      }
+
+      try {
+        const currentId = agent.getSessionId();
+        const snapshot = agent.resumeSession(selector);
+        if (!snapshot) {
+          setMessages((prev) => [...prev, buildAssistantEntry("Session persistence is disabled.")]);
+          return false;
+        }
+        applySessionSnapshot(snapshot);
+        setShowSessionModal(false);
+        setSessionSearchQuery("");
+        if (snapshot.session.id !== currentId) {
+          setMessages((prev) => [
+            ...prev,
+            buildAssistantEntry(`Resumed ${formatResumedSessionLabel(snapshot.session)}.`),
+          ]);
+        }
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setMessages((prev) => [...prev, buildAssistantEntry(message)]);
+        return false;
+      }
+    },
+    [agent, applySessionSnapshot, formatResumedSessionLabel],
+  );
+
+  const openSessionPicker = useCallback(() => {
+    if (isProcessingRef.current) {
+      setMessages((prev) => [
+        ...prev,
+        buildAssistantEntry("Finish or Esc the current turn before resuming another session."),
+      ]);
+      return;
+    }
+    const latest = agent.listSessions();
+    setSessions(latest);
+    setSessionSearchQuery("");
+    const currentIndex = latest.findIndex((session) => session.id === agent.getSessionId());
+    setSessionModalIndex(currentIndex >= 0 ? currentIndex : 0);
+    setShowSessionModal(true);
+  }, [agent]);
 
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
@@ -2050,6 +2181,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       const isStale = () => activeRunIdRef.current !== runId;
       isProcessingRef.current = true;
       setIsProcessing(true);
+      pluginHostRef.current.cancel();
       if (!sessionTitle)
         agent
           .generateTitle((displayText ?? text).trim())
@@ -2254,6 +2386,23 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         openScheduleModal();
         return true;
       }
+      if (c === "/resume" || c === "/sessions" || c === "/session") {
+        openSessionPicker();
+        return true;
+      }
+      if (c === "/update") {
+        beginUpdate();
+        return true;
+      }
+      if (c.startsWith("/resume ") || c.startsWith("/sessions ") || c.startsWith("/session ")) {
+        const selector = cmd.trim().split(/\s+/, 2)[1]?.trim();
+        if (!selector) {
+          openSessionPicker();
+          return true;
+        }
+        switchToSession(selector);
+        return true;
+      }
       if (c === "/quit" || c === "/exit" || c === "/q") {
         handleExit();
         return true;
@@ -2272,6 +2421,13 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       }
       if (c === "/commit-pr") {
         processMessage(COMMIT_PR_PROMPT);
+        return true;
+      }
+      if (
+        pluginHostRef.current.handleCommand(cmd, (text) => {
+          setMessages((prev) => [...prev, buildAssistantEntry(text)]);
+        })
+      ) {
         return true;
       }
       if (c.startsWith("/btw ") || c === "/btw") {
@@ -2308,7 +2464,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           });
         return true;
       }
-      const customSubagentCommand = parseCustomSubagentSlashCommand(cmd, subAgents);
+      const customSubagentCommand = parseCustomSubagentSlashCommand(
+        cmd,
+        subAgents,
+        pluginReservedCommands(pluginHostRef.current.slashCommands.map((command) => command.id)),
+      );
       if (customSubagentCommand) {
         if (!customSubagentCommand.prompt) {
           setMessages((prev) => [
@@ -2334,9 +2494,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
+      beginUpdate,
+      openSessionPicker,
       processMessage,
       resetToNewSession,
       subAgents,
+      switchToSession,
     ],
   );
 
@@ -2347,6 +2510,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       switch (item.id) {
         case "new":
           resetToNewSession();
+          break;
+        case "resume":
+          openSessionPicker();
           break;
         case "models":
           setShowModelPicker(true);
@@ -2374,7 +2540,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
             ...p,
             {
               type: "assistant",
-              content: SLASH_MENU_ITEMS.map((i) => `/${i.label} — ${i.description}`).join("\n"),
+              content: slashMenuItems.map((i) => `/${i.label} — ${i.description}`).join("\n"),
               timestamp: new Date(),
             },
           ]);
@@ -2410,17 +2576,20 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         case "commit-pr":
           processMessage(COMMIT_PR_PROMPT);
           break;
+        case "plugins":
+        case "install":
+        case "uninstall":
+        case "suggester":
+          pluginHostRef.current.handleCommand(`/${item.id}`, (text) => {
+            setMessages((prev) => [...prev, buildAssistantEntry(text)]);
+          });
+          break;
         case "btw":
           inputRef.current?.clear();
           inputRef.current?.insertText("/btw ");
           break;
         case "update":
-          setIsUpdating(true);
-          setUpdateOutput(null);
-          runUpdate(startupConfig.version).then((result) => {
-            setIsUpdating(false);
-            setUpdateOutput(result.success ? result.output : `Update failed: ${result.output}`);
-          });
+          beginUpdate();
           break;
       }
     },
@@ -2433,9 +2602,11 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       openSandboxPicker,
       openWalletPicker,
       openScheduleModal,
+      beginUpdate,
+      openSessionPicker,
       processMessage,
       resetToNewSession,
-      startupConfig.version,
+      slashMenuItems,
     ],
   );
 
@@ -2449,6 +2620,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     showWalletPicker ||
     !!pendingPaymentApproval ||
     showScheduleModal ||
+    showSessionModal ||
     showAgentsModal ||
     showAgentsEditor ||
     showUpdateModal;
@@ -2523,6 +2695,12 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
+      if (isCtrlU(key)) {
+        key.preventDefault();
+        key.stopPropagation();
+        beginUpdate();
+        return;
+      }
       if (btwState) {
         if (isEscapeKey(key) || key.name === "return") {
           dismissBtw();
@@ -2660,12 +2838,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
         if (key.name === "return") {
-          setIsUpdating(true);
-          setShowUpdateModal(false);
-          runUpdate(startupConfig.version).then((result) => {
-            setIsUpdating(false);
-            setUpdateOutput(result.output);
-          });
+          beginUpdate();
           return;
         }
         return;
@@ -2783,6 +2956,39 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
           setMcpSearchQuery((q) => q + key.sequence);
           setMcpModalIndex(0);
+          return;
+        }
+        return;
+      }
+      if (showSessionModalRef.current) {
+        const row = sessionRows[sessionModalIndex];
+        if (isEscapeKey(key)) {
+          setShowSessionModal(false);
+          setSessionSearchQuery("");
+          return;
+        }
+        if (key.name === "up") {
+          setSessionModalIndex((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.name === "down") {
+          setSessionModalIndex((index) => Math.min(Math.max(0, sessionRows.length - 1), index + 1));
+          return;
+        }
+        if (key.name === "return") {
+          if (row?.kind === "session") {
+            switchToSession(row.session.id);
+          }
+          return;
+        }
+        if (key.name === "backspace") {
+          setSessionSearchQuery((query) => query.slice(0, -1));
+          setSessionModalIndex(0);
+          return;
+        }
+        if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+          setSessionSearchQuery((query) => query + key.sequence);
+          setSessionModalIndex(0);
           return;
         }
         return;
@@ -3256,6 +3462,18 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           return;
         }
       }
+      const ghostBlocked =
+        isProcessing ||
+        showSlashMenu ||
+        showModelPicker ||
+        showSandboxPicker ||
+        showWalletPicker ||
+        showPlanPanel ||
+        showApiKeyModal ||
+        blockPrompt;
+      if (pluginHostRef.current.handleKey(key, ghostBlocked)) {
+        return;
+      }
       if (key.name === "tab" && !isProcessing) {
         cycleMode();
         return;
@@ -3263,6 +3481,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     },
     [
       agent,
+      beginUpdate,
       agentRows,
       agentsEditorField,
       agentsModalIndex,
@@ -3300,7 +3519,10 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       removeSchedule,
       scheduleModalIndex,
       scheduleRows,
+      sessionModalIndex,
+      sessionRows,
       showScheduleDetails,
+      switchToSession,
       submitTelegramPair,
       submitTelegramToken,
       submitMcpEditor,
@@ -3325,6 +3547,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       pendingPaymentApproval,
       processMessage,
       showWalletPicker,
+      showApiKeyModal,
+      blockPrompt,
       walletSettings,
       walletFocusIndex,
       walletDisplayInfo,
@@ -3336,7 +3560,6 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       copyTuiSelectionToHost,
       toggleSavedMcp,
       messages,
-      startupConfig.version,
     ],
   );
   useKeyboard(handleKey);
@@ -3402,6 +3625,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     if (handleCommand(message)) return;
+    pluginHostRef.current.recordSubmit(displayText);
     const { enhancedMessage } = processAtMentions(message.trim(), agent.getCwd());
     if (isProcessingRef.current) {
       queuedMessagesRef.current.push({ text: enhancedMessage, displayText });
@@ -3510,6 +3734,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 queuedCount={queuedMessages.length}
                 queuedMessages={queuedMessages}
                 typeahead={typeahead}
+                ghostSuggestion={pluginHost.ghostSuggestion}
+                ghostVisible={pluginHost.ghostVisible}
               />
             </box>
           </box>
@@ -3549,6 +3775,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 contextStats={contextStats}
                 placeholder={"What are we building?"}
                 typeahead={typeahead}
+                ghostSuggestion={pluginHost.ghostSuggestion}
+                ghostVisible={pluginHost.ghostVisible}
               />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
@@ -3561,7 +3789,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 {startupConfig.version}
                 {" → v"}
                 {updateInfo.latestVersion}
-                {" — run /update to install"}
+                {" — ctrl+u or /update"}
               </text>
             </box>
           )}
@@ -3653,6 +3881,17 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           selectedIndex={scheduleModalIndex}
           searchQuery={scheduleSearchQuery}
           rows={scheduleRows}
+        />
+      )}
+      {showSessionModal && (
+        <SessionBrowserModal
+          t={t}
+          width={width}
+          height={height}
+          selectedIndex={sessionModalIndex}
+          searchQuery={sessionSearchQuery}
+          rows={sessionRows}
+          currentSessionId={sessionId}
         />
       )}
       {showAgentsModal && !showAgentsEditor && (
@@ -3841,6 +4080,8 @@ function PromptBox({
   queuedCount,
   queuedMessages,
   typeahead,
+  ghostSuggestion,
+  ghostVisible,
 }: {
   t: Theme;
   inputRef: React.RefObject<TextareaRenderable | null>;
@@ -3863,9 +4104,14 @@ function PromptBox({
   queuedCount?: number;
   queuedMessages?: string[];
   typeahead?: TypeaheadState;
+  ghostSuggestion?: string | null;
+  ghostVisible?: boolean;
 }) {
   const hasQueue = (queuedMessages?.length ?? 0) > 0;
   const showSuggestions = typeahead?.visible ?? false;
+  const showGhost = Boolean(
+    ghostVisible && ghostSuggestion && !hasQueue && !isProcessing && !showSlashMenu && !showSuggestions,
+  );
 
   return (
     <box backgroundColor={t.backgroundPanel}>
@@ -3926,7 +4172,13 @@ function PromptBox({
                 !showApiKeyModal &&
                 !blockPrompt
               }
-              placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
+              placeholder={
+                isProcessing
+                  ? "Queue a follow-up... (esc to interrupt)"
+                  : showGhost && ghostSuggestion
+                    ? ghostSuggestion
+                    : placeholder || "Message Grok..."
+              }
               textColor={t.text}
               backgroundColor={t.backgroundElement}
               placeholderColor={t.textMuted}
@@ -3980,6 +4232,8 @@ function PromptBox({
                 <span style={{ fg: t.textMuted }}>{"dismiss"}</span>
               </text>
             </box>
+          ) : showGhost ? (
+            <GhostPromptHint t={t} visible />
           ) : (
             <>
               <text fg={t.text}>
@@ -4973,7 +5227,7 @@ function UpdateModal({
         </box>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
           <text fg={t.text}>
-            {"A new version of grok is available: "}
+            {"A new upstream grok release is available: "}
             <span style={{ fg: t.textMuted }}>
               {"v"}
               {currentVersion}
@@ -4986,7 +5240,7 @@ function UpdateModal({
           </text>
         </box>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
-          <text fg={t.textMuted}>{"Press enter to update now, or esc to dismiss"}</text>
+          <text fg={t.textMuted}>{"ctrl+u or enter to update now, esc to dismiss"}</text>
         </box>
       </box>
     </box>

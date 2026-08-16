@@ -9,7 +9,7 @@ import {
 
 describe("models", () => {
   it("keeps the default model on a canonical reasoning id", () => {
-    expect(DEFAULT_MODEL).toBe("grok-4.3");
+    expect(DEFAULT_MODEL).toBe("grok-4.6");
   });
 
   it("normalizes aliases to canonical ids", () => {
@@ -19,10 +19,14 @@ describe("models", () => {
     expect(normalizeModelId("x-ai/grok-3")).toBe("grok-4.20-non-reasoning");
     expect(normalizeModelId("grok-4.20-multi-agent")).toBe("grok-4.20-multi-agent-0309");
     expect(normalizeModelId("x-ai/grok-4.20-multi-agent-beta")).toBe("grok-4.20-multi-agent-0309");
+    expect(normalizeModelId("grok-4.6")).toBe("grok-4.6");
+    expect(normalizeModelId("grok-4.5-latest")).toBe("grok-4.5");
   });
 
   it("returns model metadata for aliased ids", () => {
     expect(getModelInfo("grok-4-1-fast")?.id).toBe("grok-4.3");
+    expect(getModelInfo("grok-4.6")?.id).toBe("grok-4.6");
+    expect(getModelInfo("grok-4.5-latest")?.id).toBe("grok-4.5");
     expect(getModelInfo("grok-4.20-multi-agent")?.responsesOnly).toBe(true);
     expect(getModelInfo("grok-4.20-multi-agent")?.supportsClientTools).toBe(false);
   });

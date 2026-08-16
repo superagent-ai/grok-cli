@@ -10,7 +10,10 @@ import type {
   LspSettings,
   NormalizedLspSettings,
 } from "../lsp/types";
+import { normalizeInstalledPlugins } from "../plugins/installed";
+import type { SuggesterSettings } from "../suggester/types";
 import type { AgentMode, ReasoningEffort } from "../types/index";
+import { readOfficialSessionKey } from "./session-auth";
 
 export type TelegramStreamingMode = "off" | "partial";
 export type SandboxMode = "off" | "shuru";
@@ -173,6 +176,8 @@ export interface UserSettings {
   hooks?: HooksConfig;
   payments?: PaymentSettings;
   modeModels?: Partial<Record<AgentMode, string>>;
+  suggester?: SuggesterSettings;
+  plugins?: string[];
 }
 
 export interface ProjectSettings {
@@ -280,6 +285,16 @@ export function saveUserSettings(partial: Partial<UserSettings>): void {
           },
         }
       : {}),
+    ...(partial.suggester !== undefined
+      ? {
+          suggester: {
+            ...current.suggester,
+            ...partial.suggester,
+            ...(partial.suggester.model !== undefined ? { model: normalizeModelId(partial.suggester.model) } : {}),
+          },
+        }
+      : {}),
+    ...(partial.plugins !== undefined ? { plugins: normalizeInstalledPlugins(partial.plugins) } : {}),
   };
 
   writeJson(USER_SETTINGS_PATH, next);
@@ -309,8 +324,18 @@ export function saveProjectSettings(partial: Partial<ProjectSettings>): void {
   });
 }
 
+export function loadInstalledPlugins(): string[] {
+  return normalizeInstalledPlugins(loadUserSettings().plugins);
+}
+
+export function saveInstalledPlugins(plugins: string[]): string[] {
+  const next = normalizeInstalledPlugins(plugins);
+  saveUserSettings({ plugins: next });
+  return next;
+}
+
 export function getApiKey(): string | undefined {
-  return process.env.GROK_API_KEY || loadUserSettings().apiKey;
+  return process.env.GROK_API_KEY || loadUserSettings().apiKey || readOfficialSessionKey();
 }
 
 export function getBaseURL(): string {

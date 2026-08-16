@@ -1,6 +1,8 @@
 import { APICallError } from "@ai-sdk/provider";
 import { convertToBase64 } from "@ai-sdk/provider-utils";
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import {
   addBatchRequests,
   type BatchChatCompletionRequest,
@@ -324,6 +326,24 @@ function formatCustomSubagentsPromptSection(subagents: CustomSubagentConfig[]): 
   return `\n\nCUSTOM SUB-AGENTS:\nUser-defined foreground sub-agents from ~/.grok/user-settings.json. When one matches the task, call the task tool with agent set to the exact name.\n\n${lines.join("\n\n")}\n`;
 }
 
+function loadSystemPrompt(): string | null {
+  const candidates = [
+    resolve(process.cwd(), "SYSTEM.md"),
+    resolve(__dirname, "../../../SYSTEM.md"),
+    resolve(__dirname, "../../../../SYSTEM.md"),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      try {
+        return readFileSync(p, "utf8").trim();
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function buildSystemPrompt(
   cwd: string,
   mode: AgentMode,
@@ -346,7 +366,10 @@ function buildSystemPrompt(
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${sandboxSection}${customSection}${skillsSection}${subagentsSection}${planSection}
+  const systemMd = loadSystemPrompt();
+  const systemSection = systemMd ? `\n\n${systemMd}\n\nFollow the above alongside standard instructions.\n` : "";
+
+  return `${systemSection}${MODE_PROMPTS[mode]}${sandboxSection}${customSection}${skillsSection}${subagentsSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
@@ -795,16 +818,19 @@ export class Agent {
     this.startNewSession();
   }
 
+  private endCurrentSessionHook(): void {
+    if (!this.sessionStartHookFired) return;
+    const endInput: SessionEndHookInput = {
+      hook_event_name: "SessionEnd",
+      session_id: this.session?.id,
+      cwd: this.bash.getCwd(),
+    };
+    this.fireHook(endInput).catch(() => {});
+    this.sessionStartHookFired = false;
+  }
+
   startNewSession(): SessionSnapshot | null {
-    if (this.sessionStartHookFired) {
-      const endInput: SessionEndHookInput = {
-        hook_event_name: "SessionEnd",
-        session_id: this.session?.id,
-        cwd: this.bash.getCwd(),
-      };
-      this.fireHook(endInput).catch(() => {});
-      this.sessionStartHookFired = false;
-    }
+    this.endCurrentSessionHook();
 
     if (!this.sessionStore) {
       this.messages = [];
@@ -817,6 +843,56 @@ export class Agent {
     this.session = this.sessionStore.createSession(this.modelId, this.mode, this.bash.getCwd());
     this.messages = [];
     this.messageSeqs = [];
+    this.planContext = null;
+    return this.getSessionSnapshot();
+  }
+
+  listSessions(options: { limit?: number } = {}): SessionInfo[] {
+    if (!this.sessionStore) return [];
+    return this.sessionStore.listSessions(options);
+  }
+
+  private resolveSessionSelector(selector: string): SessionInfo | null {
+    if (!this.sessionStore) return null;
+    if (selector.toLowerCase() === "latest") {
+      return (
+        this.sessionStore.listSessions().find((session) => session.id !== this.session?.id) ??
+        this.sessionStore.getLatestSession()
+      );
+    }
+    return this.sessionStore.getSessionById(selector);
+  }
+
+  resumeSession(selector: string): SessionSnapshot | null {
+    if (!this.sessionStore) {
+      return null;
+    }
+
+    const trimmed = selector.trim();
+    if (!trimmed) {
+      throw new Error("Session selector is required.");
+    }
+
+    const target = this.resolveSessionSelector(trimmed);
+    if (!target) {
+      throw new Error(`Session "${trimmed}" was not found.`);
+    }
+
+    if (this.session?.id === target.id) {
+      return this.getSessionSnapshot();
+    }
+
+    this.endCurrentSessionHook();
+    this.sessionStore.touchSession(target.id, this.bash.getCwd());
+    this.session = this.sessionStore.getRequiredSession(target.id);
+    this.mode = this.session.mode;
+    if (this.session.model) {
+      this.modelId = normalizeModelId(this.session.model);
+    }
+    const transcript = loadTranscriptState(this.session.id);
+    this.messages = transcript.messages;
+    this.messageSeqs = transcript.seqs;
+    this.planContext = null;
     return this.getSessionSnapshot();
   }
 
@@ -2123,7 +2199,7 @@ export class Agent {
             const response = await result.response;
             if (!signal.aborted) {
               this.appendCompletedTurn(userModelMessage, sanitizeModelMessages(response.messages));
-              await this.refreshSessionRecap(signal);
+              void this.refreshSessionRecap(signal);
               streamOk = true;
             }
           } catch (responseError: unknown) {
@@ -2146,7 +2222,7 @@ export class Agent {
 
           if (!streamOk && assistantText.trim()) {
             this.appendCompletedTurn(userModelMessage, [{ role: "assistant", content: assistantText }]);
-            await this.refreshSessionRecap(signal);
+            void this.refreshSessionRecap(signal);
           }
 
           const stopInput: StopHookInput = {

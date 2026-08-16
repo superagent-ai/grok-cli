@@ -256,7 +256,9 @@ async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
     const delegation = await loadDelegation(jobPath);
     const apiKey = stringOption(options.apiKey) || getApiKey();
     if (!apiKey) {
-      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
+      throw new Error(
+        "API key required. Set GROK_API_KEY, use --api-key, save it to ~/.grok/user-settings.json, or sign in with official Grok Build (`grok login`).",
+      );
     }
 
     const baseURL = stringOption(options.baseUrl) || getBaseURL();
@@ -329,7 +331,7 @@ function resolveConfig(options: CliOptions) {
 function requireApiKey(apiKey: string | undefined): string {
   if (!apiKey) {
     console.error(
-      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
+      "Error: API key required. Set GROK_API_KEY env var, use --api-key, save to ~/.grok/user-settings.json, or sign in with official Grok Build (`grok login`).",
     );
     process.exit(1);
   }
@@ -346,8 +348,8 @@ function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
 }
 
 program
-  .name("grok")
-  .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
+  .name("grok-kev")
+  .description("Personal grok-kev fork of the Grok CLI coding agent")
   .version(packageJson.version)
   .argument("[message...]", "Initial message to send")
   .option("-k, --api-key <key>", "Grok API key")

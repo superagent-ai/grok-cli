@@ -16,6 +16,7 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "wallet", label: "wallet", description: "Wallet and payment settings" },
   { id: "models", label: "models", description: "Select a model", aliases: ["model", "mode"] },
   { id: "recaps", label: "recaps", description: "Turn session recaps on/off", aliases: ["recap", "summary"] },
+  { id: "resume", label: "resume", description: "Resume a saved session", aliases: ["sessions", "session"] },
   { id: "new", label: "new session", description: "Start a new session" },
   { id: "commit-push", label: "commit & push", description: "Commit and push" },
   { id: "commit-pr", label: "commit & pr", description: "Commit and open PR" },
@@ -23,7 +24,9 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "verify", label: "verify", description: "Run local verification" },
   { id: "skills", label: "skills", description: "Manage skills" },
   { id: "btw", label: "btw", description: "Ask a side question without interrupting" },
-  { id: "update", label: "update", description: "Update grok to the latest version" },
+  { id: "plugins", label: "plugins", description: "List installed plugins", aliases: ["plugin"] },
+  { id: "install", label: "install", description: "Install a bundled or GitHub plugin" },
+  { id: "update", label: "update", description: "Update from upstream (ctrl+u)" },
 ];
 
 export function filterSlashMenuItems(items: SlashMenuItem[], query: string): SlashMenuItem[] {

@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Dedicated grep tool powered by npm ripgrep WASM (#263)
 - `/btw` command for side questions (#264)
+- `/resume` command to switch to a saved workspace session from the TUI
+- Splash screen shows upstream updates; `ctrl+u` / `/update` installs them
 
 ### Changed
+- Renamed the `grok-dev` CLI command to `grok-kev`
+- Branded this checkout as `grok-kev`
+- `grok` / `grok-kev` rebuild a source checkout automatically when `dist/` is stale
 - Switched Telegram voice/audio transcription from whisper.cpp to Grok STT (`/v1/stt`); removed `whisper-cli`, `ffmpeg`, and model-download requirements (#266, #265)
 - Install script warns when auto-resolving to a pre-release version (#269)
 - Release workflow publishes Sigstore build-provenance attestations (#271)

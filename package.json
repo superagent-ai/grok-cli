@@ -1,7 +1,7 @@
 {
-  "name": "grok-dev",
+  "name": "grok-kev",
   "version": "1.1.7",
-  "description": "An open-source AI coding agent powered by Grok, built with Bun and OpenTUI.",
+  "description": "Personal grok-kev fork of the Grok CLI coding agent.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -11,13 +11,14 @@
     }
   },
   "bin": {
-    "grok": "dist/index.js"
+    "grok": "bin/grok.js",
+    "grok-kev": "bin/grok.js"
   },
   "scripts": {
     "dev": "bun run src/index.ts",
     "build": "tsc",
     "build:binary": "bun build --compile --outfile dist/grok-standalone ./src/index.ts",
-    "start": "bun run dist/index.js",
+    "start": "bun bin/grok.js",
     "typecheck": "tsc --noEmit",
     "test": "bunx vitest run",
     "test:watch": "bunx vitest",
