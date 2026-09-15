@@ -494,3 +494,15 @@ bun run lint
 ## License
 
 MIT
+
+### MiniMax image generation
+
+Set `MINIMAX_API_KEY` and ask the `generate_image` tool to use `model: "image-01"`
+or `model: "image-01-live"`. To select MiniMax for image requests by default,
+set `MINIMAX_IMAGE_MODEL=image-01`.
+
+`MINIMAX_REGION=global_en` (default) uses `https://api.minimax.io/v1/image_generation`;
+`MINIMAX_REGION=cn_zh` uses `https://api.minimaxi.com/v1/image_generation`.
+The image tool accepts a local path or public URL in `source` as a character
+reference. It downloads generated images immediately and returns local paths.
+MiniMax accepts 1–9 images per call; omit `resolution` and use `aspect_ratio`.

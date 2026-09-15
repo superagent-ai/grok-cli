@@ -36,6 +36,7 @@ export type VideoResolution = (typeof VIDEO_RESOLUTIONS)[number];
 
 export interface GenerateImageToolInput {
   prompt: string;
+  model?: "image-01" | "image-01-live";
   source?: string;
   aspect_ratio?: ImageAspectRatio;
   resolution?: ImageResolution;
@@ -69,6 +70,10 @@ export async function generateImageTool(
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
+    const miniMaxModel = input.model ?? process.env.MINIMAX_IMAGE_MODEL;
+    if (miniMaxModel) {
+      return await generateMiniMaxImage(input, miniMaxModel, cwd, abortSignal);
+    }
     const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
     const prompt = source ? { text: input.prompt, images: [source.data] } : input.prompt;
     const response = await generateImage({
@@ -118,6 +123,95 @@ export async function generateImageTool(
   } catch (err: unknown) {
     return failureResult("Image generation failed", err);
   }
+}
+
+async function generateMiniMaxImage(
+  input: GenerateImageToolInput,
+  model: string,
+  cwd: string,
+  abortSignal?: AbortSignal,
+): Promise<ToolResult> {
+  if (model !== "image-01" && model !== "image-01-live") {
+    throw new Error("MINIMAX_IMAGE_MODEL must be image-01 or image-01-live.");
+  }
+  const apiKey = process.env.MINIMAX_API_KEY;
+  if (!apiKey) throw new Error("MINIMAX_API_KEY is required for MiniMax image generation.");
+  const region = process.env.MINIMAX_REGION || "global_en";
+  if (region !== "global_en" && region !== "cn_zh") {
+    throw new Error("MINIMAX_REGION must be global_en or cn_zh.");
+  }
+  const endpoint =
+    region === "cn_zh" ? "https://api.minimaxi.com/v1/image_generation" : "https://api.minimax.io/v1/image_generation";
+  if (input.resolution) {
+    throw new Error("MiniMax image generation uses aspect_ratio; omit resolution.");
+  }
+  const aspectRatio = input.aspect_ratio === "auto" ? "1:1" : (input.aspect_ratio ?? "1:1");
+  if (!["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"].includes(aspectRatio)) {
+    throw new Error("Unsupported MiniMax image aspect ratio.");
+  }
+  const count = input.n ?? 1;
+  if (!Number.isInteger(count) || count < 1 || count > 9) {
+    throw new Error("MiniMax image count must be an integer from 1 to 9.");
+  }
+  const source = input.source ? await resolveImageSource(input.source, cwd, abortSignal) : null;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    signal: abortSignal,
+    body: JSON.stringify({
+      model,
+      prompt: input.prompt,
+      aspect_ratio: aspectRatio,
+      n: count,
+      response_format: "url",
+      ...(source ? { subject_reference: [{ type: "character", image_file: source.dataUrl }] } : {}),
+    }),
+  });
+  if (!response.ok) throw new Error(`MiniMax image request failed: HTTP ${response.status}`);
+  const payload = getRecord(await response.json());
+  const status = getRecord(payload?.base_resp);
+  if (status?.status_code !== 0) {
+    throw new Error(`MiniMax image request failed: ${status?.status_code ?? "missing status"}`);
+  }
+  const urls = getRecord(payload?.data)?.image_urls;
+  if (!Array.isArray(urls) || urls.length === 0 || !urls.every((url) => typeof url === "string" && isUrl(url))) {
+    throw new Error("MiniMax returned no valid image URLs.");
+  }
+  const runId = createRunId();
+  const media: MediaAsset[] = [];
+  for (const [index, url] of urls.entries()) {
+    const image = await fetch(url, { signal: abortSignal });
+    if (!image.ok) throw new Error(`MiniMax image download failed: HTTP ${image.status}`);
+    const mediaType = image.headers.get("content-type")?.split(";")[0] || "image/png";
+    const path = buildOutputPath({
+      cwd,
+      kind: "image",
+      mediaType,
+      outputPath: input.output_path,
+      index,
+      total: urls.length,
+      runId,
+    });
+    writeFileSync(path, new Uint8Array(await image.arrayBuffer()));
+    media.push({
+      kind: "image",
+      path,
+      url,
+      mediaType,
+      prompt: input.prompt,
+      sourcePath: source?.sourcePath,
+      sourceUrl: source?.sourceUrl,
+      modelId: model,
+    });
+  }
+  const failedCount = Number(getRecord(payload?.metadata)?.failed_count ?? 0);
+  return {
+    success: true,
+    output:
+      summarizeMediaResult("image", media) +
+      (failedCount > 0 ? `\nMiniMax could not generate ${failedCount} requested image(s).` : ""),
+    media,
+  };
 }
 
 export async function generateVideoTool(
