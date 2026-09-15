@@ -223,9 +223,13 @@ export function createTools(
 
     generate_image: tool({
       description:
-        "Generate a new image or edit an existing image using Grok Imagine. Use when the user asks to create, redesign, restyle, or modify an image. Optionally pass a local file path or public URL in source to edit an existing image. Saves the generated image files locally and returns their paths.",
+        "Generate a new image or edit an existing image. Select image-01 or image-01-live for MiniMax (at most 9 images; omit resolution). Use when the user asks to create, redesign, restyle, or modify an image. Optionally pass a local file path or public URL in source to edit an existing image. Saves the generated image files locally and returns their paths.",
       inputSchema: z.object({
         prompt: z.string().describe("Prompt describing the image to generate or the edit to apply"),
+        model: z
+          .enum(["image-01", "image-01-live"])
+          .optional()
+          .describe("Select a MiniMax image model; requires MINIMAX_API_KEY. Omit to use the configured image model."),
         source: z
           .string()
           .optional()
