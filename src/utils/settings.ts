@@ -74,6 +74,22 @@ export interface TelegramAudioInputSettings {
   language?: string;
 }
 
+export interface VoiceSettings {
+  /**
+   * Shell command that transcribes push-to-talk voice recordings. The recorded
+   * wav file path replaces `{file}` in the command, or is appended as the last
+   * argument when `{file}` is absent. The command's stdout is inserted into the
+   * prompt at the cursor. Unset = voice input disabled.
+   */
+  transcribeCommand?: string;
+  /**
+   * Key held to record voice input (released to transcribe), matched against
+   * the key name (e.g. `"f2"`, `"space"`). Unset = push-to-talk disabled.
+   * Key release events need a terminal with the Kitty keyboard protocol.
+   */
+  pushToTalkKey?: string;
+}
+
 export interface TelegramSettings {
   botToken?: string;
   approvedUserIds?: number[];
@@ -168,6 +184,7 @@ export interface UserSettings {
   lsp?: LspSettings;
   reasoningEffortByModel?: Record<string, ReasoningEffort>;
   telegram?: TelegramSettings;
+  voice?: VoiceSettings;
   mcp?: McpSettings;
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;

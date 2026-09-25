@@ -350,6 +350,23 @@ When sandbox mode is active you can configure:
 
 All settings are saved in `~/.grok/user-settings.json` (user) and `.grok/settings.json` (project).
 
+### Voice input (push-to-talk)
+
+Hold a configured key to record from your microphone, release it to transcribe the recording into the prompt. Recording shells out to a user-installed `ffmpeg` (preferred) or `sox` (`rec`) — no new native dependencies, no model downloads, no API calls. Transcription is a shell command you configure; its stdout is inserted at the cursor.
+
+Configure in `~/.grok/user-settings.json`:
+
+```json
+{
+  "voice": {
+    "transcribeCommand": "whisper -f {file} --txt",
+    "pushToTalkKey": "f2"
+  }
+}
+```
+
+`{file}` is replaced with the recorded wav path (or appended as the last argument when absent). `pushToTalkKey` is a key name such as `f2` or `space`; it is unset by default so nothing changes until you opt in. Short taps under 350ms are discarded and the key behaves normally (a quick `space` tap still types a space). Recordings stop automatically after 2 minutes. Key release events need a terminal with the Kitty keyboard protocol (Kitty, WezTerm, iTerm2, Ghostty).
+
 ### Verify
 
 Run `**/verify`** in the TUI or `**--verify`** on the CLI to verify your app locally:

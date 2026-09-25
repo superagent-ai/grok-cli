@@ -4,6 +4,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import os from "os";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Agent } from "../agent/agent";
+import { findRecorder, shouldDiscardTap, transcribeAudio, VOICE_MAX_RECORD_MS, VoiceRecorder } from "../audio/voice";
 import {
   DEFAULT_MODEL,
   getEffectiveReasoningEffort,
@@ -668,6 +669,83 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const pasteBlocksRef = useRef<PasteBlock[]>([]);
   const apiKeyInputRef = useRef<TextareaRenderable>(null);
   const inputRef = useRef<TextareaRenderable>(null);
+  // Push-to-talk voice input state. Recording lifecycle lives in refs; React
+  // state only mirrors the recording indicator and transient notices.
+  const voiceConfig = useMemo(() => loadUserSettings().voice, []);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const voiceRecorderRef = useRef<VoiceRecorder | undefined>(undefined);
+  const voiceStartTimeRef = useRef(0);
+  const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const voiceNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const showVoiceNotice = useCallback((message: string) => {
+    setVoiceNotice(message);
+    if (voiceNoticeTimerRef.current) clearTimeout(voiceNoticeTimerRef.current);
+    voiceNoticeTimerRef.current = setTimeout(() => setVoiceNotice(null), 4000);
+  }, []);
+
+  const stopVoiceRecording = useCallback(
+    async (tapInsert: string) => {
+      if (voiceStopTimerRef.current) {
+        clearTimeout(voiceStopTimerRef.current);
+        voiceStopTimerRef.current = undefined;
+      }
+      const recorder = voiceRecorderRef.current;
+      voiceRecorderRef.current = undefined;
+      setVoiceRecording(false);
+      if (!recorder) return;
+      const holdMs = Date.now() - voiceStartTimeRef.current;
+      try {
+        const wavFile = await recorder.stop();
+        if (!wavFile) return;
+        if (shouldDiscardTap(holdMs)) {
+          // Short tap: the key behaves normally (e.g. space still types a space).
+          if (tapInsert) inputRef.current?.insertText(tapInsert);
+          return;
+        }
+        const transcribeCommand = voiceConfig?.transcribeCommand?.trim() ?? "";
+        const text = await transcribeAudio(wavFile, transcribeCommand);
+        if (!text) return;
+        inputRef.current?.insertText(text.endsWith("\n") ? text : `${text} `);
+      } catch (error) {
+        showVoiceNotice(error instanceof Error ? error.message : String(error));
+      } finally {
+        recorder.dispose();
+      }
+    },
+    [voiceConfig, showVoiceNotice],
+  );
+
+  const startVoiceRecording = useCallback(() => {
+    if (voiceRecorderRef.current?.recording) return;
+    const transcribeCommand = voiceConfig?.transcribeCommand?.trim();
+    if (!transcribeCommand) {
+      showVoiceNotice("Voice input needs voice.transcribeCommand set in ~/.grok/user-settings.json");
+      return;
+    }
+    const spec = findRecorder();
+    if (!spec) {
+      showVoiceNotice("Voice input needs ffmpeg or sox installed to record audio");
+      return;
+    }
+    const recorder = new VoiceRecorder();
+    recorder.start(spec);
+    voiceRecorderRef.current = recorder;
+    voiceStartTimeRef.current = Date.now();
+    setVoiceRecording(true);
+    voiceStopTimerRef.current = setTimeout(() => void stopVoiceRecording(""), VOICE_MAX_RECORD_MS);
+  }, [voiceConfig, showVoiceNotice, stopVoiceRecording]);
+
+  useEffect(
+    () => () => {
+      voiceRecorderRef.current?.dispose();
+      voiceRecorderRef.current = undefined;
+      if (voiceStopTimerRef.current) clearTimeout(voiceStopTimerRef.current);
+      if (voiceNoticeTimerRef.current) clearTimeout(voiceNoticeTimerRef.current);
+    },
+    [],
+  );
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width, height } = useTerminalDimensions();
   const processedInitial = useRef(false);
@@ -3341,6 +3419,34 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   );
   useKeyboard(handleKey);
 
+  // Push-to-talk voice input: hold the configured key to record, release it to
+  // transcribe into the prompt. The keybind is unset by default, so nothing
+  // changes for existing users; key release events need a Kitty-protocol
+  // terminal (grok-cli enables it on startup).
+  useKeyboard((key: KeyEvent) => {
+    const pttKey = voiceConfig?.pushToTalkKey?.trim();
+    if (!pttKey || key.name !== pttKey) return;
+    // Only when the prompt composer is focused, not a modal.
+    if (
+      showModelPicker ||
+      showSandboxPicker ||
+      showWalletPicker ||
+      showSlashMenu ||
+      showPlanPanel ||
+      showApiKeyModal ||
+      blockPrompt
+    )
+      return;
+    key.preventDefault();
+    key.stopPropagation();
+    if (key.eventType === "release") {
+      void stopVoiceRecording(key.name === "space" ? " " : "");
+      return;
+    }
+    if (key.repeated) return;
+    startVoiceRecording();
+  }, VOICE_KEYBOARD_OPTS);
+
   const handlePaste = useCallback(
     (event: PasteEvent) => {
       if (!hasApiKeyRef.current) {
@@ -3510,6 +3616,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 queuedCount={queuedMessages.length}
                 queuedMessages={queuedMessages}
                 typeahead={typeahead}
+                voiceRecording={voiceRecording}
+                voiceNotice={voiceNotice}
               />
             </box>
           </box>
@@ -3549,6 +3657,8 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
                 contextStats={contextStats}
                 placeholder={"What are we building?"}
                 typeahead={typeahead}
+                voiceRecording={voiceRecording}
+                voiceNotice={voiceNotice}
               />
             </box>
             <box height={2} minHeight={0} flexShrink={1} />
@@ -3799,6 +3909,9 @@ function RecapBanner({ t, recap }: { t: Theme; recap: string }) {
 
 /* ── Prompt Box ──────────────────────────────────────────────── */
 
+/** Keyboard options for the push-to-talk handler: it needs key release events. */
+const VOICE_KEYBOARD_OPTS = { release: true };
+
 const TEXTAREA_KEYBINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
   { name: "return", shift: true, action: "newline" },
@@ -3841,6 +3954,8 @@ function PromptBox({
   queuedCount,
   queuedMessages,
   typeahead,
+  voiceRecording,
+  voiceNotice,
 }: {
   t: Theme;
   inputRef: React.RefObject<TextareaRenderable | null>;
@@ -3863,12 +3978,22 @@ function PromptBox({
   queuedCount?: number;
   queuedMessages?: string[];
   typeahead?: TypeaheadState;
+  voiceRecording?: boolean;
+  voiceNotice?: string | null;
 }) {
   const hasQueue = (queuedMessages?.length ?? 0) > 0;
   const showSuggestions = typeahead?.visible ?? false;
 
   return (
     <box backgroundColor={t.backgroundPanel}>
+      {voiceNotice ? (
+        <box paddingLeft={2} paddingRight={2} paddingBottom={1}>
+          <text>
+            <span style={{ fg: t.accent }}>{"⚠ "}</span>
+            <span style={{ fg: t.textMuted }}>{voiceNotice}</span>
+          </text>
+        </box>
+      ) : null}
       <box>
         {hasQueue && (
           <box
@@ -3926,7 +4051,13 @@ function PromptBox({
                 !showApiKeyModal &&
                 !blockPrompt
               }
-              placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
+              placeholder={
+                voiceRecording
+                  ? "Recording voice… release to transcribe"
+                  : isProcessing
+                    ? "Queue a follow-up... (esc to interrupt)"
+                    : placeholder || "Message Grok..."
+              }
               textColor={t.text}
               backgroundColor={t.backgroundElement}
               placeholderColor={t.textMuted}
