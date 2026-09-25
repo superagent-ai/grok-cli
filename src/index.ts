@@ -604,6 +604,9 @@ program
     await daemon.start();
   });
 
+const { registerSoulCommands } = await import("./soul/cli");
+registerSoulCommands(program);
+
 program.parse();
 
 function formatContext(tokens: number): string {

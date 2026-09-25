@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { summarizeDiagnostics, syncFileWithLsp } from "../lsp/runtime";
 import type { LspDiagnosticFile } from "../lsp/types";
+import { denialMessage, isProtectedEditTarget } from "../soul/guard";
 
 export interface FileDiff {
   filePath: string;
@@ -21,6 +22,17 @@ export interface FileResult {
 
 function resolvePath(filePath: string, cwd: string): string {
   return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+}
+
+// Soul formation guard: the agent may never edit its own axioms. This runs in
+// code, before any configurable hooks, on every file-edit tool path — the
+// model cannot talk its way past it and no settings grant can override it.
+// Human edits in their own editor never reach this path and are unaffected.
+function checkSoulGuard(filePath: string): FileResult | undefined {
+  if (isProtectedEditTarget(filePath)) {
+    return { success: false, output: denialMessage(filePath) };
+  }
+  return undefined;
 }
 
 function computeDiff(filePath: string, before: string, after: string): FileDiff {
@@ -62,6 +74,8 @@ export function readFile(filePath: string, cwd: string, startLine?: number, endL
 }
 
 export async function writeFile(filePath: string, content: string, cwd: string): Promise<FileResult> {
+  const denied = checkSoulGuard(filePath);
+  if (denied) return denied;
   try {
     const full = resolvePath(filePath, cwd);
     const before = existsSync(full) ? readFileSync(full, "utf-8") : "";
@@ -91,6 +105,8 @@ export async function editFile(
   newString: string,
   cwd: string,
 ): Promise<FileResult> {
+  const denied = checkSoulGuard(filePath);
+  if (denied) return denied;
   try {
     const full = resolvePath(filePath, cwd);
     if (!existsSync(full)) {

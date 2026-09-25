@@ -324,6 +324,25 @@ Hook commands receive JSON on **stdin** (event details) and can return JSON on *
 
 ---
 
+### Soul constitution (testable)
+
+A `SOUL.md` in your project (or `~/.grok/SOUL.md`) is compiled into the agent's system prompt as a `<soul>` section: axioms (absolute, never traded off), ranked values, dispositions, and a formation rule the agent cannot edit around. Nothing enters the soul that cannot be tested -- every axiom needs paired `must_refuse` / `must_not_refuse` probes in the co-located `SOUL.suite.yaml`, or the soul is rejected at load and never injected.
+
+The formation boundary is enforced in code, not in the prompt: agent edits to `SOUL.md`, `SOUL.suite.yaml`, and `SOUL.baseline.json` are denied on every file-edit tool path before any hooks run. Axioms change only by human edit plus a full eval re-run.
+
+```bash
+grok soul init             # scaffold SOUL.md + suite + baseline
+grok soul validate         # entry lint: every axiom has paired probes
+grok soul run              # run probes against fresh agent sessions -> JSONL
+grok soul score suite.yaml responses.jsonl   # deterministic grading -> markdown report
+grok soul freeze suite.yaml responses.jsonl  # freeze the regression baseline
+grok soul changelog-check  # diff axioms between git revisions; flag silent removals
+```
+
+Grading is rule-based (refusal markers, required/forbidden patterns, declared winners) -- no model grades. Probes marked `human: true` stay pending and block the release gate; they are never auto-passed. `grok soul score` exits non-zero while any gate blocks.
+
+---
+
 ## Project settings
 
 Project file: `**.grok/settings.json**` — e.g. the current model for this project.

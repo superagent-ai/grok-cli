@@ -40,6 +40,7 @@ import type {
 } from "../hooks/types";
 import { shutdownWorkspaceLspManager } from "../lsp/runtime";
 import { buildMcpToolSet } from "../mcp/runtime";
+import { systemSection } from "../soul/soul";
 import {
   appendCompaction,
   appendMessages,
@@ -337,6 +338,13 @@ function buildSystemPrompt(
     ? `\n\nCUSTOM INSTRUCTIONS:\n${custom}\n\nFollow the above alongside standard instructions.\n`
     : "";
 
+  // Testable soul constitution. The section is compiled from SOUL.md; a soul
+  // that fails the entry lint (every axiom must have paired probes) is
+  // rejected and nothing is injected. Self-editing is additionally blocked in
+  // code by the formation guard on the file tools.
+  const soulSection = systemSection(cwd) ?? "";
+  const soulBlock = soulSection ? `\n\n${soulSection}\n` : "";
+
   const skillsText = formatSkillsForPrompt(discoverSkills(cwd));
   const skillsSection = skillsText ? `\n\n${skillsText}\n` : "";
   const subagentsSection = formatCustomSubagentsPromptSection(subagents ?? loadValidSubAgents());
@@ -346,7 +354,7 @@ function buildSystemPrompt(
     ? `\n\nAPPROVED PLAN:\nThe following plan has been approved by the user. Execute it now.\n${planContext}\n`
     : "";
 
-  return `${MODE_PROMPTS[mode]}${sandboxSection}${customSection}${skillsSection}${subagentsSection}${planSection}
+  return `${MODE_PROMPTS[mode]}${sandboxSection}${customSection}${soulBlock}${skillsSection}${subagentsSection}${planSection}
 
 Current working directory: ${cwd}`;
 }
