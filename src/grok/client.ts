@@ -1,3 +1,4 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
 import type { ModelInfo, ReasoningEffort } from "../types/index";
@@ -40,11 +41,24 @@ export interface ResolvedModelRuntime {
   };
 }
 
+const OFFICIAL_XAI_BASE_URL = "https://api.x.ai/v1";
+
 export function createProvider(apiKey: string, baseURL?: string): XaiProvider {
-  return createXai({
-    apiKey,
-    baseURL: baseURL || process.env.GROK_BASE_URL || "https://api.x.ai/v1",
-  });
+  const resolvedBaseURL = (baseURL || process.env.GROK_BASE_URL || OFFICIAL_XAI_BASE_URL).replace(/\/+$/, "");
+  // Custom (non-xAI) endpoint — e.g. a local llama.cpp server:
+  // @ai-sdk/xai validates every streamed tool_call delta against a strict
+  // schema that requires `id`/`type` on each entry, while llama.cpp (like
+  // OpenAI) only sends them on the first delta — this breaks argument
+  // accumulation (args stay as "{"). The openai-compatible provider accepts
+  // the lax format and accumulates deltas correctly.
+  if (resolvedBaseURL !== OFFICIAL_XAI_BASE_URL) {
+    return createOpenAICompatible({
+      name: "local",
+      apiKey,
+      baseURL: resolvedBaseURL,
+    }) as unknown as XaiProvider;
+  }
+  return createXai({ apiKey, baseURL: resolvedBaseURL });
 }
 
 export function resolveModelRuntime(provider: XaiProvider, requestedModelId: string): ResolvedModelRuntime {
