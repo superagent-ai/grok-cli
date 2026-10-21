@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { type RefObject, useEffect, useRef } from "react";
-import { MODELS } from "../grok/models";
+import type { ModelInfo } from "../types/index";
 import type { CustomSubagentConfig } from "../utils/settings";
 import { formatSubagentName } from "../utils/subagent-display";
 import type { Theme } from "./theme";
@@ -144,6 +144,7 @@ export function SubagentEditorModal({
   draft,
   focusedField,
   modelIndex,
+  models,
   error,
   title,
   nameRef,
@@ -157,6 +158,7 @@ export function SubagentEditorModal({
   draft: { name: string; instruction: string };
   focusedField: SubagentEditorField;
   modelIndex: number;
+  models: ModelInfo[];
   error: string | null;
   title: string;
   nameRef: RefObject<TextareaRenderable | null>;
@@ -164,7 +166,7 @@ export function SubagentEditorModal({
   onSubmit: () => void;
   showRemoveHint?: boolean;
 }) {
-  const model = MODELS[modelIndex] ?? MODELS[0];
+  const model = models[modelIndex] ?? models[0];
   const panelWidth = Math.min(68, width - 6);
   const panelHeight = Math.min(28, Math.floor(height * 0.75));
   const overlayBg = "#000000cc" as string;

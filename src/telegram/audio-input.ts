@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { createTelegramAudioInputEngine } from "../audio/stt/engine";
+import type { ProviderKind } from "../types/index";
 import type { TelegramSettings } from "../utils/settings";
 import { resolveTelegramAudioInputSettings } from "../utils/settings";
 
@@ -55,12 +56,14 @@ export async function transcribeTelegramAudioMessage(opts: {
   token: string;
   source: TelegramAudioSource;
   telegramSettings: TelegramSettings | undefined;
+  provider?: ProviderKind;
 }): Promise<TelegramAudioTranscription> {
   const audioSettings = resolveTelegramAudioInputSettings(opts.telegramSettings);
   if (!audioSettings.enabled) {
     throw new Error("Telegram audio input is disabled in settings.");
   }
 
+  const engine = createTelegramAudioInputEngine(opts.telegramSettings, opts.provider);
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "grok-telegram-audio-"));
   try {
     const file = await opts.api.getFile(opts.source.fileId);
@@ -82,7 +85,6 @@ export async function transcribeTelegramAudioMessage(opts: {
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(audioPath, bytes, { mode: 0o600 });
 
-    const engine = createTelegramAudioInputEngine(opts.telegramSettings);
     const result = await engine.transcribe({
       audioPath,
       fileName,

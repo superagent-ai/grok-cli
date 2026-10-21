@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { Agent } from "../agent/agent";
+import type { ProviderKind } from "../types/index";
 import {
+  getActiveProvider,
   getApiKey,
   getBaseURL,
   getCurrentModel,
@@ -28,6 +30,7 @@ export interface TelegramHeadlessBridgeOptions {
   apiKey?: string;
   baseURL?: string;
   model?: string;
+  provider?: ProviderKind;
   sandboxMode?: SandboxMode;
   sandboxSettings?: SandboxSettings;
   maxToolRounds?: number;
@@ -39,6 +42,7 @@ interface TelegramHeadlessStartupConfig {
   apiKey: string;
   baseURL: string;
   model: string;
+  provider: ProviderKind;
   sandboxMode: SandboxMode;
   sandboxSettings: SandboxSettings;
   maxToolRounds: number;
@@ -80,7 +84,12 @@ function buildTelegramAgentFactory(startupConfig: TelegramHeadlessStartupConfig)
       startupConfig.baseURL,
       startupConfig.model,
       startupConfig.maxToolRounds,
-      { session: sessionId, sandboxMode: startupConfig.sandboxMode, sandboxSettings: startupConfig.sandboxSettings },
+      {
+        session: sessionId,
+        sandboxMode: startupConfig.sandboxMode,
+        sandboxSettings: startupConfig.sandboxSettings,
+        provider: startupConfig.provider,
+      },
     );
 
     const nextSessionId = agent.getSessionId();
@@ -120,15 +129,17 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
     throw new Error("Missing Telegram bot token in user settings or TELEGRAM_BOT_TOKEN.");
   }
 
-  const apiKey = options.apiKey ?? getApiKey();
+  const provider = options.provider ?? getActiveProvider(options.model);
+  const apiKey = options.apiKey ?? getApiKey(provider);
   if (!apiKey) {
-    throw new Error("Missing Grok API key.");
+    throw new Error(`Missing API key for the ${provider} provider.`);
   }
 
   const startupConfig: TelegramHeadlessStartupConfig = {
     apiKey,
-    baseURL: options.baseURL ?? getBaseURL(),
-    model: options.model ?? getCurrentModel(),
+    baseURL: options.baseURL ?? getBaseURL(provider),
+    model: options.model ?? getCurrentModel(undefined, provider),
+    provider,
     sandboxMode: options.sandboxMode ?? getCurrentSandboxMode(),
     sandboxSettings: options.sandboxSettings ?? getCurrentSandboxSettings(),
     maxToolRounds: options.maxToolRounds ?? 400,
@@ -145,6 +156,7 @@ export async function runTelegramHeadlessBridge(options: TelegramHeadlessBridgeO
   const getTelegramAgent = buildTelegramAgentFactory(startupConfig);
   const bridge = createTelegramBridge({
     token,
+    provider,
     getApprovedUserIds: () => loadUserSettings().telegram?.approvedUserIds ?? [],
     coordinator,
     getTelegramAgent,

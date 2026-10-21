@@ -239,6 +239,30 @@ Names cannot be `general`, `explore`, `vision`, `verify`, or `computer` because 
 
 Optional: `**GROK_BASE_URL**` (default `https://api.x.ai/v1`), `**GROK_MODEL**`, `**GROK_MAX_TOKENS**`.
 
+### MiniMax provider
+
+Select the MiniMax OpenAI-compatible provider with `--provider minimax` or `GROK_PROVIDER=minimax`.
+
+```bash
+MINIMAX_API_KEY=your-key grok --provider minimax --model MiniMax-M3.1-Flash
+```
+
+The text model picker offers:
+
+- `MiniMax-M3.1-Flash` (default): 1,000,000-token context, up to 524,288 output tokens, and text, image, and video input metadata. Adaptive thinking is always enabled; `/reasoning` selects `low`, `medium`, `high`, `xhigh`, or `max` (default). Standard input/output/cache-read prices are $0.15/$0.60/$0.015 per million tokens; cache-write pricing is unspecified.
+- `MiniMax-M3`: 1,000,000-token context and text, image, and video input metadata. Standard input/output/cache-read prices are $0.30/$1.20/$0.06 per million tokens for requests with at most 512k input tokens, and $0.60/$2.40/$0.12 above 512k.
+
+Existing `MiniMax-M2.7` selections remain supported through compatibility lookup, including their 204,800-token context metadata. Saved and explicit model choices are preserved. No high-speed service tier is selected implicitly.
+
+Sources: [MiniMax Chat Completions](https://platform.minimax.io/docs/api-reference/text-chat-openai) and [standard pricing](https://platform.minimax.io/docs/pricing/overview#models/text).
+
+`MINIMAX_REGION` selects the official endpoint:
+
+- `global_en` (default): `https://api.minimax.io/v1`
+- `cn_zh`: `https://api.minimaxi.com/v1`
+
+Use `MINIMAX_BASE_URL` only when an explicit OpenAI-compatible proxy or endpoint override is required. MiniMax sessions support chat completions and local CLI tools. Provider-hosted search, media generation, batch requests, and Telegram audio transcription are disabled when the provider does not expose those capabilities.
+
 ---
 
 ## Telegram (remote control) — short version

@@ -41,7 +41,12 @@ describe("media tools", () => {
     });
 
     const provider = {
-      image: vi.fn((modelId: string) => ({ modelId })),
+      capabilities: {
+        imageGeneration: true,
+        videoGeneration: true,
+      },
+      imageModel: vi.fn((modelId: string) => ({ modelId })),
+      videoModel: vi.fn((modelId: string) => ({ modelId })),
     };
 
     const result = await generateImageTool(
@@ -66,7 +71,7 @@ describe("media tools", () => {
         },
       },
     });
-    expect(provider.image).toHaveBeenCalledWith("grok-imagine-image");
+    expect(provider.imageModel).toHaveBeenCalledWith("grok-imagine-image");
 
     const media = result.media ?? [];
     expect(media).toHaveLength(1);
@@ -92,7 +97,12 @@ describe("media tools", () => {
     });
 
     const provider = {
-      video: vi.fn((modelId: string) => ({ modelId })),
+      capabilities: {
+        imageGeneration: true,
+        videoGeneration: true,
+      },
+      imageModel: vi.fn((modelId: string) => ({ modelId })),
+      videoModel: vi.fn((modelId: string) => ({ modelId })),
     };
 
     const result = await generateVideoTool(
@@ -124,7 +134,7 @@ describe("media tools", () => {
         },
       },
     });
-    expect(provider.video).toHaveBeenCalledWith("grok-imagine-video");
+    expect(provider.videoModel).toHaveBeenCalledWith("grok-imagine-video");
     const prompt = generateVideoMock.mock.calls[0]?.[0]?.prompt as { image?: string };
     expect(prompt.image?.startsWith("data:image/jpeg;base64,")).toBe(true);
 
@@ -134,5 +144,18 @@ describe("media tools", () => {
     expect(media[0]?.url).toBe("https://example.com/generated.mp4");
     expect(media[0]?.path).toBe(path.resolve(tempDir, "clips/teaser.mp4"));
     expect(fs.existsSync(media[0]?.path ?? "")).toBe(true);
+  });
+
+  it("returns a capability error instead of invoking media APIs for a chat-only provider", async () => {
+    const provider = {
+      kind: "minimax",
+      capabilities: { imageGeneration: false, videoGeneration: false },
+    };
+
+    const result = await generateImageTool(provider as never, { prompt: "not supported" }, tempDir);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("not supported by the minimax provider");
+    expect(generateImageMock).not.toHaveBeenCalled();
   });
 });

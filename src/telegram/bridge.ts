@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
 import type { Agent } from "../agent/agent";
-import type { ToolCall, ToolResult } from "../types/index";
+import type { ProviderKind, ToolCall, ToolResult } from "../types/index";
 import { loadUserSettings, resolveTelegramStreamSettings } from "../utils/settings";
 import { getTelegramAudioSource, transcribeTelegramAudioMessage } from "./audio-input";
 import { splitTelegramMessage, TELEGRAM_MAX_MESSAGE } from "./limits";
@@ -14,6 +14,7 @@ export { splitTelegramMessage, TELEGRAM_MAX_MESSAGE } from "./limits";
 
 export interface TelegramBridgeOptions {
   token: string;
+  provider?: ProviderKind;
   getApprovedUserIds: () => number[];
   coordinator: TurnCoordinator;
   getTelegramAgent: (userId: number) => Agent;
@@ -201,6 +202,7 @@ export function createTelegramBridge(opts: TelegramBridgeOptions): TelegramBridg
         token: opts.token,
         source,
         telegramSettings: loadUserSettings().telegram,
+        provider: opts.provider,
       });
       await runAgentTurn(ctx, userId, transcription.userContent, transcription.promptText);
     } catch (err: unknown) {
