@@ -75,7 +75,7 @@ class XaiProviderAdapter implements ProviderAdapter {
       model: modelInfo?.responsesOnly ? this.sdk.responses(modelId) : this.sdk(modelId),
       modelId,
       modelInfo,
-      providerOptions: reasoningEffort ? { xai: { reasoningEffort } } : undefined,
+      providerOptions: reasoningEffort && reasoningEffort !== "max" ? { xai: { reasoningEffort } } : undefined,
     };
   }
 

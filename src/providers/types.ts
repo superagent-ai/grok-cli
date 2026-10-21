@@ -14,6 +14,9 @@ export interface ProviderCapabilities {
 
 export type ProviderRequestOptions = {
   xai?: {
+    reasoningEffort: Exclude<ReasoningEffort, "max">;
+  };
+  minimax?: {
     reasoningEffort: ReasoningEffort;
   };
 };

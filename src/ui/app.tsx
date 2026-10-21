@@ -730,12 +730,19 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const [agentsSearchQuery, setAgentsSearchQuery] = useState("");
   const [agentsModalIndex, setAgentsModalIndex] = useState(0);
   const [editingSubagent, setEditingSubagent] = useState<CustomSubagentConfig | null>(null);
+  const editorModels = useMemo(() => {
+    const currentModel = normalizeModelId(editingSubagent?.model ?? agent.getModel());
+    const currentInfo = getModelInfo(currentModel);
+    return currentInfo && !providerModels.some((candidate) => candidate.id === currentInfo.id)
+      ? [...providerModels, currentInfo]
+      : providerModels;
+  }, [agent, editingSubagent, providerModels]);
   const [agentsEditorDraft, setAgentsEditorDraft] = useState({ name: "", instruction: "" });
   const [agentsEditorField, setAgentsEditorField] = useState<SubagentEditorField>("name");
   const [agentsEditorModelIndex, setAgentsEditorModelIndex] = useState(() =>
     Math.max(
       0,
-      providerModels.findIndex((candidate) => candidate.id === agent.getModel()),
+      editorModels.findIndex((candidate) => candidate.id === agent.getModel()),
     ),
   );
   const [agentsEditorSyncKey, setAgentsEditorSyncKey] = useState(0);
@@ -1148,12 +1155,9 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setEditingSubagent(subagent);
       if (subagent) {
         setAgentsEditorDraft({ name: subagent.name, instruction: subagent.instruction });
-        setAgentsEditorModelIndex(
-          Math.max(
-            0,
-            providerModels.findIndex((candidate) => candidate.id === normalizeModelId(subagent.model)),
-          ),
-        );
+        const modelId = normalizeModelId(subagent.model);
+        const modelIndex = providerModels.findIndex((candidate) => candidate.id === modelId);
+        setAgentsEditorModelIndex(modelIndex >= 0 ? modelIndex : providerModels.length);
       } else {
         setAgentsEditorDraft({ name: "", instruction: "" });
         setAgentsEditorModelIndex(
@@ -1175,7 +1179,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const submitSubagentEditor = useCallback(() => {
     const name = (subagentNameRef.current?.plainText || "").trim();
     const instruction = subagentInstructionRef.current?.plainText || "";
-    const model = providerModels[agentsEditorModelIndex]?.id;
+    const model = editorModels[agentsEditorModelIndex]?.id;
 
     if (!name) {
       setAgentsEditorError("Name is required.");
@@ -1185,7 +1189,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       setAgentsEditorError('Names "general" and "explore" are reserved.');
       return;
     }
-    if (!model || !getModelIds(startupConfig.provider).includes(model)) {
+    if (!model || !getModelIds(startupConfig.provider, true).includes(model)) {
       setAgentsEditorError("Pick a valid model.");
       return;
     }
@@ -1207,7 +1211,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
     setShowAgentsEditor(false);
     setEditingSubagent(null);
     setAgentsEditorError(null);
-  }, [agentsEditorModelIndex, editingSubagent, providerModels, startupConfig.provider, subAgents]);
+  }, [agentsEditorModelIndex, editingSubagent, editorModels, startupConfig.provider, subAgents]);
 
   const removeEditingSubagent = useCallback(() => {
     if (!editingSubagent) return;
@@ -2735,7 +2739,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
         ) {
           const decrement = key.name === "up" || key.name === "left" || key.name === "k";
           setAgentsEditorModelIndex((index) =>
-            decrement ? Math.max(0, index - 1) : Math.min(providerModels.length - 1, index + 1),
+            decrement ? Math.max(0, index - 1) : Math.min(editorModels.length - 1, index + 1),
           );
           return;
         }
@@ -3339,7 +3343,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       showSandboxPicker,
       pendingPaymentApproval,
       processMessage,
-      providerModels.length,
+      editorModels.length,
       showWalletPicker,
       walletSettings,
       walletFocusIndex,
@@ -3691,7 +3695,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
           draft={agentsEditorDraft}
           focusedField={agentsEditorField}
           modelIndex={agentsEditorModelIndex}
-          models={providerModels}
+          models={editorModels}
           error={agentsEditorError}
           title={editingSubagent ? `Edit sub-agent: ${formatSubagentName(editingSubagent.name)}` : "Add sub-agent"}
           nameRef={subagentNameRef}

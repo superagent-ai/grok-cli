@@ -71,20 +71,44 @@ export const MODELS: ModelInfo[] = [
     aliases: ["grok-3-mini-fast"],
     supportsReasoningEffort: true,
   },
+  // Direct API metadata: https://platform.minimax.io/docs/api-reference/text-chat-openai
+  // Pricing: https://platform.minimax.io/docs/pricing/overview#models/text
+  {
+    id: "MiniMax-M3.1-Flash",
+    name: "MiniMax M3.1 Flash",
+    provider: "minimax",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 524_288,
+    inputPrice: 0.15,
+    outputPrice: 0.6,
+    cacheReadPrice: 0.015,
+    cacheWritePrice: null,
+    inputModalities: ["text", "image", "video"],
+    thinking: ["adaptive"],
+    reasoning: true,
+    supportsReasoningEffort: true,
+    defaultReasoningEffort: "max",
+    description: "Recommended MiniMax model with adjustable thinking depth",
+  },
   {
     id: "MiniMax-M3",
     name: "MiniMax M3",
     provider: "minimax",
     contextWindow: 1_000_000,
-    inputPrice: 0.6,
-    outputPrice: 2.4,
-    cacheReadPrice: 0.12,
+    // Standard pricing for <=512k input tokens; larger requests cost twice as much.
+    inputPrice: 0.3,
+    outputPrice: 1.2,
+    cacheReadPrice: 0.06,
     cacheWritePrice: null,
     inputModalities: ["text", "image", "video"],
     thinking: ["adaptive", "disabled"],
     reasoning: true,
     description: "MiniMax multimodal flagship model",
   },
+];
+
+// Lookup-only compatibility entries for existing sessions and saved model choices.
+const LEGACY_MODELS: ModelInfo[] = [
   {
     id: "MiniMax-M2.7",
     name: "MiniMax M2.7",
@@ -104,7 +128,7 @@ export const MODELS: ModelInfo[] = [
 const PROVIDER_PREFIX_RE = /^(x-ai|xai|minimax)\//i;
 const aliasMap = new Map<string, string>();
 
-for (const model of MODELS) {
+for (const model of [...MODELS, ...LEGACY_MODELS]) {
   aliasMap.set(model.id.toLowerCase(), model.id);
   for (const alias of model.aliases ?? []) {
     aliasMap.set(alias.toLowerCase(), model.id);
@@ -114,7 +138,7 @@ for (const model of MODELS) {
 export const DEFAULT_MODEL = MODELS.find((model) => model.id === "grok-4.3")?.id ?? MODELS[0]?.id ?? "grok-4.3";
 export const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
   xai: DEFAULT_MODEL,
-  minimax: "MiniMax-M3",
+  minimax: "MiniMax-M3.1-Flash",
 };
 
 export function normalizeModelId(modelId: string): string {
@@ -127,11 +151,12 @@ export function normalizeModelId(modelId: string): string {
 
 export function getModelInfo(modelId: string): ModelInfo | undefined {
   const normalized = normalizeModelId(modelId);
-  return MODELS.find((m) => m.id === normalized);
+  return [...MODELS, ...LEGACY_MODELS].find((m) => m.id === normalized);
 }
 
-export function getModelIds(provider?: ProviderKind): string[] {
-  return MODELS.filter((model) => !provider || (model.provider ?? "xai") === provider).map((model) => model.id);
+export function getModelIds(provider?: ProviderKind, includeLegacy = false): string[] {
+  const models = includeLegacy ? [...MODELS, ...LEGACY_MODELS] : MODELS;
+  return models.filter((model) => !provider || (model.provider ?? "xai") === provider).map((model) => model.id);
 }
 
 export function getModelProvider(modelId: string): ProviderKind | undefined {
@@ -150,7 +175,8 @@ export function isKnownModelId(modelId: string): boolean {
 export function getSupportedReasoningEfforts(modelId: string): ReasoningEffort[] {
   const modelInfo = getModelInfo(modelId);
   if (!modelInfo?.supportsReasoningEffort) return [];
-  // Currently only grok-3-mini supports reasoning_effort per xAI docs
+  if (modelInfo.id === "MiniMax-M3.1-Flash") return ["low", "medium", "high", "xhigh", "max"];
+  // grok-3-mini supports reasoning_effort per xAI docs
   // It supports "low" and "high" efforts
   return ["low", "high"];
 }

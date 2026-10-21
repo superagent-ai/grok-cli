@@ -138,7 +138,7 @@ export function isReservedSubagentName(name: string): boolean {
 export function parseSubAgentsRawList(raw: unknown, provider?: ProviderKind): CustomSubagentConfig[] {
   if (!Array.isArray(raw)) return [];
 
-  const validModels = new Set(getModelIds(provider));
+  const validModels = new Set(getModelIds(provider, true));
   const seen = new Set<string>();
   const agents: CustomSubagentConfig[] = [];
 

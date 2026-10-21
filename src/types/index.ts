@@ -222,7 +222,7 @@ export interface StreamChunk {
   isAuthError?: boolean;
 }
 
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type ProviderKind = "xai" | "minimax";
 export type ModelInputModality = "text" | "image" | "video";
 export type ModelThinkingMode = "adaptive" | "disabled" | "always_on";
@@ -232,6 +232,7 @@ export interface ModelInfo {
   name: string;
   provider?: ProviderKind;
   contextWindow: number;
+  maxOutputTokens?: number;
   inputPrice: number;
   outputPrice: number;
   cacheReadPrice?: number;

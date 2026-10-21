@@ -1,12 +1,15 @@
 import { createOpenAICompatible, type OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 import type { FetchFunction } from "@ai-sdk/provider-utils";
 import {
+  getDefaultModel,
+  getEffectiveReasoningEffort,
   getModelInfo,
   getModelProvider,
   MINIMAX_BASE_URLS,
   type MiniMaxRegion,
   normalizeModelId,
 } from "../grok/models";
+import { getReasoningEffortForModel } from "../utils/settings";
 import type { ProviderAdapter, ProviderCapabilities, ResolvedModelRuntime } from "./types";
 
 export const MINIMAX_ENDPOINTS = MINIMAX_BASE_URLS;
@@ -17,11 +20,11 @@ const MINIMAX_CAPABILITIES: ProviderCapabilities = {
   imageGeneration: false,
   videoGeneration: false,
   batchApi: false,
-  reasoningEffort: false,
+  reasoningEffort: true,
   audioStt: false,
 };
 
-const DEFAULT_MINIMAX_MODEL = "MiniMax-M3";
+const DEFAULT_MINIMAX_MODEL = getDefaultModel("minimax");
 
 export interface MiniMaxAdapterOptions {
   apiKey: string;
@@ -69,10 +72,12 @@ class MiniMaxProviderAdapter implements ProviderAdapter {
       throw new Error(`Model ${modelId} is not available from the ${this.kind} provider.`);
     }
 
+    const reasoningEffort = getEffectiveReasoningEffort(modelId, getReasoningEffortForModel(modelId));
     return {
       model: this.sdk.chatModel(modelId),
       modelId,
       modelInfo,
+      providerOptions: reasoningEffort ? { minimax: { reasoningEffort } } : undefined,
     };
   }
 }
